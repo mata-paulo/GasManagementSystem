@@ -28,13 +28,25 @@ const recentTransactions = [
   },
 ];
 
-export default function Dashboard({ onScan, activeTab, onTabChange }) {
+export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       <Header />
 
       <main className="flex-1 px-6 pb-36 pt-6 max-w-2xl mx-auto w-full space-y-8">
         {/* Active Station Banner */}
+        {officer && (
+          <div className="flex items-center gap-3 px-1">
+            <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center">
+              <span className="material-symbols-outlined text-white" style={{ fontSize: "20px" }}>manage_accounts</span>
+            </div>
+            <div>
+              <p className="text-xs text-on-surface-variant">Logged in as</p>
+              <p className="text-sm font-bold text-primary">{officer.firstName} {officer.lastName} · {officer.plate}</p>
+            </div>
+          </div>
+        )}
+
         <section className="relative overflow-hidden rounded-2xl bg-primary-container p-6 text-white shadow-xl">
           <div
             className="absolute inset-0 opacity-10"
