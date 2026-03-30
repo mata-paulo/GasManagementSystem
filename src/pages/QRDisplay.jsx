@@ -13,16 +13,9 @@ function formatTimestamp(iso) {
 }
 
 export default function QRDisplay({ resident, onDone }) {
-  const { firstName, lastName, plate, registeredAt } = resident;
+  const { firstName, lastName, plate, barangay, vehicleType, registeredAt } = resident;
   const fullName = `${firstName} ${lastName}`;
-
-  // QR payload — compact JSON string
-  const qrData = JSON.stringify({
-    plate,
-    firstName,
-    lastName,
-    registeredAt,
-  });
+  const qrData = JSON.stringify({ vehicleType, plate, firstName, lastName, barangay, registeredAt });
 
   const svgRef = useRef(null);
 
@@ -30,8 +23,7 @@ export default function QRDisplay({ resident, onDone }) {
     const svg = svgRef.current?.querySelector("svg");
     if (!svg) return;
     const serializer = new XMLSerializer();
-    const source = serializer.serializeToString(svg);
-    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const blob = new Blob([serializer.serializeToString(svg)], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -41,103 +33,118 @@ export default function QRDisplay({ resident, onDone }) {
   };
 
   return (
-    <div className="flex flex-col min-h-dvh bg-background">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-slate-100/80 backdrop-blur-md shadow-sm sticky top-0 z-40">
-        <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-          <span
-            className="material-symbols-outlined text-green-600"
-            style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}
-          >
+    <div className="flex flex-col h-dvh bg-primary-container overflow-hidden">
+
+      {/* ── Dark header ── */}
+      <div className="shrink-0 px-5 pt-4 pb-4 text-center">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-green-300"
+            style={{ fontSize: "20px", fontVariationSettings: "'FILL' 1" }}>
             check_circle
           </span>
+          <div className="text-left">
+            <h1 className="text-white font-headline font-bold text-base leading-none">Registration Successful</h1>
+            <p className="text-[9px] text-on-primary-container font-bold uppercase tracking-widest opacity-70">
+              Cebu Fuel Val · Official Portal
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-[#003366] font-headline font-bold text-lg leading-none">
-            Registration Successful
-          </h1>
-          <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
-            Cebu Fuel Val
-          </p>
+        <p className="text-on-primary-container text-[9px] font-bold uppercase tracking-widest mb-1">
+          Fuel Allocation QR Code
+        </p>
+        <h2 className="font-headline font-black text-white text-xl leading-tight">{fullName}</h2>
+        <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full text-white text-xs font-bold tracking-wider">
+            <span className="material-symbols-outlined text-tertiary-fixed"
+              style={{ fontSize: "12px", fontVariationSettings: "'FILL' 1" }}>
+              {vehicleType === "motorcycle" ? "two_wheeler" : "directions_car"}
+            </span>
+            {plate}
+          </span>
+          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full text-white text-xs font-semibold">
+            <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontSize: "12px" }}>location_on</span>
+            {barangay}
+          </span>
         </div>
       </div>
 
-      <main className="flex-1 px-6 pt-6 pb-12 max-w-md mx-auto w-full flex flex-col items-center">
-        {/* Success badge */}
-        <div className="w-full bg-gradient-to-br from-[#003366] to-[#001e40] rounded-2xl p-6 text-center mb-6 shadow-xl">
-          <p className="text-on-primary-container text-xs font-bold uppercase tracking-widest mb-1">
-            Fuel Allocation QR Code
-          </p>
-          <h2 className="font-headline font-black text-white text-xl">{fullName}</h2>
-          <div className="mt-1 inline-flex items-center gap-1.5 bg-white/10 border border-white/20 px-3 py-1 rounded-full">
-            <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontSize: "14px" }}>
-              directions_car
-            </span>
-            <span className="text-white font-bold text-sm tracking-widest">{plate}</span>
-          </div>
-        </div>
+      {/* ── White card ── */}
+      <div className="flex-1 bg-background rounded-t-3xl flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col px-5 pt-5 pb-3 gap-4 min-h-0 overflow-y-auto">
 
-        {/* QR Code card */}
-        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/20 flex flex-col items-center w-full">
-          <div ref={svgRef} className="bg-white p-4 rounded-xl shadow-inner">
-            <QRCodeSVG
-              value={qrData}
-              size={220}
-              level="H"
-              includeMargin={false}
-              fgColor="#001e40"
-              bgColor="#ffffff"
-            />
-          </div>
-
-          {/* Resident info below QR */}
-          <div className="mt-5 w-full space-y-2 text-center">
-            <div className="grid grid-cols-2 gap-3 text-left">
-              <div className="bg-surface-container-low p-3 rounded-xl">
-                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Name</p>
-                <p className="text-sm font-bold text-on-surface">{fullName}</p>
-              </div>
-              <div className="bg-surface-container-low p-3 rounded-xl">
-                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Plate</p>
-                <p className="text-sm font-bold text-on-surface tracking-widest">{plate}</p>
-              </div>
-            </div>
-            <div className="bg-surface-container-low p-3 rounded-xl text-left">
-              <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Registered</p>
-              <p className="text-sm font-medium text-on-surface">{formatTimestamp(registeredAt)}</p>
+          {/* QR code — centered, full width feel */}
+          <div className="flex justify-center">
+            <div ref={svgRef} className="bg-white rounded-2xl shadow-md p-4 inline-flex">
+              <QRCodeSVG
+                value={qrData}
+                size={190}
+                level="H"
+                includeMargin={false}
+                fgColor="#001e40"
+                bgColor="#ffffff"
+              />
             </div>
           </div>
+
+          {/* 2×2 details grid */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="bg-surface-container-low rounded-xl px-4 py-3">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Full Name</p>
+              <p className="text-sm font-bold text-on-surface leading-tight">{fullName}</p>
+            </div>
+            <div className="bg-surface-container-low rounded-xl px-4 py-3">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Plate No.</p>
+              <p className="text-sm font-bold text-on-surface tracking-widest">{plate}</p>
+            </div>
+            <div className="bg-surface-container-low rounded-xl px-4 py-3">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Vehicle</p>
+              <p className="text-sm font-bold text-on-surface capitalize">{vehicleType}</p>
+            </div>
+            <div className="bg-surface-container-low rounded-xl px-4 py-3">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Barangay</p>
+              <p className="text-sm font-bold text-on-surface leading-tight">{barangay}</p>
+            </div>
+          </div>
+
+          {/* Timestamp */}
+          <div className="bg-surface-container-low rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="material-symbols-outlined text-outline shrink-0" style={{ fontSize: "16px" }}>schedule</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider">Registered</p>
+              <p className="text-xs font-medium text-on-surface">{formatTimestamp(registeredAt)}</p>
+            </div>
+            <p className="text-[9px] text-outline shrink-0">
+              Ref: {plate}-{new Date(registeredAt).getTime().toString().slice(-6)}
+            </p>
+          </div>
+
+          {/* Tip */}
+          <div className="bg-tertiary-fixed/30 border-l-4 border-tertiary px-3 py-2.5 rounded-r-xl flex gap-2 items-start">
+            <span className="material-symbols-outlined text-tertiary shrink-0" style={{ fontSize: "14px" }}>info</span>
+            <p className="text-[10px] text-on-tertiary-fixed-variant leading-relaxed">
+              Show this QR at any participating station for fuel allocation. Screenshot or download to save.
+            </p>
+          </div>
         </div>
 
-        {/* Info */}
-        <div className="bg-tertiary-fixed/30 border-l-4 border-tertiary p-4 rounded-r-lg flex gap-3 mt-4 w-full">
-          <span className="material-symbols-outlined text-tertiary shrink-0 text-base">info</span>
-          <p className="text-xs text-on-tertiary-fixed-variant leading-relaxed">
-            Show this QR code at any participating fuel station for allocation verification. Screenshot or download to save it.
+        {/* ── Buttons pinned to bottom ── */}
+        <div className="shrink-0 px-5 pt-3 pb-6 bg-background border-t border-outline-variant/20 flex flex-col gap-2">
+          <div className="flex gap-3">
+            <button onClick={handleDownload}
+              className="flex-1 bg-primary-container text-white font-headline font-bold py-3.5 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
+              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>download</span>
+              Download QR
+            </button>
+            <button onClick={onDone}
+              className="flex-1 bg-surface-container-high text-on-surface-variant font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all text-sm">
+              Back to Home
+            </button>
+          </div>
+          <p className="text-center text-outline text-[9px]">
+            © 2024 Cebu City Government · LGU Fuel Management System
           </p>
         </div>
-
-        {/* Actions */}
-        <div className="flex flex-col gap-3 w-full mt-6">
-          <button
-            onClick={handleDownload}
-            className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-          >
-            <span className="material-symbols-outlined">download</span>
-            Download QR Code
-          </button>
-          <button
-            onClick={onDone}
-            className="w-full bg-surface-container-high text-on-surface-variant font-headline font-bold py-4 rounded-xl active:scale-95 transition-all"
-          >
-            Back to Home
-          </button>
-        </div>
-
-        <p className="text-center text-outline text-[10px] mt-8">
-          © 2024 Cebu City Government · Ref: {plate}-{new Date(registeredAt).getTime()}
-        </p>
-      </main>
+      </div>
     </div>
   );
 }
