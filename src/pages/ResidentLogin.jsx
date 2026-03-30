@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function Login({ onBack, onSuccess }) {
+export default function ResidentLogin({ onBack, onSuccess }) {
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -24,7 +24,7 @@ export default function Login({ onBack, onSuccess }) {
     onSuccess({
       ...form,
       plate: form.plate.toUpperCase(),
-      role: "station",
+      role: "resident",
       loginAt: new Date().toISOString(),
     });
   };
@@ -40,7 +40,7 @@ export default function Login({ onBack, onSuccess }) {
         </button>
         <div>
           <h1 className="text-[#003366] font-headline font-bold text-lg leading-none">
-            Officer Login
+            Resident Login
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
             Cebu Fuel Val
@@ -55,14 +55,14 @@ export default function Login({ onBack, onSuccess }) {
               className="material-symbols-outlined text-white"
               style={{ fontSize: "40px", fontVariationSettings: "'FILL' 1" }}
             >
-              manage_accounts
+              person
             </span>
           </div>
           <h2 className="font-headline font-extrabold text-primary text-2xl">
             Welcome Back
           </h2>
           <p className="text-on-surface-variant text-sm text-center mt-1">
-            Enter your officer details to continue.
+            Enter your resident details to continue.
           </p>
         </div>
 

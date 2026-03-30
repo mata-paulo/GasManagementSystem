@@ -2,51 +2,67 @@ import { useState } from "react";
 import AuthLanding from "./pages/AuthLanding";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ResidentLogin from "./pages/ResidentLogin";
+import RegisterTypeSelect from "./pages/RegisterTypeSelect";
+import StationRegister from "./pages/StationRegister";
 import QRDisplay from "./pages/QRDisplay";
 import Dashboard from "./pages/Dashboard";
+import UserDashboard from "./pages/UserDashboard";
 import QRScanner from "./pages/QRScanner";
 import ValidationSuccess from "./pages/ValidationSuccess";
 import ScanHistory from "./pages/ScanHistory";
 import Settings from "./pages/Settings";
 
-// screens: "landing" | "login" | "register" | "qr-display" |
-//          "dashboard" | "scanner" | "validation" | "history" | "settings"
-
 export default function App() {
   const [screen, setScreen] = useState("landing");
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [officer, setOfficer] = useState(null);       // logged-in officer
-  const [resident, setResident] = useState(null);     // just-registered resident
+  const [officer, setOfficer] = useState(null);
+  const [resident, setResident] = useState(null);
 
-  // Auth handlers
-  const handleLoginSuccess = (officerData) => {
-    setOfficer(officerData);
-    setScreen("dashboard");
-    setActiveTab("dashboard");
-  };
-
-  const handleRegisterSuccess = (residentData) => {
-    setResident(residentData);
-    setScreen("qr-display");
-  };
-
-  // Tab / nav
-  const handleTabChange = (tab) => {
+  const handleOfficerTabChange = (tab) => {
     setActiveTab(tab);
+
     if (tab === "dashboard") setScreen("dashboard");
     else if (tab === "history") setScreen("history");
     else if (tab === "settings") setScreen("settings");
   };
 
-  // Scanner flow
+  const handleUserTabChange = (tab) => {
+    setActiveTab(tab);
+
+    if (tab === "dashboard") setScreen("user-dashboard");
+  };
+
+  const handleStationLoginSuccess = (officerData) => {
+    setOfficer(officerData);
+    setScreen("dashboard");
+    setActiveTab("dashboard");
+  };
+
+  const handleResidentLoginSuccess = (residentData) => {
+    setResident(residentData);
+    setScreen("user-dashboard");
+    setActiveTab("dashboard");
+  };
+
+  const handleResidentRegisterSuccess = (residentData) => {
+    setResident(residentData);
+    setScreen("qr-display");
+  };
+
+  const handleStationRegisterSuccess = (stationData) => {
+    console.log("Station registered:", stationData);
+    setScreen("landing");
+  };
+
   const handleScan = () => setScreen("scanner");
   const handleScanSuccess = () => setScreen("validation");
+
   const handleValidationBack = () => {
     setScreen("dashboard");
     setActiveTab("dashboard");
   };
 
-  // Logout
   const handleLogout = () => {
     setOfficer(null);
     setResident(null);
@@ -54,30 +70,58 @@ export default function App() {
     setActiveTab("dashboard");
   };
 
-  // --- Render ---
   if (screen === "landing") {
     return (
       <AuthLanding
-        onLogin={() => setScreen("login")}
-        onRegister={() => setScreen("register")}
+        onStationLogin={() => setScreen("station-login")}
+        onResidentLogin={() => setScreen("resident-login")}
+        onRegister={() => setScreen("register-type")}
       />
     );
   }
 
-  if (screen === "login") {
+  if (screen === "station-login") {
     return (
       <Login
         onBack={() => setScreen("landing")}
-        onSuccess={handleLoginSuccess}
+        onSuccess={handleStationLoginSuccess}
       />
     );
   }
 
-  if (screen === "register") {
+  if (screen === "resident-login") {
+    return (
+      <ResidentLogin
+        onBack={() => setScreen("landing")}
+        onSuccess={handleResidentLoginSuccess}
+      />
+    );
+  }
+
+  if (screen === "register-type") {
+    return (
+      <RegisterTypeSelect
+        onBack={() => setScreen("landing")}
+        onResidentRegister={() => setScreen("resident-register")}
+        onStationRegister={() => setScreen("station-register")}
+      />
+    );
+  }
+
+  if (screen === "resident-register") {
     return (
       <Register
-        onBack={() => setScreen("landing")}
-        onSuccess={handleRegisterSuccess}
+        onBack={() => setScreen("register-type")}
+        onSuccess={handleResidentRegisterSuccess}
+      />
+    );
+  }
+
+  if (screen === "station-register") {
+    return (
+      <StationRegister
+        onBack={() => setScreen("register-type")}
+        onSuccess={handleStationRegisterSuccess}
       />
     );
   }
@@ -105,14 +149,17 @@ export default function App() {
       <ValidationSuccess
         onBack={handleValidationBack}
         activeTab={activeTab}
-        onTabChange={handleTabChange}
+        onTabChange={handleOfficerTabChange}
       />
     );
   }
 
   if (screen === "history") {
     return (
-      <ScanHistory activeTab={activeTab} onTabChange={handleTabChange} />
+      <ScanHistory
+        activeTab={activeTab}
+        onTabChange={handleOfficerTabChange}
+      />
     );
   }
 
@@ -121,19 +168,29 @@ export default function App() {
       <Settings
         officer={officer}
         activeTab={activeTab}
-        onTabChange={handleTabChange}
+        onTabChange={handleOfficerTabChange}
         onLogout={handleLogout}
       />
     );
   }
 
-  // Default: dashboard
+  if (screen === "user-dashboard") {
+    return (
+      <UserDashboard
+        resident={resident}
+        activeTab={activeTab}
+        onTabChange={handleUserTabChange}
+        onShowQR={() => setScreen("qr-display")}
+      />
+    );
+  }
+
   return (
     <Dashboard
       officer={officer}
       onScan={handleScan}
       activeTab={activeTab}
-      onTabChange={handleTabChange}
+      onTabChange={handleOfficerTabChange}
     />
   );
 }
