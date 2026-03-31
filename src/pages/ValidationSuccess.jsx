@@ -1,11 +1,17 @@
 import BottomNav from "../components/BottomNav";
+import { formatDecodedDate } from "../utils/qrCodec";
 
 const RESIDENT_IMG =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAXqfapZS-XB6Ex6q9gvjpqo49kBnsKSV_xUi6169zZVPThLwv48yJSCJsg3D7IyBEQdesNhfzMVu4GbPrY-h_mMN48GNkjkDN94i2VLoNirV4gdVD9_vpFG_EUcvNBe-m9ofA0uEj-1fsv42-nOFkcpEpueA2XQdh55CDsc-3WQ3VKnvWCEa2TuKoYjPbW7Ul7uxELnVZ-rROGOE6PCdHq3b7944xXgic5uGrP2T2o2xLqLCfUhCZh_64W-e0uHD5DJ18JBsXhcMQY";
 
-export default function ValidationSuccess({ officer, onBack, activeTab, onTabChange }) {
+export default function ValidationSuccess({ officer, scannedResident, onBack, activeTab, onTabChange }) {
   const managerName = officer?.officerFirstName || officer?.firstName || "Manager";
   const brand = officer?.brand || "Station";
+
+  const nameCode = scannedResident
+    ? `${scannedResident.firstCode}... ${scannedResident.lastCode}...`
+    : "Juan A. Dela Cruz";
+  const registeredAt = scannedResident ? formatDecodedDate(scannedResident.date) : null;
 
   return (
     <div className="flex flex-col min-h-dvh bg-surface">
@@ -79,23 +85,40 @@ export default function ValidationSuccess({ officer, onBack, activeTab, onTabCha
                   Verified Resident
                 </p>
                 <h3 className="font-headline font-extrabold text-2xl text-primary">
-                  Juan A. Dela Cruz
+                  {nameCode}
                 </h3>
+                {registeredAt && (
+                  <p className="text-outline text-xs mt-1">Registered: {registeredAt}</p>
+                )}
               </div>
             </div>
+
+            {/* Decoded QR info */}
+            {scannedResident && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+                  <p className="text-outline text-[10px] font-bold uppercase tracking-wider">First Name Code</p>
+                  <p className="font-headline font-black text-2xl text-[#003366] tracking-widest">{scannedResident.firstCode}</p>
+                </div>
+                <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+                  <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Last Name Code</p>
+                  <p className="font-headline font-black text-2xl text-[#003366] tracking-widest">{scannedResident.lastCode}</p>
+                </div>
+              </div>
+            )}
 
             {/* Transaction Details */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-2">
                 <span className="material-symbols-outlined text-[#003366]">
-                  directions_car
+                  qr_code
                 </span>
                 <div>
                   <p className="text-outline text-[10px] font-bold uppercase tracking-wider">
-                    Plate Number
+                    QR Serial
                   </p>
-                  <p className="font-headline font-bold text-lg text-on-surface">
-                    ABC-1234
+                  <p className="font-headline font-bold text-sm text-on-surface font-mono">
+                    {scannedResident?.serial ?? "—"}
                   </p>
                 </div>
               </div>

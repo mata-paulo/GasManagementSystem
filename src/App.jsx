@@ -21,6 +21,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [officer, setOfficer] = useState(null);
   const [resident, setResident] = useState(null);
+  const [scannedResident, setScannedResident] = useState(null);
 
   const handleOfficerTabChange = (tab) => {
     setActiveTab(tab);
@@ -63,7 +64,10 @@ export default function App() {
   };
 
   const handleScan = () => setScreen("scanner");
-  const handleScanSuccess = () => setScreen("validation");
+  const handleScanSuccess = (decoded) => {
+    setScannedResident(decoded);
+    setScreen("validation");
+  };
 
   const handleValidationBack = () => {
     setScreen("dashboard");
@@ -160,6 +164,7 @@ export default function App() {
     return (
       <ValidationSuccess
         officer={officer}
+        scannedResident={scannedResident}
         onBack={handleValidationBack}
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}

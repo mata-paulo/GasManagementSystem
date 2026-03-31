@@ -1,100 +1,241 @@
+import { useRef, useState } from "react";
+import jsQR from "jsqr";
 import Header from "../components/Header";
-
-const GAS_STATION_IMG =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuC70SgrsGiLN3gjgqCDp55cjhvV5VIoB2T5YVmftxnSRPpxTgbXjIcZ03Hm4KY11KBjWHA3R5FV3eQlmKDNWj3Vw_CfPibdpGmlemiqOvVyQRwNtlO8lc5yUBf3bUhryqy-yKgfkBzLCbXsbU_sHs-pgLc5_9TCUpPgQgnmSbe7OLcrU4SOREZFAmbOvngYOGlZYcVmSx0x1tPWfH1BfJUJc_LWyachTNBmKYJwBzjDu6E66tWCwpgkSuEILU2ggW_56irEll2DJgpr";
+import { decodeQR, formatDecodedDate } from "../utils/qrCodec";
 
 export default function QRScanner({ onClose, onSuccess }) {
+  const fileInputRef = useRef(null);
+  const [decoded, setDecoded] = useState(null);
+  const [error, setError] = useState("");
+  const [manualCode, setManualCode] = useState("");
+  const [mode, setMode] = useState("scan"); // "scan" | "manual"
+
+  const processCode = (raw) => {
+    const result = decodeQR(raw);
+    if (!result) {
+      setError("Invalid QR code format. Expected format: JOHSMI46111.8560");
+      setDecoded(null);
+      return false;
+    }
+    setDecoded(result);
+    setError("");
+    return true;
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height);
+      URL.revokeObjectURL(url);
+      if (!result) {
+        setError("No QR code found in the image. Try a clearer photo.");
+        setDecoded(null);
+        return;
+      }
+      processCode(result.data);
+    };
+    img.src = url;
+    // reset input so same file can be re-uploaded
+    e.target.value = "";
+  };
+
+  const handleManualDecode = () => {
+    if (!manualCode.trim()) {
+      setError("Please enter a code.");
+      return;
+    }
+    processCode(manualCode.trim().toUpperCase());
+  };
+
+  const handleConfirm = () => {
+    if (decoded) onSuccess(decoded);
+  };
+
   return (
-    <div className="flex flex-col h-dvh bg-black overflow-hidden">
+    <div className="flex flex-col h-dvh bg-[#0a0f1e] overflow-hidden">
+
       {/* Header */}
       <div className="relative z-50">
         <Header onClose={onClose} />
       </div>
 
-      {/* Camera Viewfinder */}
-      <div className="relative flex-1 overflow-hidden">
-        {/* Background camera feed */}
-        <div className="absolute inset-0 z-0">
-          <img
-            src={GAS_STATION_IMG}
-            alt="Camera feed"
-            className="w-full h-full object-cover opacity-80 brightness-75"
-          />
-        </div>
+      {/* Mode tabs */}
+      <div className="flex gap-1 mx-4 mt-2 bg-white/10 rounded-xl p-1 shrink-0">
+        <button
+          onClick={() => { setMode("scan"); setDecoded(null); setError(""); }}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            mode === "scan" ? "bg-white text-[#003366]" : "text-white/60"
+          }`}
+        >
+          Upload QR Image
+        </button>
+        <button
+          onClick={() => { setMode("manual"); setDecoded(null); setError(""); }}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            mode === "manual" ? "bg-white text-[#003366]" : "text-white/60"
+          }`}
+        >
+          Enter Code Manually
+        </button>
+      </div>
 
-        {/* Dark overlay with cutout */}
-        <div className="absolute inset-0 z-10 scanner-mask" />
+      {/* Main area */}
+      <div className="flex-1 flex flex-col px-4 pt-4 pb-4 gap-4 overflow-y-auto">
 
-        {/* Overlay UI */}
-        <div className="absolute inset-0 z-20 flex flex-col items-center pointer-events-none">
-          {/* Station indicator */}
-          <div className="mt-6 px-4 py-2 bg-primary-container/90 backdrop-blur-md rounded-full shadow-lg flex items-center gap-2 border border-white/10">
-            <span
-              className="material-symbols-outlined text-white"
-              style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}
+        {mode === "scan" && !decoded && (
+          <>
+            {/* Upload zone */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-4 border-2 border-dashed border-white/30 rounded-2xl py-12 text-white/70 hover:border-white/60 hover:text-white transition-all active:scale-95"
             >
-              local_gas_station
-            </span>
-            <span className="text-white text-xs font-bold font-headline tracking-wide">
-              Mabolo Shell Station #402
-            </span>
+              <span className="material-symbols-outlined text-5xl text-white/50"
+                style={{ fontVariationSettings: "'FILL' 1" }}>
+                qr_code_scanner
+              </span>
+              <div className="text-center">
+                <p className="font-bold text-sm text-white">Tap to upload QR image</p>
+                <p className="text-xs text-white/50 mt-1">PNG, JPG, or screenshot</p>
+              </div>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+
+            {/* Format hint */}
+            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+              <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Expected QR Format</p>
+              <p className="text-white font-mono text-sm tracking-widest">JOHSMI46111.8560</p>
+              <p className="text-white/40 text-[10px] mt-1">
+                [First 3 letters] + [Last 3 letters] + [Excel serial date]
+              </p>
+            </div>
+          </>
+        )}
+
+        {mode === "manual" && !decoded && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider block mb-1.5">
+                Enter Encoded QR Code
+              </label>
+              <input
+                type="text"
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                placeholder="e.g. JOHSMI46111.8560"
+                className="w-full bg-white/10 border border-white/20 rounded-xl py-3.5 px-4 text-white font-mono text-sm tracking-widest placeholder:text-white/30 focus:outline-none focus:border-white/50"
+              />
+            </div>
+            <button
+              onClick={handleManualDecode}
+              className="w-full bg-white text-[#003366] font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>search</span>
+              Decode
+            </button>
+
+            {/* Format hint */}
+            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+              <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Format</p>
+              <p className="text-white/70 text-[11px] leading-relaxed">
+                3 letters of first name + 3 letters of last name + Excel serial timestamp
+              </p>
+              <p className="text-white font-mono text-xs tracking-widest mt-1">JOHSMI46111.8560</p>
+            </div>
           </div>
+        )}
 
-          {/* Scanner frame */}
-          <div className="relative w-[75vw] aspect-square mt-10">
-            {/* Corner borders */}
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-tertiary-fixed rounded-tl-xl" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-tertiary-fixed rounded-tr-xl" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-tertiary-fixed rounded-bl-xl" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-tertiary-fixed rounded-br-xl" />
-
-            {/* Animated scan line */}
-            <div className="scanning-line absolute w-full top-1/2" />
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 bg-red-900/40 border border-red-500/30 px-4 py-3 rounded-xl text-red-300 text-sm">
+            <span className="material-symbols-outlined text-base shrink-0">error</span>
+            {error}
           </div>
+        )}
 
-          {/* Instruction text */}
-          <div className="mt-8 px-8 py-4 text-center">
-            <h2 className="text-white font-headline font-bold text-xl drop-shadow-md">
-              Scan resident QR code to validate.
-            </h2>
-            <p className="text-white/60 text-sm mt-2 font-body">
-              Position the QR code within the frame for instant verification.
-            </p>
+        {/* Decoded result */}
+        {decoded && (
+          <div className="space-y-3">
+            {/* Success badge */}
+            <div className="flex items-center gap-2 bg-green-900/40 border border-green-500/30 px-4 py-3 rounded-xl text-green-300 text-sm">
+              <span className="material-symbols-outlined text-base shrink-0"
+                style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+              QR code decoded successfully
+            </div>
+
+            {/* Decoded card */}
+            <div className="bg-white rounded-2xl overflow-hidden shadow-xl">
+              {/* Card header */}
+              <div className="bg-[#003366] px-5 py-4">
+                <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">Decoded QR Data</p>
+                <p className="font-mono font-bold text-white text-lg tracking-widest mt-0.5">
+                  {decoded.firstCode}<span className="text-yellow-300">{decoded.lastCode}</span>{decoded.serial}
+                </p>
+              </div>
+
+              <div className="px-5 py-4 space-y-4">
+                {/* Name codes */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-xl px-4 py-3">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">First Name Code</p>
+                    <p className="font-headline font-black text-[#003366] text-2xl tracking-widest">{decoded.firstCode}</p>
+                    <p className="text-[9px] text-gray-400 mt-0.5">First 3 letters</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl px-4 py-3">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Last Name Code</p>
+                    <p className="font-headline font-black text-[#003366] text-2xl tracking-widest">{decoded.lastCode}</p>
+                    <p className="text-[9px] text-gray-400 mt-0.5">First 3 letters</p>
+                  </div>
+                </div>
+
+                {/* Timestamp */}
+                <div className="bg-gray-50 rounded-xl px-4 py-3">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Registered At</p>
+                  <p className="font-bold text-gray-800 text-sm">{formatDecodedDate(decoded.date)}</p>
+                  <p className="text-[9px] text-gray-400 mt-0.5">Serial: {decoded.serial}</p>
+                </div>
+
+                {/* Verify reminder */}
+                <div className="bg-amber-50 border-l-4 border-amber-400 px-3 py-2.5 rounded-r-xl flex gap-2 items-start">
+                  <span className="material-symbols-outlined text-amber-500 shrink-0" style={{ fontSize: "14px" }}>id_card</span>
+                  <p className="text-[10px] text-amber-800 leading-relaxed">
+                    Verify the resident's name matches the code above. Ask for a valid ID to confirm identity.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <button
+              onClick={handleConfirm}
+              className="w-full bg-[#003366] text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
+              Confirm & Validate
+            </button>
+            <button
+              onClick={() => { setDecoded(null); setError(""); setManualCode(""); }}
+              className="w-full bg-white/10 text-white font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all"
+            >
+              Scan Another
+            </button>
           </div>
-        </div>
-
-        {/* Control buttons */}
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 flex gap-6">
-          <button className="w-14 h-14 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center text-white active:bg-white/30 transition-all">
-            <span className="material-symbols-outlined">flashlight_on</span>
-          </button>
-          <button
-            onClick={onSuccess}
-            className="w-14 h-14 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center text-white active:bg-white/30 transition-all"
-          >
-            <span className="material-symbols-outlined">image</span>
-          </button>
-        </div>
-
-        {/* Simulate scan button (demo) */}
-        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
-          <button
-            onClick={onSuccess}
-            className="bg-tertiary-fixed text-on-tertiary-fixed px-6 py-3 rounded-full font-headline font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-transform"
-          >
-            Simulate Scan
-          </button>
-        </div>
-
-        {/* Banig texture */}
-        <div
-          className="absolute inset-x-0 bottom-0 h-1/4 opacity-10 pointer-events-none z-30"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 2px 2px, white 1px, transparent 0)",
-            backgroundSize: "16px 16px",
-          }}
-        />
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { encodeQR } from "../utils/qrCodec";
 
 function formatTimestamp(iso) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -15,7 +16,9 @@ function formatTimestamp(iso) {
 export default function QRDisplay({ resident, onDone }) {
   const { firstName, lastName, plate, barangay, vehicleType, registeredAt } = resident;
   const fullName = `${firstName} ${lastName}`;
-  const qrData = JSON.stringify({ vehicleType, plate, firstName, lastName, barangay, registeredAt });
+
+  // New encoded format: JOHSMI46111.8560
+  const qrData = encodeQR(firstName, lastName, registeredAt);
 
   const svgRef = useRef(null);
 
@@ -35,7 +38,7 @@ export default function QRDisplay({ resident, onDone }) {
   return (
     <div className="flex flex-col h-dvh bg-primary-container overflow-hidden">
 
-      {/* ── Dark header ── */}
+      {/* Header */}
       <div className="shrink-0 px-5 pt-4 pb-4 text-center">
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className="material-symbols-outlined text-green-300"
@@ -57,7 +60,7 @@ export default function QRDisplay({ resident, onDone }) {
           <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full text-white text-xs font-bold tracking-wider">
             <span className="material-symbols-outlined text-tertiary-fixed"
               style={{ fontSize: "12px", fontVariationSettings: "'FILL' 1" }}>
-              {vehicleType === "motorcycle" ? "two_wheeler" : "directions_car"}
+              {vehicleType === "motorcycle" ? "two_wheeler" : vehicleType === "truck" ? "local_shipping" : "directions_car"}
             </span>
             {plate}
           </span>
@@ -68,11 +71,11 @@ export default function QRDisplay({ resident, onDone }) {
         </div>
       </div>
 
-      {/* ── White card ── */}
+      {/* White card */}
       <div className="flex-1 bg-background rounded-t-3xl flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col px-5 pt-5 pb-3 gap-4 min-h-0 overflow-y-auto">
 
-          {/* QR code — full width */}
+          {/* QR code */}
           <div ref={svgRef} className="bg-white rounded-2xl shadow-md p-5 w-full flex justify-center">
             <QRCodeSVG
               value={qrData}
@@ -85,7 +88,18 @@ export default function QRDisplay({ resident, onDone }) {
             />
           </div>
 
-          {/* 2×2 details grid */}
+          {/* Encoded string display */}
+          <div className="bg-surface-container-low rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="material-symbols-outlined text-outline shrink-0" style={{ fontSize: "16px" }}>
+              qr_code
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider">Encoded QR Data</p>
+              <p className="text-sm font-bold text-on-surface font-mono tracking-widest truncate">{qrData}</p>
+            </div>
+          </div>
+
+          {/* Details grid */}
           <div className="grid grid-cols-2 gap-2.5">
             <div className="bg-surface-container-low rounded-xl px-4 py-3">
               <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Full Name</p>
@@ -112,9 +126,6 @@ export default function QRDisplay({ resident, onDone }) {
               <p className="text-[9px] font-bold text-outline uppercase tracking-wider">Registered</p>
               <p className="text-xs font-medium text-on-surface">{formatTimestamp(registeredAt)}</p>
             </div>
-            <p className="text-[9px] text-outline shrink-0">
-              Ref: {plate}-{new Date(registeredAt).getTime().toString().slice(-6)}
-            </p>
           </div>
 
           {/* Tip */}
@@ -126,7 +137,7 @@ export default function QRDisplay({ resident, onDone }) {
           </div>
         </div>
 
-        {/* ── Buttons pinned to bottom ── */}
+        {/* Buttons */}
         <div className="shrink-0 px-5 pt-3 pb-6 bg-background border-t border-outline-variant/20 flex flex-col gap-2">
           <div className="flex gap-3">
             <button onClick={handleDownload}
