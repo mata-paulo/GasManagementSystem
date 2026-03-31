@@ -137,7 +137,7 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
                 </div>
               </div>
 
-              {/* QR Serial (from decoded QR) */}
+              {/* QR Serial */}
               {scannedResident && (
                 <div className="bg-surface-container-low p-4 rounded-xl flex items-center gap-3">
                   <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "18px" }}>qr_code</span>
