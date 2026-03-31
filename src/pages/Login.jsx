@@ -4,7 +4,7 @@ export default function Login({ onBack, onSuccess }) {
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
-    plate: "",
+    stationId: "",
   });
   const [error, setError] = useState("");
 
@@ -16,14 +16,14 @@ export default function Login({ onBack, onSuccess }) {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.plate.trim()) {
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.stationId.trim()) {
       setError("All fields are required.");
       return;
     }
 
     onSuccess({
       ...form,
-      plate: form.plate.toUpperCase(),
+      stationId: form.stationId.toUpperCase(),
       role: "station",
       loginAt: new Date().toISOString(),
     });
@@ -97,14 +97,14 @@ export default function Login({ onBack, onSuccess }) {
 
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-              Plate Number
+              Station ID
             </label>
             <input
               type="text"
-              name="plate"
-              value={form.plate}
+              name="stationId"
+              value={form.stationId}
               onChange={handleChange}
-              placeholder="e.g. ABC-1234"
+              placeholder="e.g. STN-001"
               className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 px-4 text-sm uppercase"
             />
           </div>

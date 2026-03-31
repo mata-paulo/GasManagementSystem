@@ -14,11 +14,11 @@ function formatTimestamp(iso) {
 }
 
 export default function QRDisplay({ resident, onDone }) {
-  const { firstName, lastName, plate, barangay, vehicleType, registeredAt } = resident;
+  const { firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt } = resident;
   const fullName = `${firstName} ${lastName}`;
 
   // New encoded format: JOHSMI46111.8560
-  const qrData = encodeQR(firstName, lastName, registeredAt);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
 
   const svgRef = useRef(null);
 
@@ -39,35 +39,41 @@ export default function QRDisplay({ resident, onDone }) {
     <div className="flex flex-col h-dvh bg-primary-container overflow-hidden">
 
       {/* Header */}
-      <div className="shrink-0 px-5 pt-4 pb-4 text-center">
+      <div className="shrink-0 px-5 py-[10%] text-center">
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className="material-symbols-outlined text-green-300"
-            style={{ fontSize: "20px", fontVariationSettings: "'FILL' 1" }}>
+            style={{ fontSize: "26px", fontVariationSettings: "'FILL' 1" }}>
             check_circle
           </span>
           <div className="text-left">
-            <h1 className="text-white font-headline font-bold text-base leading-none">Registration Successful</h1>
-            <p className="text-[9px] text-on-primary-container font-bold uppercase tracking-widest opacity-70">
+            <h1 className="text-white font-headline font-bold text-2xl leading-none">Registration Successful</h1>
+            <p className="text-[13px] text-on-primary-container font-bold uppercase tracking-widest opacity-70">
               Fuel Rationing System · Official Portal
             </p>
           </div>
         </div>
-        <p className="text-on-primary-container text-[9px] font-bold uppercase tracking-widest mb-1">
+        <p className="text-on-primary-container text-[13px] font-bold uppercase tracking-widest mb-1">
           Fuel Allocation QR Code
         </p>
-        <h2 className="font-headline font-black text-white text-xl leading-tight">{fullName}</h2>
-        <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
-          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full text-white text-xs font-bold tracking-wider">
+        <h2 className="font-headline font-black text-white text-3xl leading-tight">{fullName}</h2>
+        <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-bold tracking-wider">
             <span className="material-symbols-outlined text-tertiary-fixed"
-              style={{ fontSize: "12px", fontVariationSettings: "'FILL' 1" }}>
+              style={{ fontSize: "15px", fontVariationSettings: "'FILL' 1" }}>
               {vehicleType === "motorcycle" ? "two_wheeler" : vehicleType === "truck" ? "local_shipping" : "directions_car"}
             </span>
             {plate}
           </span>
-          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full text-white text-xs font-semibold">
-            <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontSize: "12px" }}>location_on</span>
+          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
+            <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontSize: "15px" }}>location_on</span>
             {barangay}
           </span>
+          {gasType && (
+            <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
+              <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: "15px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+              {gasType}
+            </span>
+          )}
         </div>
       </div>
 
@@ -88,17 +94,6 @@ export default function QRDisplay({ resident, onDone }) {
             />
           </div>
 
-          {/* Encoded string display */}
-          <div className="bg-surface-container-low rounded-xl px-4 py-3 flex items-center gap-3">
-            <span className="material-symbols-outlined text-outline shrink-0" style={{ fontSize: "16px" }}>
-              qr_code
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-bold text-outline uppercase tracking-wider">Encoded QR Data</p>
-              <p className="text-sm font-bold text-on-surface font-mono tracking-widest truncate">{qrData}</p>
-            </div>
-          </div>
-
           {/* Details grid */}
           <div className="grid grid-cols-2 gap-2.5">
             <div className="bg-surface-container-low rounded-xl px-4 py-3">
@@ -117,13 +112,14 @@ export default function QRDisplay({ resident, onDone }) {
               <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Barangay</p>
               <p className="text-sm font-bold text-on-surface leading-tight">{barangay}</p>
             </div>
-          </div>
-
-          {/* Timestamp */}
-          <div className="bg-surface-container-low rounded-xl px-4 py-3 flex items-center gap-3">
-            <span className="material-symbols-outlined text-outline shrink-0" style={{ fontSize: "16px" }}>schedule</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-bold text-outline uppercase tracking-wider">Registered</p>
+            {gasType && (
+              <div className="bg-surface-container-low rounded-xl px-4 py-3">
+                <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Gas Type</p>
+                <p className="text-sm font-bold text-on-surface">{gasType}</p>
+              </div>
+            )}
+            <div className="bg-surface-container-low rounded-xl px-4 py-3">
+              <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Registered</p>
               <p className="text-xs font-medium text-on-surface">{formatTimestamp(registeredAt)}</p>
             </div>
           </div>

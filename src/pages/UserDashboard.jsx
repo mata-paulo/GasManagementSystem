@@ -94,6 +94,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
     if (!mapPreviewRef.current || mapInstanceRef.current) return;
 
     const initMap = (lat, lon) => {
+      if (!mapPreviewRef.current) return;
       const map = new mapboxgl.Map({
         container: mapPreviewRef.current,
         style: "mapbox://styles/mapbox/streets-v12",

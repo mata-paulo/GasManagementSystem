@@ -1,14 +1,20 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import jsQR from "jsqr";
 import Header from "../components/Header";
 import { decodeQR, formatDecodedDate } from "../utils/qrCodec";
 
 export default function QRScanner({ onClose, onSuccess }) {
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const streamRef = useRef(null);
+
   const [decoded, setDecoded] = useState(null);
   const [error, setError] = useState("");
-  const [manualCode, setManualCode] = useState("");
-  const [mode, setMode] = useState("scan"); // "scan" | "manual"
+  const [mode, setMode] = useState("camera"); // "camera" | "upload"
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
 
   const processCode = (raw) => {
     const result = decodeQR(raw);
@@ -20,6 +26,96 @@ export default function QRScanner({ onClose, onSuccess }) {
     setDecoded(result);
     setError("");
     return true;
+  };
+
+  const stopCamera = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraReady(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    setCameraError("");
+    setCameraReady(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraReady(true);
+      }
+    } catch {
+      setCameraError("Camera access denied. Allow camera permission and try again.");
+    }
+  }, []);
+
+  // Scan loop
+  useEffect(() => {
+    if (!cameraReady || decoded) return;
+
+    const tick = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) {
+        animFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height);
+      if (result) {
+        stopCamera();
+        processCode(result.data);
+        return;
+      }
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [cameraReady, decoded, stopCamera]);
+
+  
+  useEffect(() => {
+    if (mode === "camera" && !decoded) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [mode]); 
+
+ 
+  useEffect(() => {
+    return () => stopCamera();
+  }, [stopCamera]);
+
+  const handleClose = () => {
+    stopCamera();
+    onClose();
+  };
+
+  const switchMode = (next) => {
+    stopCamera();
+    setMode(next);
+    setDecoded(null);
+    setError("");
+    setCameraError("");
   };
 
   const handleImageUpload = (e) => {
@@ -45,20 +141,17 @@ export default function QRScanner({ onClose, onSuccess }) {
       processCode(result.data);
     };
     img.src = url;
-    // reset input so same file can be re-uploaded
     e.target.value = "";
-  };
-
-  const handleManualDecode = () => {
-    if (!manualCode.trim()) {
-      setError("Please enter a code.");
-      return;
-    }
-    processCode(manualCode.trim().toUpperCase());
   };
 
   const handleConfirm = () => {
     if (decoded) onSuccess(decoded);
+  };
+
+  const handleScanAnother = () => {
+    setDecoded(null);
+    setError("");
+    if (mode === "camera") startCamera();
   };
 
   return (
@@ -66,35 +159,83 @@ export default function QRScanner({ onClose, onSuccess }) {
 
       {/* Header */}
       <div className="relative z-50">
-        <Header onClose={onClose} />
+        <Header onClose={handleClose} />
       </div>
 
       {/* Mode tabs */}
       <div className="flex gap-1 mx-4 mt-2 bg-white/10 rounded-xl p-1 shrink-0">
         <button
-          onClick={() => { setMode("scan"); setDecoded(null); setError(""); }}
+          onClick={() => switchMode("camera")}
           className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-            mode === "scan" ? "bg-white text-[#003366]" : "text-white/60"
+            mode === "camera" ? "bg-white text-[#003366]" : "text-white/60"
           }`}
         >
-          Upload QR Image
+          Camera
         </button>
         <button
-          onClick={() => { setMode("manual"); setDecoded(null); setError(""); }}
+          onClick={() => switchMode("upload")}
           className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-            mode === "manual" ? "bg-white text-[#003366]" : "text-white/60"
+            mode === "upload" ? "bg-white text-[#003366]" : "text-white/60"
           }`}
         >
-          Enter Code Manually
+          Upload Image
         </button>
       </div>
 
       {/* Main area */}
       <div className="flex-1 flex flex-col px-4 pt-4 pb-4 gap-4 overflow-y-auto">
 
-        {mode === "scan" && !decoded && (
+        {/* Camera mode */}
+        {mode === "camera" && !decoded && (
           <>
-            {/* Upload zone */}
+            <div className="relative rounded-2xl overflow-hidden bg-black aspect-square flex items-center justify-center">
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+              />
+              {/* Viewfinder overlay */}
+              {cameraReady && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-48 h-48 relative">
+                    <span className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
+                    <span className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
+                    <span className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
+                    <span className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
+                  </div>
+                </div>
+              )}
+              {!cameraReady && !cameraError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/60">
+                  <span className="material-symbols-outlined text-4xl animate-pulse">videocam</span>
+                  <p className="text-xs">Starting camera…</p>
+                </div>
+              )}
+              {cameraError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                  <span className="material-symbols-outlined text-4xl text-red-400">no_photography</span>
+                  <p className="text-xs text-white/70">{cameraError}</p>
+                  <button
+                    onClick={startCamera}
+                    className="bg-white text-[#003366] text-xs font-bold px-4 py-2 rounded-lg active:scale-95 transition-all"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* Hidden canvas for frame processing */}
+            <canvas ref={canvasRef} className="hidden" />
+            {cameraReady && (
+              <p className="text-center text-white/40 text-xs">Point camera at a QR code to scan automatically</p>
+            )}
+          </>
+        )}
+
+        {/* Upload mode */}
+        {mode === "upload" && !decoded && (
+          <>
             <button
               onClick={() => fileInputRef.current?.click()}
               className="flex flex-col items-center justify-center gap-4 border-2 border-dashed border-white/30 rounded-2xl py-12 text-white/70 hover:border-white/60 hover:text-white transition-all active:scale-95"
@@ -116,7 +257,6 @@ export default function QRScanner({ onClose, onSuccess }) {
               className="hidden"
             />
 
-            {/* Format hint */}
             <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
               <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Expected QR Format</p>
               <p className="text-white font-mono text-sm tracking-widest">JOHSMI46111.8560</p>
@@ -125,39 +265,6 @@ export default function QRScanner({ onClose, onSuccess }) {
               </p>
             </div>
           </>
-        )}
-
-        {mode === "manual" && !decoded && (
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider block mb-1.5">
-                Enter Encoded QR Code
-              </label>
-              <input
-                type="text"
-                value={manualCode}
-                onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                placeholder="e.g. JOHSMI46111.8560"
-                className="w-full bg-white/10 border border-white/20 rounded-xl py-3.5 px-4 text-white font-mono text-sm tracking-widest placeholder:text-white/30 focus:outline-none focus:border-white/50"
-              />
-            </div>
-            <button
-              onClick={handleManualDecode}
-              className="w-full bg-white text-[#003366] font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>search</span>
-              Decode
-            </button>
-
-            {/* Format hint */}
-            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-              <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Format</p>
-              <p className="text-white/70 text-[11px] leading-relaxed">
-                3 letters of first name + 3 letters of last name + Excel serial timestamp
-              </p>
-              <p className="text-white font-mono text-xs tracking-widest mt-1">JOHSMI46111.8560</p>
-            </div>
-          </div>
         )}
 
         {/* Error */}
@@ -171,16 +278,13 @@ export default function QRScanner({ onClose, onSuccess }) {
         {/* Decoded result */}
         {decoded && (
           <div className="space-y-3">
-            {/* Success badge */}
             <div className="flex items-center gap-2 bg-green-900/40 border border-green-500/30 px-4 py-3 rounded-xl text-green-300 text-sm">
               <span className="material-symbols-outlined text-base shrink-0"
                 style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
               QR code decoded successfully
             </div>
 
-            {/* Decoded card */}
             <div className="bg-white rounded-2xl overflow-hidden shadow-xl">
-              {/* Card header */}
               <div className="bg-[#003366] px-5 py-4">
                 <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">Decoded QR Data</p>
                 <p className="font-mono font-bold text-white text-lg tracking-widest mt-0.5">
@@ -189,7 +293,6 @@ export default function QRScanner({ onClose, onSuccess }) {
               </div>
 
               <div className="px-5 py-4 space-y-4">
-                {/* Name codes */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 rounded-xl px-4 py-3">
                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">First Name Code</p>
@@ -203,14 +306,22 @@ export default function QRScanner({ onClose, onSuccess }) {
                   </div>
                 </div>
 
-                {/* Timestamp */}
                 <div className="bg-gray-50 rounded-xl px-4 py-3">
                   <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Registered At</p>
                   <p className="font-bold text-gray-800 text-sm">{formatDecodedDate(decoded.date)}</p>
                   <p className="text-[9px] text-gray-400 mt-0.5">Serial: {decoded.serial}</p>
                 </div>
 
-                {/* Verify reminder */}
+                {decoded.gasType && (
+                  <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+                    <div>
+                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Gas Type</p>
+                      <p className="font-bold text-gray-800 text-sm">{decoded.gasType}</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-amber-50 border-l-4 border-amber-400 px-3 py-2.5 rounded-r-xl flex gap-2 items-start">
                   <span className="material-symbols-outlined text-amber-500 shrink-0" style={{ fontSize: "14px" }}>id_card</span>
                   <p className="text-[10px] text-amber-800 leading-relaxed">
@@ -220,7 +331,6 @@ export default function QRScanner({ onClose, onSuccess }) {
               </div>
             </div>
 
-            {/* Action buttons */}
             <button
               onClick={handleConfirm}
               className="w-full bg-[#003366] text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -229,7 +339,7 @@ export default function QRScanner({ onClose, onSuccess }) {
               Confirm & Validate
             </button>
             <button
-              onClick={() => { setDecoded(null); setError(""); setManualCode(""); }}
+              onClick={handleScanAnother}
               className="w-full bg-white/10 text-white font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all"
             >
               Scan Another
