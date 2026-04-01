@@ -1,26 +1,32 @@
 import { useState } from "react";
-import { loginAdmin } from "../services/authService";
+import { login as loginAdmin } from "../services/authService";
+import type { AuthUser } from "../services/authService";
 
-export default function AdminLogin({ onBack, onSuccess }) {
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+interface AdminLoginProps {
+  onBack: () => void;
+  onSuccess: (user: AuthUser, token: string | undefined) => void;
+}
 
-  const handleChange = (e) => {
+export default function AdminLogin({ onBack, onSuccess }: AdminLoginProps) {
+  const [form, setForm] = useState<{ email: string; password: string }>({ email: "", password: "" });
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setError("");
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     const result = await loginAdmin(form);
     setLoading(false);
     if (!result.success) {
-      setError(result.error);
+      setError(result.error ?? "Login failed.");
       return;
     }
-    onSuccess(result.user, result.token);
+    onSuccess(result.user!, result.token);
   };
 
   return (

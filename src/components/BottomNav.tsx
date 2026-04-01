@@ -1,10 +1,22 @@
-const OFFICER_TABS = [
+interface TabItem {
+  id: string;
+  icon: string;
+  label: string;
+}
+
+const OFFICER_TABS: TabItem[] = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
   { id: "history", icon: "receipt_long", label: "Scan History" },
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-export default function BottomNav({ active, onChange, tabs = OFFICER_TABS }) {
+interface BottomNavProps {
+  active: string;
+  onChange: (tab: string) => void;
+  tabs?: TabItem[];
+}
+
+export default function BottomNav({ active, onChange, tabs = OFFICER_TABS }: BottomNavProps) {
   return (
     <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-8 pt-4 bg-white/80 backdrop-blur-xl shadow-[0_-4px_24px_rgba(0,30,64,0.06)] rounded-t-3xl">
       {tabs.map((tab) => {

@@ -1,5 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
+import type { Role } from "../services/authService";
+
+interface RoleGuardProps {
+  requiredRole: Role;
+  onDeny: () => void;
+  children: ReactNode;
+}
 
 /**
  * RoleGuard — frontend route protection.
@@ -10,7 +17,7 @@ import { useAuth } from "../context/AuthContext";
  *
  * This mirrors backend middleware that rejects requests from the wrong role.
  */
-export default function RoleGuard({ requiredRole, onDeny, children }) {
+export default function RoleGuard({ requiredRole, onDeny, children }: RoleGuardProps) {
   const { auth } = useAuth();
   const authorized = auth.isAuthenticated && auth.role === requiredRole;
 

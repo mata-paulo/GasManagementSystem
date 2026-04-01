@@ -1,4 +1,10 @@
-export default function StationAuthLanding({ onBack, onLogin, onRegister }) {
+interface StationAuthLandingProps {
+  onBack: () => void;
+  onLogin: () => void;
+  onRegister: () => void;
+}
+
+export default function StationAuthLanding({ onBack, onLogin, onRegister }: StationAuthLandingProps) {
   return (
     <div className="flex flex-col min-h-dvh bg-primary-container">
       <div

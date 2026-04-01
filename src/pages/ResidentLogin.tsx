@@ -1,18 +1,24 @@
 import { useState } from "react";
 import { login as authLogin } from "../services/authService";
+import type { AuthUser, Role } from "../services/authService";
 
-export default function ResidentLogin({ onBack, onSuccess }) {
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+interface ResidentLoginProps {
+  onBack: () => void;
+  onSuccess: (user: AuthUser, token: string | undefined, role: Role | undefined) => void;
+}
 
-  const handleChange = (e) => {
+export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps) {
+  const [form, setForm] = useState<{ email: string; password: string }>({ email: "", password: "" });
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setError("");
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     if (!form.email.trim() || !form.password.trim()) {
       setError("All fields are required.");
@@ -22,10 +28,10 @@ export default function ResidentLogin({ onBack, onSuccess }) {
     const result = await authLogin({ email: form.email.trim(), password: form.password });
     setLoading(false);
     if (!result.success) {
-      setError(result.error);
+      setError(result.error ?? "Login failed.");
       return;
     }
-    onSuccess(result.user, result.token, result.role);
+    onSuccess(result.user!, result.token, result.role);
   };
 
   return (
@@ -134,7 +140,7 @@ export default function ResidentLogin({ onBack, onSuccess }) {
 
           <button
             type="button"
-            onClick={() => onSuccess({ email: "google-user", role: "resident", loginAt: new Date().toISOString() }, null, "resident")}
+            onClick={() => onSuccess({ email: "google-user", role: "resident", loginAt: new Date().toISOString() }, undefined, "resident")}
             className="w-full flex items-center justify-center gap-3 bg-white border border-outline-variant rounded-xl py-3.5 shadow-sm active:scale-95 transition-all"
           >
             <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">

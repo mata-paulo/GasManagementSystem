@@ -137,13 +137,13 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
                 </div>
               </div>
 
-              {/* Gas Type + QR Serial */}
+              {/* Fuel Type + QR Serial */}
               {scannedResident && (
                 <div className="grid grid-cols-2 gap-3">
                   {scannedResident.gasType && (
                     <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
                       <span className="material-symbols-outlined text-[#705d00]" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
-                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Gas Type</p>
+                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Fuel Type</p>
                       <p className="font-headline font-bold text-sm text-on-surface">{scannedResident.gasType}</p>
                     </div>
                   )}

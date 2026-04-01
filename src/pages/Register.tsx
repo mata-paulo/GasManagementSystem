@@ -196,7 +196,7 @@ function GasTypePicker({ value, onChange }) {
           local_gas_station
         </span>
         <span className={value ? "text-on-surface" : "text-outline"}>
-          {value || "Select gas type…"}
+          {value || "Select fuel type…"}
         </span>
         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline text-xl pointer-events-none">
           expand_more
@@ -213,7 +213,7 @@ function GasTypePicker({ value, onChange }) {
 
             <div className="px-4 pb-3 shrink-0 border-b border-gray-100">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-[#003366] text-base">Select Gas Type</h3>
+                <h3 className="font-bold text-[#003366] text-base">Select Fuel Type</h3>
                 <button
                   type="button"
                   onClick={handleClose}
@@ -229,7 +229,7 @@ function GasTypePicker({ value, onChange }) {
                 </span>
                 <input
                   type="text"
-                  placeholder="Search gas type..."
+                  placeholder="Search fuel type..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
@@ -255,7 +255,7 @@ function GasTypePicker({ value, onChange }) {
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                   <span className="material-symbols-outlined text-4xl mb-2">local_gas_station</span>
-                  <p className="text-sm">No gas type found</p>
+                  <p className="text-sm">No fuel type found</p>
                 </div>
               ) : (
                 filtered.map((group) => (
@@ -524,7 +524,7 @@ export default function Register({ onBack, onSuccess }) {
               <div className="flex justify-between"><span className="text-gray-500">Name</span><span className="font-medium text-gray-800">{form.firstName} {form.lastName}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Vehicle</span><span className="font-medium text-gray-800 capitalize">{vehicleType}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Plate No.</span><span className="font-medium text-gray-800 uppercase">{form.plate}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Gas Type</span><span className="font-medium text-gray-800">{gasType}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Fuel Type</span><span className="font-medium text-gray-800">{gasType}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Barangay</span><span className="font-medium text-gray-800">{form.barangay}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium text-gray-800 truncate max-w-[180px]">{form.email}</span></div>
             </div>
@@ -632,7 +632,7 @@ export default function Register({ onBack, onSuccess }) {
 
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-              Gas Type
+              Fuel Type
             </label>
             <GasTypePicker
               value={gasType}

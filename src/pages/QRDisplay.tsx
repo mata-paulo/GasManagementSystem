@@ -114,7 +114,7 @@ export default function QRDisplay({ resident, onDone }) {
             </div>
             {gasType && (
               <div className="bg-surface-container-low rounded-xl px-4 py-3">
-                <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Gas Type</p>
+                <p className="text-[9px] font-bold text-outline uppercase tracking-wider mb-0.5">Fuel Type</p>
                 <p className="text-sm font-bold text-on-surface">{gasType}</p>
               </div>
             )}

@@ -1,20 +1,26 @@
 import { useState } from "react";
 import { login as authLogin } from "../services/authService";
+import type { AuthUser, Role } from "../services/authService";
 
-export default function Login({ onBack, onSuccess }) {
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [forgotView, setForgotView] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
-  const [resetSent, setResetSent] = useState(false);
+interface LoginProps {
+  onBack: () => void;
+  onSuccess: (user: AuthUser, token: string | undefined, role: Role | undefined) => void;
+}
 
-  const handleChange = (e) => {
+export default function Login({ onBack, onSuccess }: LoginProps) {
+  const [form, setForm] = useState<{ email: string; password: string }>({ email: "", password: "" });
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+  const [forgotView, setForgotView] = useState<boolean>(false);
+  const [resetEmail, setResetEmail] = useState<string>("");
+  const [resetSent, setResetSent] = useState<boolean>(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setError("");
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     if (!form.email.trim() || !form.password.trim()) {
       setError("All fields are required.");
@@ -24,13 +30,13 @@ export default function Login({ onBack, onSuccess }) {
     const result = await authLogin({ email: form.email.trim(), password: form.password });
     setLoading(false);
     if (!result.success) {
-      setError(result.error);
+      setError(result.error ?? "Login failed.");
       return;
     }
-    onSuccess(result.user, result.token, result.role);
+    onSuccess(result.user!, result.token, result.role);
   };
 
-  const handleResetSubmit = (e) => {
+  const handleResetSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (!resetEmail.trim()) {
       setError("Please enter your email address.");
@@ -40,7 +46,7 @@ export default function Login({ onBack, onSuccess }) {
     setError("");
   };
 
-  const handleBackToLogin = () => {
+  const handleBackToLogin = (): void => {
     setForgotView(false);
     setResetSent(false);
     setResetEmail("");
@@ -191,7 +197,7 @@ export default function Login({ onBack, onSuccess }) {
                   <input
                     type="email"
                     value={resetEmail}
-                    onChange={(e) => { setResetEmail(e.target.value); setError(""); }}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setResetEmail(e.target.value); setError(""); }}
                     placeholder="e.g. juan@gmail.com"
                     className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 px-4 text-sm"
                   />

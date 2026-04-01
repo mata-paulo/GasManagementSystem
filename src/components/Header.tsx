@@ -1,4 +1,8 @@
-export default function Header({ onClose }) {
+interface HeaderProps {
+  onClose?: () => void;
+}
+
+export default function Header({ onClose }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 bg-slate-100/80 backdrop-blur-md shadow-sm flex justify-between items-center w-full px-6 py-4">
       <div className="flex items-center gap-3">

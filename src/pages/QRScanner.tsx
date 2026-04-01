@@ -316,7 +316,7 @@ export default function QRScanner({ onClose, onSuccess }) {
                   <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-3">
                     <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
                     <div>
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Gas Type</p>
+                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Fuel Type</p>
                       <p className="font-bold text-gray-800 text-sm">{decoded.gasType}</p>
                     </div>
                   </div>
