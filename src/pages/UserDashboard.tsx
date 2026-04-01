@@ -15,6 +15,45 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
+const ANNOUNCEMENTS = [
+  {
+    tag: "Fuel Rationing System",
+    title: "Ration smart and let our app manage the rest!",
+    subtitle: "Participating stations include Shell, Petron, and Caltex locations across Cebu City.",
+    cta: "View My Allocation",
+    bgClass: "bg-gradient-to-br from-[#003366] to-[#0a4f8f]",
+    decorIcon: "local_gas_station",
+    badgeIcon: "verified_user",
+    badgeIconClass: "text-[#f9c23c]",
+    tagClass: "text-[#f9c23c]",
+    ctaClass: "bg-[#f9c23c] text-[#003366]",
+  },
+  {
+    tag: "Weekly Reminder",
+    title: "Use your allocation before it resets every Monday!",
+    subtitle: "Unused fuel quota does not carry over. Claim yours at any accredited station.",
+    cta: "Find Nearby Stations",
+    bgClass: "bg-gradient-to-br from-[#1b5e20] to-[#2e7d32]",
+    decorIcon: "event_repeat",
+    badgeIcon: "notifications_active",
+    badgeIconClass: "text-[#a5d6a7]",
+    tagClass: "text-[#a5d6a7]",
+    ctaClass: "bg-[#a5d6a7] text-[#003366]",
+  },
+  {
+    tag: "How It Works",
+    title: "Show your QR code and get your fuel allocation fast!",
+    subtitle: "Present your QR code and valid ID at the station counter before fueling.",
+    cta: "View My QR Code",
+    bgClass: "bg-gradient-to-br from-[#4a148c] to-[#6a1f9a]",
+    decorIcon: "qr_code_2",
+    badgeIcon: "info",
+    badgeIconClass: "text-[#ce93d8]",
+    tagClass: "text-[#ce93d8]",
+    ctaClass: "bg-[#ce93d8] text-[#003366]",
+  },
+];
+
 export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR }) {
   const mapPreviewRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -33,45 +72,45 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const remainingLiters = Math.max(weeklyAllocation - usedLiters, 0);
   const usagePercent = Math.min((usedLiters / weeklyAllocation) * 100, 100);
   const pctLeft = Math.round((remainingLiters / weeklyAllocation) * 100);
-  const statusKey = pctLeft > 50 ? "good" : pctLeft > 20 ? "low" : "empty";
+
+  const statusConfig =
+    pctLeft > 50
+      ? {
+          section: "bg-[#e8f5e9] border-[#2e7d32]/25",
+          iconClass: "text-[#2e7d32] icon-fill text-[32px]",
+          valueClass: "text-4xl font-black font-headline leading-none text-[#2e7d32]",
+          labelClass: "text-base font-bold mt-1 text-[#2e7d32]",
+          circleClass: "border-[#2e7d32]",
+          pctClass: "text-lg font-black leading-none text-[#2e7d32]",
+          barClass: "bg-[#2e7d32]",
+          rowClass: "flex justify-between mt-2 text-sm font-bold text-[#2e7d32]",
+        }
+      : pctLeft > 20
+      ? {
+          section: "bg-[#fff3e0] border-[#f57c00]/25",
+          iconClass: "text-[#f57c00] icon-fill text-[32px]",
+          valueClass: "text-4xl font-black font-headline leading-none text-[#f57c00]",
+          labelClass: "text-base font-bold mt-1 text-[#e65100]",
+          circleClass: "border-[#f57c00]",
+          pctClass: "text-lg font-black leading-none text-[#f57c00]",
+          barClass: "bg-[#f57c00]",
+          rowClass: "flex justify-between mt-2 text-sm font-bold text-[#f57c00]",
+        }
+      : {
+          section: "bg-[#ffebee] border-[#c62828]/25",
+          iconClass: "text-[#c62828] icon-fill text-[32px]",
+          valueClass: "text-4xl font-black font-headline leading-none text-[#c62828]",
+          labelClass: "text-base font-bold mt-1 text-[#c62828]",
+          circleClass: "border-[#c62828]",
+          pctClass: "text-lg font-black leading-none text-[#c62828]",
+          barClass: "bg-[#c62828]",
+          rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
+        };
 
   const recentTransactions = [
     { id: 1, station: "Shell - Fuente Osmeña", date: "March 30, 2026", liters: 4.0, fuelType: "Regular" },
     { id: 2, station: "Petron - Jones", date: "March 27, 2026", liters: 2.5, fuelType: "Regular" },
     { id: 3, station: "Caltex - Mango", date: "March 24, 2026", liters: 1.5, fuelType: "Diesel" },
-  ];
-
-  const announcements = [
-    {
-      tag: "Fuel Rationing System",
-      title: "Ration smart and let our app manage the rest!",
-      subtitle: "Participating stations include Shell, Petron, and Caltex locations across Cebu City.",
-      cta: "View My Allocation",
-      bg: "linear-gradient(135deg, #003366 0%, #0a4f8f 100%)",
-      decorIcon: "local_gas_station",
-      badgeIcon: "verified_user",
-      badgeColor: "#f9c23c",
-    },
-    {
-      tag: "Weekly Reminder",
-      title: "Use your allocation before it resets every Monday!",
-      subtitle: "Unused fuel quota does not carry over. Claim yours at any accredited station.",
-      cta: "Find Nearby Stations",
-      bg: "linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%)",
-      decorIcon: "event_repeat",
-      badgeIcon: "notifications_active",
-      badgeColor: "#a5d6a7",
-    },
-    {
-      tag: "How It Works",
-      title: "Show your QR code and get your fuel allocation fast!",
-      subtitle: "Present your QR code and valid ID at the station counter before fueling.",
-      cta: "View My QR Code",
-      bg: "linear-gradient(135deg, #4a148c 0%, #6a1f9a 100%)",
-      decorIcon: "qr_code_2",
-      badgeIcon: "info",
-      badgeColor: "#ce93d8",
-    },
   ];
 
   const touchStartX = useRef(null);
@@ -81,7 +120,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40) {
       setAnnouncementIdx((i) =>
-        diff > 0 ? (i + 1) % announcements.length : (i - 1 + announcements.length) % announcements.length
+        diff > 0 ? (i + 1) % ANNOUNCEMENTS.length : (i - 1 + ANNOUNCEMENTS.length) % ANNOUNCEMENTS.length
       );
     }
     touchStartX.current = null;
@@ -119,6 +158,8 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
     return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
   }, []);
 
+  const ann = ANNOUNCEMENTS[announcementIdx];
+
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       <main className="flex-1 pb-44 max-w-2xl mx-auto w-full">
@@ -134,7 +175,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           </div>
           <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
             <span className="material-symbols-outlined text-yellow-400 icon-fill text-[18px]">local_gas_station</span>
-            <span className="text-[9px] font-black text-white uppercase tracking-wider">Fuel Rationing</span>
+            <span className="text-[9px] font-black text-white uppercase tracking-wider">AGAS</span>
           </div>
         </div>
 
@@ -167,45 +208,42 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Allocation — accessible, high contrast */}
-          <section className={`rounded-2xl p-5 shadow-sm border alloc-section-${statusKey}`}>
+          {/* Allocation */}
+          <section className={`rounded-2xl p-5 shadow-sm border ${statusConfig.section}`}>
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
                   Fuel Allocation
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`material-symbols-outlined icon-fill text-[32px] alloc-bar-${statusKey}`}>
+                  <span className={`material-symbols-outlined ${statusConfig.iconClass}`}>
                     local_gas_station
                   </span>
-                  <p className={`text-4xl font-black font-headline leading-none alloc-bar-${statusKey}`}>
+                  <p className={statusConfig.valueClass}>
                     {remainingLiters.toFixed(1)}<span className="text-xl ml-1 font-normal">Liters</span>
                   </p>
                 </div>
-                <p className={`text-base font-bold mt-1 alloc-text-${statusKey}`}>
-                  Remaining
-                </p>
+                <p className={statusConfig.labelClass}>Remaining</p>
               </div>
-              <div className={`w-16 h-16 rounded-full flex flex-col items-center justify-center border-4 shrink-0 bg-white alloc-circle-${statusKey}`}>
-                <span className={`text-lg font-black leading-none alloc-bar-${statusKey}`}>{pctLeft}%</span>
+              <div className={`w-16 h-16 rounded-full flex flex-col items-center justify-center border-4 bg-white shrink-0 ${statusConfig.circleClass}`}>
+                <span className={statusConfig.pctClass}>{pctLeft}%</span>
                 <span className="text-[8px] font-bold text-slate-400 uppercase">Left</span>
               </div>
             </div>
 
-            {/* Large progress bar */}
+            {/* Progress bar — width is a computed percentage, must use style */}
             <div className="h-5 w-full rounded-full bg-white/70 overflow-hidden shadow-inner">
               <div
-                className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 alloc-fill-${statusKey}`}
-                ref={(el) => { if (el) el.style.width = `${usagePercent}%`; }}
+                className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 ${statusConfig.barClass}`}
+                style={{ width: `${usagePercent}%` }}
               >
                 {usagePercent > 20 && (
                   <span className="text-[9px] font-black text-white">{usedLiters}L used</span>
                 )}
               </div>
             </div>
-            <div className={`flex justify-between mt-2 text-sm font-bold alloc-bar-${statusKey}`}>
-              <span>0 L</span>
-              <span>Total: {weeklyAllocation} L / week</span>
+            <div className={statusConfig.rowClass}>
+              <span className="ml-auto">Total: {weeklyAllocation} L / week</span>
             </div>
           </section>
 
@@ -214,6 +252,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             <div ref={mapPreviewRef} className="w-full h-full" />
             <button
               onClick={() => onTabChange("map")}
+              aria-label="View full map"
               className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-all"
             >
               <span className="material-symbols-outlined text-[14px]">open_in_full</span>
@@ -259,58 +298,51 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               Announcements
             </h3>
 
-            {/* Banner card — FuelBuddy style */}
             <div
-              className={`rounded-2xl overflow-hidden select-none relative min-h-[170px] ann-bg-${announcementIdx}`}
+              className={`rounded-2xl overflow-hidden select-none relative min-h-[170px] ${ann.bgClass}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Decorative large icon background */}
-              <span
-                className="material-symbols-outlined absolute -right-4 -bottom-4 opacity-10 pointer-events-none icon-fill text-[140px] text-white"
-              >
-                {announcements[announcementIdx].decorIcon}
+              {/* Decorative background icon */}
+              <span className="material-symbols-outlined absolute -right-4 -bottom-4 opacity-10 pointer-events-none icon-fill text-[140px] text-white">
+                {ann.decorIcon}
               </span>
 
               <div className="relative z-10 p-5 flex flex-col gap-3">
                 {/* Tag row */}
                 <div className="flex items-center gap-2">
-                  <span className={`material-symbols-outlined icon-fill text-[16px] ann-badge-${announcementIdx}`}>
-                    {announcements[announcementIdx].badgeIcon}
+                  <span className={`material-symbols-outlined icon-fill text-[16px] ${ann.badgeIconClass}`}>
+                    {ann.badgeIcon}
                   </span>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ann-badge-${announcementIdx}`}>
-                    {announcements[announcementIdx].tag}
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${ann.tagClass}`}>
+                    {ann.tag}
                   </span>
                 </div>
 
                 {/* Headline */}
                 <p className="text-white font-headline font-black text-lg leading-snug">
-                  {announcements[announcementIdx].title}
+                  {ann.title}
                 </p>
 
                 {/* Subtitle */}
                 <p className="text-white/65 text-[11px] leading-relaxed">
-                  {announcements[announcementIdx].subtitle}
+                  {ann.subtitle}
                 </p>
 
-                {/* CTA button + dots */}
+                {/* CTA + dots */}
                 <div className="flex items-center justify-between mt-1">
-                  <button
-                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 ann-cta-${announcementIdx}`}
-                  >
-                    {announcements[announcementIdx].cta}
+                  <button className={`px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 ${ann.ctaClass}`}>
+                    {ann.cta}
                   </button>
 
-                  <div className="flex gap-1.5">
-                    {announcements.map((_, i) => (
+                  <div className="flex gap-1.5 items-center">
+                    {ANNOUNCEMENTS.map((_, i) => (
                       <button
                         key={i}
                         onClick={() => setAnnouncementIdx(i)}
                         aria-label={`Go to announcement ${i + 1}`}
-                        className={`rounded-full transition-all duration-300 h-[6px] ${
-                          i === announcementIdx
-                            ? "w-[20px] bg-white"
-                            : "w-[6px] bg-white/35"
+                        className={`rounded-full transition-all duration-300 h-1.5 ${
+                          i === announcementIdx ? "w-5 bg-white" : "w-1.5 bg-white/35"
                         }`}
                       />
                     ))}
@@ -322,11 +354,11 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         </div>
       </main>
 
-      {/* Floating QR button — sits above BottomNav */}
+      {/* Floating QR button */}
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
           onClick={onShowQR}
-          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full active:scale-95 transition-all border-2 border-white/20 shadow-[0_8px_32px_rgba(0,51,102,0.45)]"
+          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
         >
           <span className="material-symbols-outlined icon-fill">qr_code</span>
           View My QR Code

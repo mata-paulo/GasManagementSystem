@@ -104,7 +104,9 @@ export default function App() {
   // ─── Register handlers ─────────────────────────────────────────────────────
   const handleResidentRegisterSuccess = (residentData) => {
     setResident(residentData);
-    setScreen("qr-display");
+    login(residentData, "resident", undefined);
+    setScreen("user-dashboard");
+    setActiveTab("dashboard");
   };
 
   const handleStationRegisterSuccess = (stationData) => {
