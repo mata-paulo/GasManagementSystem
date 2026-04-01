@@ -8,21 +8,23 @@ function namePart(name) {
   return clean.slice(0, 3).padEnd(3, "X");
 }
 
-export function encodeQR(firstName, lastName, isoTimestamp) {
+export function encodeQR(firstName, lastName, isoTimestamp, gasType) {
   const fn = namePart(firstName);
   const ln = namePart(lastName);
   const serial = (new Date(isoTimestamp).getTime() - EXCEL_EPOCH) / 86400000;
-  return `${fn}${ln}${serial.toFixed(4)}`;
+  const base = `${fn}${ln}${serial.toFixed(4)}`;
+  return gasType ? `${base}|${gasType}` : base;
 }
 
 export function decodeQR(encoded) {
-  const match = encoded.trim().match(/^([A-Z]{6})(\d+\.\d+)$/);
+  const [base, gasType] = encoded.trim().split("|");
+  const match = base.match(/^([A-Z]{6})(\d+\.\d+)$/);
   if (!match) return null;
   const firstCode = match[1].slice(0, 3);
   const lastCode = match[1].slice(3, 6);
   const serial = parseFloat(match[2]);
   const date = new Date(EXCEL_EPOCH + serial * 86400000);
-  return { firstCode, lastCode, serial: match[2], date };
+  return { firstCode, lastCode, serial: match[2], date, gasType: gasType || null };
 }
 
 export function formatDecodedDate(date) {
