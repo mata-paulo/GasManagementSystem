@@ -20,7 +20,7 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-export default function Settings({ officer, activeTab, onTabChange, onLogout, tabs }) {
+export default function Settings({ officer, activeTab, onTabChange, onLogout, tabs = USER_TABS }) {
   const name = officer
     ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim()
     : "Station Officer";
@@ -29,7 +29,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
     if (!acc[item.section]) acc[item.section] = [];
     acc[item.section].push(item);
     return acc;
-  }, {});
+  }, {} as Record<string, typeof menuItems>);
 
   const sectionLabels = { main: "Account", support: "Support" };
 
@@ -41,7 +41,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
         <div className="bg-white mx-4 mt-5 mb-1 rounded-2xl px-5 py-4 shadow-sm border border-outline-variant/10">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full border-2 border-[#2e7d32] flex items-center justify-center shrink-0 bg-white shadow-sm">
-              <span className="material-symbols-outlined text-[#2e7d32]" style={{ fontSize: "28px" }}>
+              <span className="material-symbols-outlined text-[#2e7d32] text-[28px]">
                 manage_accounts
               </span>
             </div>
@@ -70,16 +70,13 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
                     i < items.length - 1 ? "border-b border-slate-100" : ""
                   }`}
                 >
-                  <span
-                    className="material-symbols-outlined text-[#003366]"
-                    style={{ fontSize: "22px", fontVariationSettings: "'FILL' 0" }}
-                  >
+                  <span className="material-symbols-outlined text-[#003366] text-[22px] icon-outline">
                     {item.icon}
                   </span>
                   <span className="flex-1 text-sm font-medium text-slate-800 text-left">
                     {item.label}
                   </span>
-                  <span className="material-symbols-outlined text-slate-300" style={{ fontSize: "20px" }}>
+                  <span className="material-symbols-outlined text-slate-300 text-[20px]">
                     chevron_right
                   </span>
                 </button>
@@ -91,13 +88,13 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
         {/* Legal + Version + Sign out */}
         <div className="mt-5 mx-4 bg-white rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10">
           <button className="w-full flex items-center gap-4 px-5 py-4 border-b border-slate-100 active:bg-slate-50 transition-colors">
-            <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "22px" }}>gavel</span>
+            <span className="material-symbols-outlined text-[#003366] text-[22px]">gavel</span>
             <span className="flex-1 text-sm font-medium text-slate-800 text-left">Legal</span>
-            <span className="material-symbols-outlined text-slate-300" style={{ fontSize: "20px" }}>chevron_right</span>
+            <span className="material-symbols-outlined text-slate-300 text-[20px]">chevron_right</span>
           </button>
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-4">
-              <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "22px" }}>smartphone</span>
+              <span className="material-symbols-outlined text-[#003366] text-[22px]">smartphone</span>
               <span className="text-sm font-medium text-slate-800">Software Version</span>
             </div>
             <span className="text-sm font-bold text-slate-400">{APP_VERSION}</span>
@@ -106,7 +103,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
             onClick={onLogout}
             className="w-full flex items-center gap-4 px-5 py-4 active:bg-red-50 transition-colors"
           >
-            <span className="material-symbols-outlined text-red-500" style={{ fontSize: "22px" }}>logout</span>
+            <span className="material-symbols-outlined text-red-500 text-[22px]">logout</span>
             <span className="flex-1 text-sm font-medium text-red-500 text-left">Sign Out</span>
           </button>
         </div>
@@ -116,7 +113,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
         </p>
       </main>
 
-      <BottomNav active={activeTab} onChange={onTabChange} tabs={tabs || undefined} />
+      <BottomNav active={activeTab} onChange={onTabChange} tabs={tabs} />
     </div>
   );
 }

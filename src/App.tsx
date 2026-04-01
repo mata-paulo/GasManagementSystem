@@ -21,8 +21,7 @@ function SplashScreen() {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh bg-primary-container gap-4">
       <span
-        className="material-symbols-outlined text-yellow-400"
-        style={{ fontSize: "64px", fontVariationSettings: "'FILL' 1" }}
+        className="material-symbols-outlined text-yellow-400 icon-fill text-[64px]"
       >
         local_gas_station
       </span>

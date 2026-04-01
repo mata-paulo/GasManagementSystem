@@ -198,7 +198,7 @@ export default function StationRegister({ onBack, onSuccess }) {
   };
 
   const handleConfirm = () => {
-    const { barangay, brand, officerFirstName, capacity, stationCode } = form;
+    const { barangay, brand, officerFirstName, googleEmail, capacity, stationCode } = form;
     setShowConfirm(false);
     onSuccess({
       barangay,

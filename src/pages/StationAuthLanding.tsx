@@ -8,11 +8,7 @@ export default function StationAuthLanding({ onBack, onLogin, onRegister }: Stat
   return (
     <div className="flex flex-col min-h-dvh bg-primary-container">
       <div
-        className="flex-1 flex flex-col items-center justify-center px-8 pt-16 pb-8 relative overflow-hidden"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 20 L20 0 M20 40 L40 20 M0 0 L40 40' stroke='%23ffffff' stroke-width='1' fill='none' opacity='0.05'/%3E%3C/svg%3E\")",
-        }}
+        className="flex-1 flex flex-col items-center justify-center px-8 pt-16 pb-8 relative overflow-hidden banig-pattern-white"
       >
         <button
           onClick={onBack}
@@ -23,8 +19,7 @@ export default function StationAuthLanding({ onBack, onLogin, onRegister }: Stat
 
         <div className="w-24 h-24 rounded-full bg-white/10 border-2 border-white/20 flex items-center justify-center mb-6 shadow-2xl">
           <span
-            className="material-symbols-outlined text-yellow-400"
-            style={{ fontSize: "52px", fontVariationSettings: "'FILL' 1" }}
+            className="material-symbols-outlined text-yellow-400 icon-fill text-[52px]"
           >
             local_gas_station
           </span>

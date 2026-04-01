@@ -29,8 +29,7 @@ export default function RoleGuard({ requiredRole, onDeny, children }: RoleGuardP
     return (
       <div className="flex flex-col items-center justify-center min-h-dvh bg-background px-6 text-center gap-4">
         <span
-          className="material-symbols-outlined text-error"
-          style={{ fontSize: "56px", fontVariationSettings: "'FILL' 1" }}
+          className="material-symbols-outlined text-error icon-fill text-[56px]"
         >
           gpp_bad
         </span>

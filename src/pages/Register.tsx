@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 
 // Official 80 barangays of Cebu City
 const CEBU_BARANGAYS = [
@@ -156,7 +156,7 @@ const VEHICLE_TYPES = [
   { id: "motorcycle", label: "Motorcycle", icon: "two_wheeler" },
 ];
 
-function GasTypePicker({ value, onChange }) {
+function GasTypePicker({ value, onChange }: { value: string; onChange: (item: string) => void }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -174,7 +174,7 @@ function GasTypePicker({ value, onChange }) {
 
   const filteredCount = filtered.reduce((acc, g) => acc + g.items.length, 0);
 
-  const handleSelect = (item) => {
+  const handleSelect = (item: string) => {
     onChange(item);
     setOpen(false);
     setSearch("");
@@ -298,7 +298,7 @@ function GasTypePicker({ value, onChange }) {
   );
 }
 
-function BarangayPicker({ value, onChange }) {
+function BarangayPicker({ value, onChange }: { value: string; onChange: (b: string) => void }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -308,7 +308,7 @@ function BarangayPicker({ value, onChange }) {
     return CEBU_BARANGAYS.filter((b) => b.toLowerCase().includes(q));
   }, [search]);
 
-  const handleSelect = (b) => {
+  const handleSelect = (b: string) => {
     onChange(b);
     setOpen(false);
     setSearch("");
@@ -449,7 +449,7 @@ function BarangayPicker({ value, onChange }) {
   );
 }
 
-export default function Register({ onBack, onSuccess }) {
+export default function Register({ onBack, onSuccess }: { onBack: () => void; onSuccess: (data: Record<string, unknown>) => void }) {
   const [vehicleType, setVehicleType] = useState("car");
   const [gasType, setGasType] = useState("");
   const [form, setForm] = useState({
@@ -464,12 +464,12 @@ export default function Register({ onBack, onSuccess }) {
   const [error, setError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setError("");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const { plate, lastName, firstName, barangay, email, password } = form;
 
@@ -595,11 +595,7 @@ export default function Register({ onBack, onSuccess }) {
                     }`}
                   >
                     <span
-                      className="material-symbols-outlined"
-                      style={{
-                        fontSize: "28px",
-                        fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0",
-                      }}
+                      className={`material-symbols-outlined text-[28px] ${active ? "icon-filled" : "icon-outline"}`}
                     >
                       {v.icon}
                     </span>
@@ -743,10 +739,7 @@ export default function Register({ onBack, onSuccess }) {
             type="submit"
             className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
+            <span className="material-symbols-outlined icon-filled">
               qr_code
             </span>
             Generate My QR Code

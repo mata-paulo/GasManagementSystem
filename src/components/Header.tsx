@@ -7,10 +7,7 @@ export default function Header({ onClose }: HeaderProps) {
     <header className="sticky top-0 z-40 bg-slate-100/80 backdrop-blur-md shadow-sm flex justify-between items-center w-full px-6 py-4">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center">
-          <span
-            className="material-symbols-outlined text-yellow-400"
-            style={{ fontSize: "22px", fontVariationSettings: "'FILL' 1" }}
-          >
+          <span className="material-symbols-outlined text-yellow-400 icon-fill text-[22px]">
             local_gas_station
           </span>
         </div>

@@ -1,5 +1,8 @@
 import BottomNav from "../components/BottomNav";
 
+const fuelBadgeClass = (type: string) =>
+  type === "Diesel" ? "badge-diesel" : type === "Premium" ? "badge-premium" : "badge-regular";
+
 const recentTransactions = [
   { id: 1,  name: "Rico Blanco",          plate: "GAE-1234", time: "10:24 AM", liters: 15.0, type: "Regular" },
   { id: 2,  name: "Maria Clara Santos",   plate: "YHM-8890", time: "09:45 AM", liters: 20.0, type: "Diesel" },
@@ -15,7 +18,21 @@ const recentTransactions = [
   { id: 12, name: "Teresita Magbanua",    plate: "KLM-8877", time: "05:35 AM", liters: 11.0, type: "Premium" },
 ];
 
-export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
+interface OfficerData {
+  officerFirstName?: string;
+  firstName?: string;
+  stationCode?: string;
+  barangay?: string;
+  brand?: string;
+  capacity?: string | number;
+}
+
+export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
+  officer: OfficerData;
+  onScan: () => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+}) {
   const managerName = officer?.officerFirstName || officer?.firstName || "Manager";
   const stationCode = officer?.stationCode || "N/A";
   const barangay = officer?.barangay || "Not set";
@@ -31,14 +48,14 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
         {/* Profile bar */}
         <div className="mx-4 mt-5 mb-4 flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm border border-outline-variant/20">
           <div className="w-11 h-11 rounded-full border-2 border-[#003366] flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "24px" }}>manage_accounts</span>
+            <span className="material-symbols-outlined text-[#003366] icon-lg">manage_accounts</span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-headline font-bold text-[#003366] text-base leading-tight truncate">{managerName}</p>
             <p className="text-xs text-slate-400 font-medium">Station Officer · {brand}</p>
           </div>
           <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
-            <span className="material-symbols-outlined text-yellow-400" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+            <span className="material-symbols-outlined text-yellow-400 icon-filled icon-base">local_gas_station</span>
             <span className="text-[9px] font-black text-white uppercase tracking-wider">Fuel Rationing</span>
           </div>
         </div>
@@ -46,11 +63,11 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
         <div className="px-4 space-y-4">
 
           {/* Active Station banner — high contrast */}
-          <section className="rounded-2xl p-5 shadow-lg flex items-center justify-between" style={{ background: "#003366" }}>
+          <section className="rounded-2xl p-5 shadow-lg flex items-center justify-between bg-[#003366]">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-1">Active Station</p>
               <p className="text-white font-headline font-black text-2xl flex items-center gap-2 leading-tight">
-                <span className="material-symbols-outlined text-yellow-400" style={{ fontSize: "24px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+                <span className="material-symbols-outlined text-yellow-400 icon-filled icon-lg">local_gas_station</span>
                 {brand}
               </p>
               <p className="text-white/50 text-xs mt-1">Barangay {barangay} · ID: {stationCode}</p>
@@ -65,23 +82,23 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
 
           {/* Stats — dark charcoal */}
           <section className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl p-4 shadow-sm" style={{ background: "#1e293b" }}>
+            <div className="rounded-2xl p-4 shadow-sm bg-[#1e293b]">
               <div className="flex items-center gap-1 mb-2">
-                <span className="material-symbols-outlined" style={{ fontSize: "15px", color: "#f9c23c", fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
-                <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: "#94a3b8" }}>Weekly Limit</span>
+                <span className="material-symbols-outlined icon-filled icon-sm text-[#f9c23c]">inventory_2</span>
+                <span className="text-[9px] font-black uppercase tracking-wider text-[#94a3b8]">Weekly Limit</span>
               </div>
               <p className="text-3xl font-black font-headline text-white leading-none">20</p>
-              <p className="text-sm font-bold mt-0.5" style={{ color: "#f9c23c" }}>Liters</p>
-              <p className="text-[9px] mt-1" style={{ color: "#94a3b8" }}>Standard allocation</p>
+              <p className="text-sm font-bold mt-0.5 text-[#f9c23c]">Liters</p>
+              <p className="text-[9px] mt-1 text-[#94a3b8]">Standard allocation</p>
             </div>
-            <div className="rounded-2xl p-4 shadow-sm" style={{ background: "#1e293b" }}>
+            <div className="rounded-2xl p-4 shadow-sm bg-[#1e293b]">
               <div className="flex items-center gap-1 mb-2">
-                <span className="material-symbols-outlined" style={{ fontSize: "15px", color: "#f9c23c", fontVariationSettings: "'FILL' 1" }}>local_fire_department</span>
-                <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: "#94a3b8" }}>Today's Total</span>
+                <span className="material-symbols-outlined icon-filled icon-sm text-[#f9c23c]">local_fire_department</span>
+                <span className="text-[9px] font-black uppercase tracking-wider text-[#94a3b8]">Today's Total</span>
               </div>
               <p className="text-3xl font-black font-headline text-white leading-none">{todayTotal.toFixed(1)}</p>
-              <p className="text-sm font-bold mt-0.5" style={{ color: "#f9c23c" }}>Liters</p>
-              <p className="text-[9px] mt-1" style={{ color: "#94a3b8" }}>Dispensed today</p>
+              <p className="text-sm font-bold mt-0.5 text-[#f9c23c]">Liters</p>
+              <p className="text-[9px] mt-1 text-[#94a3b8]">Dispensed today</p>
             </div>
           </section>
 
@@ -95,8 +112,8 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
               {recentTransactions.map((tx) => (
                 <div key={tx.id} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#003366" }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>person</span>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-[#003366]">
+                      <span className="material-symbols-outlined text-white icon-filled icon-base">person</span>
                     </div>
                     <div>
                       <p className="text-sm font-black text-slate-800">{tx.name}</p>
@@ -105,9 +122,9 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
                   </div>
                   <div className="text-right">
                     <p className="text-base font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
-                    <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase"
-                      style={{ background: tx.type === "Diesel" ? "#fff3e0" : tx.type === "Premium" ? "#f3e5f5" : "#e8f5e9",
-                               color: tx.type === "Diesel" ? "#e65100" : tx.type === "Premium" ? "#7b1fa2" : "#2e7d32" }}>
+                    <span
+                      className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}
+                    >
                       {tx.type}
                     </span>
                   </div>
@@ -122,10 +139,9 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }) {
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
           onClick={onScan}
-          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-2xl active:scale-95 transition-all border-2 border-white/20"
-          style={{ boxShadow: "0 8px 32px rgba(0,51,102,0.45)" }}
+          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
         >
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>qr_code_scanner</span>
+          <span className="material-symbols-outlined icon-filled">qr_code_scanner</span>
           Scan QR Code
         </button>
       </div>

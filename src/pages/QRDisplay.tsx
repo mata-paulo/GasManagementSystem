@@ -41,8 +41,7 @@ export default function QRDisplay({ resident, onDone }) {
       {/* Header */}
       <div className="shrink-0 px-5 py-[10%] text-center">
         <div className="flex items-center justify-center gap-2 mb-3">
-          <span className="material-symbols-outlined text-green-300"
-            style={{ fontSize: "26px", fontVariationSettings: "'FILL' 1" }}>
+          <span className="material-symbols-outlined text-green-300 icon-filled text-[26px]">
             check_circle
           </span>
           <div className="text-left">
@@ -58,19 +57,18 @@ export default function QRDisplay({ resident, onDone }) {
         <h2 className="font-headline font-black text-white text-3xl leading-tight">{fullName}</h2>
         <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
           <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-bold tracking-wider">
-            <span className="material-symbols-outlined text-tertiary-fixed"
-              style={{ fontSize: "15px", fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined text-tertiary-fixed icon-filled icon-sm">
               {vehicleType === "motorcycle" ? "two_wheeler" : vehicleType === "truck" ? "local_shipping" : "directions_car"}
             </span>
             {plate}
           </span>
           <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
-            <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontSize: "15px" }}>location_on</span>
+            <span className="material-symbols-outlined text-tertiary-fixed icon-sm">location_on</span>
             {barangay}
           </span>
           {gasType && (
             <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
-              <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: "15px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+              <span className="material-symbols-outlined text-yellow-300 icon-filled icon-sm">local_gas_station</span>
               {gasType}
             </span>
           )}
@@ -90,7 +88,7 @@ export default function QRDisplay({ resident, onDone }) {
               includeMargin={false}
               fgColor="#001e40"
               bgColor="#ffffff"
-              style={{ width: "100%", height: "auto" }}
+              className="w-full h-auto"
             />
           </div>
 
@@ -126,7 +124,7 @@ export default function QRDisplay({ resident, onDone }) {
 
           {/* Tip */}
           <div className="bg-tertiary-fixed/30 border-l-4 border-tertiary px-3 py-2.5 rounded-r-xl flex gap-2 items-start">
-            <span className="material-symbols-outlined text-tertiary shrink-0" style={{ fontSize: "14px" }}>info</span>
+            <span className="material-symbols-outlined text-tertiary shrink-0 text-[14px]">info</span>
             <p className="text-[10px] text-on-tertiary-fixed-variant leading-relaxed">
               Show this QR at any participating station for fuel allocation. Screenshot or download to save.
             </p>
@@ -138,7 +136,7 @@ export default function QRDisplay({ resident, onDone }) {
           <div className="flex gap-3">
             <button onClick={handleDownload}
               className="flex-1 bg-primary-container text-white font-headline font-bold py-3.5 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
-              <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>download</span>
+              <span className="material-symbols-outlined icon-base">download</span>
               Download QR
             </button>
             <button onClick={onDone}

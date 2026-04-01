@@ -26,21 +26,21 @@ export default function ScanHistory({ officer, activeTab, onTabChange }) {
     if (!acc[tx.date]) acc[tx.date] = [];
     acc[tx.date].push(tx);
     return acc;
-  }, {});
+  }, {} as Record<string, typeof history>);
 
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       {/* Profile bar */}
       <div className="mx-4 mt-5 mb-2 flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm border border-outline-variant/20">
         <div className="w-11 h-11 rounded-full border-2 border-[#003366] flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "24px" }}>manage_accounts</span>
+          <span className="material-symbols-outlined text-[#003366] icon-lg">manage_accounts</span>
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-headline font-bold text-[#003366] text-base leading-tight truncate">{managerName}</p>
           <p className="text-xs text-slate-400 font-medium">Station Officer · {brand}</p>
         </div>
         <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
-          <span className="material-symbols-outlined text-yellow-400" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+          <span className="material-symbols-outlined text-yellow-400 icon-filled icon-base">local_gas_station</span>
           <span className="text-[9px] font-black text-white uppercase tracking-wider">Fuel Rationing</span>
         </div>
       </div>

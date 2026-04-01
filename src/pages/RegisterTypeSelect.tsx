@@ -27,8 +27,7 @@ export default function RegisterTypeSelect({
         <div className="mb-8 text-center">
           <div className="w-20 h-20 rounded-2xl bg-primary-container mx-auto flex items-center justify-center mb-4 shadow-lg">
             <span
-              className="material-symbols-outlined text-white"
-              style={{ fontSize: "40px", fontVariationSettings: "'FILL' 1" }}
+              className="material-symbols-outlined text-white icon-fill text-[40px]"
             >
               how_to_reg
             </span>

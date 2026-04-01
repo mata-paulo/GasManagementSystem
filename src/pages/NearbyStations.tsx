@@ -122,6 +122,14 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   const [expandedId, setExpandedId] = useState(null);
 
   const drawerOpen = drawerHeight > PEEK_HEIGHT + 20;
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = drawerRef.current;
+    if (!el) return;
+    el.style.height = `${drawerHeight}px`;
+    el.style.transition = isDragging ? "none" : "height 0.3s cubic-bezier(0.32,0.72,0,1)";
+  }, [drawerHeight, isDragging]);
 
   // ── Location ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -321,13 +329,24 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     setIsDragging(false);
   };
 
+  useEffect(() => {
+    const el = handleBarRef.current;
+    if (!el) return;
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      handleDragMove(e.touches[0].clientY);
+    };
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMove);
+  });
+
   const handleHandleClick = () => {
     if (isDragging) return;
     setDrawerHeight(drawerOpen ? PEEK_HEIGHT : OPEN_HEIGHT);
   };
 
   return (
-    <div className="flex flex-col bg-background" style={{ height: "100dvh" }}>
+    <div className="flex flex-col bg-background h-dvh">
 
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 bg-primary-container shadow-sm shrink-0">
@@ -335,7 +354,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
           <h1 className="text-white font-headline font-bold text-lg leading-none">Nearby Stations</h1>
           <p className="text-[10px] text-white/70 font-bold uppercase tracking-wider mt-0.5">Gas stations within 5 km</p>
         </div>
-        <span className="material-symbols-outlined text-tertiary-fixed ml-auto" style={{ fontSize: "28px", fontVariationSettings: "'FILL' 1" }}>
+        <span className="material-symbols-outlined text-tertiary-fixed ml-auto icon-filled text-[28px]">
           local_gas_station
         </span>
       </div>
@@ -349,10 +368,10 @@ export default function NearbyStations({ activeTab, onTabChange }) {
           </div>
         )}
 
-        <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
+        <div ref={mapContainerRef} className="w-full h-full" />
 
         {/* Filter chips */}
-        <div className="no-scrollbar absolute top-3 left-0 right-0 z-10 flex gap-2 px-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        <div className="no-scrollbar absolute top-3 left-0 right-0 z-10 flex gap-2 px-3 overflow-x-auto">
           {FILTERS.map((f) => {
             const active = activeFilter === f.label;
             return (
@@ -363,7 +382,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                   active ? "bg-[#003366] text-white border-[#003366]" : "bg-white text-slate-700 border-white/80"
                 }`}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: "14px", fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0" }}>
+                <span className={`material-symbols-outlined text-[14px] ${active ? "icon-filled" : "icon-outline"}`}>
                   local_gas_station
                 </span>
                 {f.label}
@@ -375,16 +394,16 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         {/* Map controls */}
         <div className="absolute top-14 right-3 z-10 flex flex-col gap-2">
           <button onClick={() => mapRef.current?.zoomIn()} className="w-9 h-9 bg-white rounded-xl shadow-md flex items-center justify-center text-slate-700 active:scale-95 transition-all border border-white/80">
-            <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>add</span>
+            <span className="material-symbols-outlined text-[20px]">add</span>
           </button>
           <button onClick={() => mapRef.current?.zoomOut()} className="w-9 h-9 bg-white rounded-xl shadow-md flex items-center justify-center text-slate-700 active:scale-95 transition-all border border-white/80">
-            <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>remove</span>
+            <span className="material-symbols-outlined text-[20px]">remove</span>
           </button>
           <button
             onClick={() => location && mapRef.current?.flyTo({ center: [location.lon, location.lat], zoom: 14, duration: 800 })}
             className="w-9 h-9 bg-[#003366] rounded-xl shadow-md flex items-center justify-center text-white active:scale-95 transition-all"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: "20px", fontVariationSettings: "'FILL' 1" }}>my_location</span>
+            <span className="material-symbols-outlined icon-filled text-[20px]">my_location</span>
           </button>
         </div>
 
@@ -396,18 +415,15 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
         {/* ── Drawer ── */}
         <div
+          ref={drawerRef}
           className="absolute left-0 right-0 bottom-0 z-30 bg-white rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{
-            height: `${drawerHeight}px`,
-            transition: isDragging ? "none" : "height 0.3s cubic-bezier(0.32,0.72,0,1)",
-          }}
         >
           {/* Handle bar — draggable */}
           <div
+            ref={handleBarRef}
             className="flex flex-col items-center pt-3 pb-1 shrink-0 cursor-grab active:cursor-grabbing select-none"
             onClick={handleHandleClick}
             onTouchStart={(e) => handleDragStart(e.touches[0].clientY)}
-            onTouchMove={(e) => { e.preventDefault(); handleDragMove(e.touches[0].clientY); }}
             onTouchEnd={handleDragEnd}
             onMouseDown={(e) => {
               handleDragStart(e.clientY);
@@ -426,8 +442,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                 )}
               </div>
               <span
-                className={`material-symbols-outlined text-slate-400 transition-transform duration-300 ${drawerOpen ? "rotate-180" : ""}`}
-                style={{ fontSize: "22px" }}
+                className={`material-symbols-outlined text-slate-400 transition-transform duration-300 text-[22px] ${drawerOpen ? "rotate-180" : ""}`}
               >
                 expand_less
               </span>
@@ -437,7 +452,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
           {/* Route info bar */}
           {(loadingRoute || routeInfo) && selectedStation && (
             <div className="mx-4 mb-2 px-4 py-2.5 bg-[#003366] rounded-xl flex items-center gap-3 shrink-0">
-              <span className="material-symbols-outlined text-white" style={{ fontSize: "20px", fontVariationSettings: "'FILL' 1" }}>route</span>
+              <span className="material-symbols-outlined text-white icon-filled text-[20px]">route</span>
               {loadingRoute ? (
                 <p className="text-white text-xs font-medium">Calculating route…</p>
               ) : (
@@ -447,7 +462,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                 </div>
               )}
               <button onClick={() => { clearRoute(); setSelectedStation(null); }} className="text-white/60 hover:text-white shrink-0">
-                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>close</span>
+                <span className="material-symbols-outlined icon-base">close</span>
               </button>
             </div>
           )}
@@ -460,7 +475,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
             {!loadingStations && filteredStations.length === 0 && (
               <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-                <span className="material-symbols-outlined text-gray-300" style={{ fontSize: "36px" }}>not_listed_location</span>
+                <span className="material-symbols-outlined text-gray-300 text-[36px]">not_listed_location</span>
                 <p className="text-xs text-slate-400 font-medium">No stations found within 5 km.</p>
               </div>
             )}
@@ -503,8 +518,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                       }`}
                     >
                       <span
-                        className={`material-symbols-outlined transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-                        style={{ fontSize: "18px" }}
+                        className={`material-symbols-outlined transition-transform duration-200 icon-base ${isExpanded ? "rotate-180" : ""}`}
                       >
                         expand_more
                       </span>

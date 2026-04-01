@@ -77,10 +77,7 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
           <>
             <div className="flex flex-col items-center mb-8">
               <div className="w-20 h-20 rounded-2xl bg-primary-container flex items-center justify-center mb-4 shadow-lg">
-                <span
-                  className="material-symbols-outlined text-white"
-                  style={{ fontSize: "40px", fontVariationSettings: "'FILL' 1" }}
-                >
+                <span className="material-symbols-outlined text-white icon-filled text-[40px]">
                   manage_accounts
                 </span>
               </div>
@@ -150,10 +147,7 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
           <>
             <div className="flex flex-col items-center mb-8">
               <div className="w-20 h-20 rounded-2xl bg-primary-container flex items-center justify-center mb-4 shadow-lg">
-                <span
-                  className="material-symbols-outlined text-white"
-                  style={{ fontSize: "40px", fontVariationSettings: "'FILL' 1" }}
-                >
+                <span className="material-symbols-outlined text-white icon-filled text-[40px]">
                   lock_reset
                 </span>
               </div>
@@ -168,10 +162,7 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
             {resetSent ? (
               <div className="space-y-4">
                 <div className="flex flex-col items-center gap-3 bg-surface-container px-6 py-8 rounded-2xl text-center">
-                  <span
-                    className="material-symbols-outlined text-primary"
-                    style={{ fontSize: "48px", fontVariationSettings: "'FILL' 1" }}
-                  >
+                  <span className="material-symbols-outlined text-primary icon-filled text-[48px]">
                     mark_email_read
                   </span>
                   <p className="font-semibold text-on-surface">Check your inbox</p>

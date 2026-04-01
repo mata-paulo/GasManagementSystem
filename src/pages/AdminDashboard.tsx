@@ -68,17 +68,18 @@ const NAV_ITEMS = [
   { id: "transactions",  icon: "receipt_long",       label: "Transactions"  },
 ];
 
-const fuelTypeStyle = (type) =>
-  type === "Diesel"  ? { bg: "#fff3e0", color: "#e65100" }
-  : type === "Premium" ? { bg: "#f3e5f5", color: "#7b1fa2" }
-  :                      { bg: "#e8f5e9", color: "#2e7d32" };
+const fuelBadgeClass = (type: string) =>
+  type === "Diesel" ? "badge-diesel" : type === "Premium" ? "badge-premium" : "badge-regular";
 
-const statusBadge = (s) =>
-  s === "Maxed"   ? { bg: "#fce4ec", color: "#c62828" }
-  : s === "New"   ? { bg: "#e8f5e9", color: "#2e7d32" }
-  : s === "Online"? { bg: "#e8f5e9", color: "#2e7d32" }
-  : s === "Offline"?{ bg: "#fce4ec", color: "#c62828" }
-  :                 { bg: "#e3f2fd", color: "#1565c0" };
+const statusBadgeClass = (s: string) =>
+  s === "Maxed" ? "badge-maxed" : s === "New" ? "badge-new"
+  : s === "Online" ? "badge-online" : s === "Offline" ? "badge-offline" : "badge-active";
+
+const brandBadgeClass = (brand: string) =>
+  ({ Shell: "badge-brand-shell", Petron: "badge-brand-petron", Caltex: "badge-brand-caltex",
+     Phoenix: "badge-brand-phoenix", "Sea Oil": "badge-brand-seaoil" })[brand] ?? "badge-brand-shell";
+
+const brandKey = (brand: string) => brand.toLowerCase().replace(/\s/g, "");
 
 export default function AdminDashboard({ onLogout }) {
   const [activePage, setActivePage] = useState("overview");
@@ -121,7 +122,7 @@ export default function AdminDashboard({ onLogout }) {
         })),
       };
 
-      map.addSource("stations", { type: "geojson", data: geojson });
+      map.addSource("stations", { type: "geojson", data: geojson as any });
 
       map.addLayer({
         id: "heat",
@@ -156,8 +157,11 @@ export default function AdminDashboard({ onLogout }) {
       });
 
       map.on("click", "circles", (e) => {
-        const { name, brand, dispensed } = e.features[0].properties;
-        const coords = e.features[0].geometry.coordinates.slice();
+        const feature = e.features?.[0] as any;
+        if (!feature) return;
+        const { name, brand, dispensed } = feature.properties || {};
+        const coords = feature.geometry?.coordinates?.slice();
+        if (!coords) return;
         new mapboxgl.Popup({ offset: 12, closeButton: false })
           .setLngLat(coords)
           .setHTML(`
@@ -199,7 +203,7 @@ export default function AdminDashboard({ onLogout }) {
           : "text-slate-500 hover:bg-slate-100 hover:text-[#003366]"
       }`}
     >
-      <span className="material-symbols-outlined" style={{ fontSize: "20px", fontVariationSettings: activePage === item.id ? "'FILL' 1" : "'FILL' 0" }}>
+      <span className={`material-symbols-outlined text-[20px] ${activePage === item.id ? "icon-filled" : "icon-outline"}`}>
         {item.icon}
       </span>
       {sidebarOpen && <span>{item.label}</span>}
@@ -207,10 +211,10 @@ export default function AdminDashboard({ onLogout }) {
   );
 
   /* ── Stat card ── */
-  const StatCard = ({ icon, label, value, sub, iconColor }) => (
+  const StatCard = ({ icon, label, value, sub, iconVariant }: { icon: string; label: string; value: string | number; sub: string; iconVariant: string }) => (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4">
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${iconColor}18` }}>
-        <span className="material-symbols-outlined" style={{ fontSize: "22px", color: iconColor, fontVariationSettings: "'FILL' 1" }}>{icon}</span>
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 stat-icon-${iconVariant}-bg`}>
+        <span className={`material-symbols-outlined icon-filled text-[22px] stat-icon-${iconVariant}-text`}>{icon}</span>
       </div>
       <div>
         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">{label}</p>
@@ -221,17 +225,16 @@ export default function AdminDashboard({ onLogout }) {
   );
 
   return (
-    <div className="flex h-screen bg-[#f1f5f9] overflow-hidden" style={{ fontFamily: "system-ui, sans-serif" }}>
+    <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-[system-ui,sans-serif]">
 
       {/* ═══ SIDEBAR ═══ */}
       <aside
-        className="flex flex-col bg-white border-r border-slate-100 shadow-sm transition-all duration-200 shrink-0"
-        style={{ width: sidebarOpen ? 220 : 68 }}
+        className={`flex flex-col bg-white border-r border-slate-100 shadow-sm transition-all duration-200 shrink-0 ${sidebarOpen ? "w-[220px]" : "w-[68px]"}`}
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-yellow-400" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+            <span className="material-symbols-outlined text-yellow-400 icon-filled icon-base">local_gas_station</span>
           </div>
           {sidebarOpen && (
             <div className="min-w-0">
@@ -252,7 +255,7 @@ export default function AdminDashboard({ onLogout }) {
             onClick={() => setSidebarOpen(v => !v)}
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-100 transition-all"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+            <span className="material-symbols-outlined text-[20px]">
               {sidebarOpen ? "chevron_left" : "chevron_right"}
             </span>
             {sidebarOpen && <span>Collapse</span>}
@@ -261,7 +264,7 @@ export default function AdminDashboard({ onLogout }) {
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-red-400 hover:bg-red-50 transition-all"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>logout</span>
+            <span className="material-symbols-outlined text-[20px]">logout</span>
             {sidebarOpen && <span>Sign Out</span>}
           </button>
         </div>
@@ -284,7 +287,7 @@ export default function AdminDashboard({ onLogout }) {
               System Live
             </span>
             <div className="w-9 h-9 rounded-full bg-[#003366] flex items-center justify-center">
-              <span className="material-symbols-outlined text-white" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>admin_panel_settings</span>
+              <span className="material-symbols-outlined text-white icon-filled icon-base">admin_panel_settings</span>
             </div>
           </div>
         </header>
@@ -297,10 +300,10 @@ export default function AdminDashboard({ onLogout }) {
             <div className="space-y-6">
               {/* Stat cards */}
               <div className="grid grid-cols-4 gap-4">
-                <StatCard icon="groups"              label="Total Residents"   value={RESIDENTS.length}                           sub={`${maxedResidents} maxed their quota`}       iconColor="#003366" />
-                <StatCard icon="store"               label="Active Stations"   value={`${onlineStations} / ${STATIONS.length}`}   sub={`${STATIONS.length - onlineStations} offline`} iconColor="#2e7d32" />
-                <StatCard icon="local_fire_department" label="Total Dispensed" value={`${totalDispensed.toLocaleString()} L`}    sub="this week across all stations"               iconColor="#e65100" />
-                <StatCard icon="bar_chart"           label="Quota Utilization" value={`${utilizationPct}%`}                        sub={`${(weeklyQuota - totalDispensed).toLocaleString()} L remaining`} iconColor="#7b1fa2" />
+                <StatCard icon="groups"              label="Total Residents"   value={RESIDENTS.length}                           sub={`${maxedResidents} maxed their quota`}       iconVariant="navy" />
+                <StatCard icon="store"               label="Active Stations"   value={`${onlineStations} / ${STATIONS.length}`}   sub={`${STATIONS.length - onlineStations} offline`} iconVariant="green" />
+                <StatCard icon="local_fire_department" label="Total Dispensed" value={`${totalDispensed.toLocaleString()} L`}    sub="this week across all stations"               iconVariant="orange" />
+                <StatCard icon="bar_chart"           label="Quota Utilization" value={`${utilizationPct}%`}                        sub={`${(weeklyQuota - totalDispensed).toLocaleString()} L remaining`} iconVariant="purple" />
               </div>
 
               {/* Map + Allocation side by side */}
@@ -318,7 +321,7 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="w-3 h-3 rounded-full bg-red-500 inline-block ml-1" /> High
                     </div>
                   </div>
-                  <div ref={mapRef} style={{ height: 320 }} />
+                  <div ref={mapRef} className="h-[320px]" />
                 </div>
 
                 {/* Allocation breakdown */}
@@ -360,17 +363,18 @@ export default function AdminDashboard({ onLogout }) {
 
                   {/* Brand bars */}
                   <div className="space-y-2.5">
-                    {Object.entries(BRAND_COLORS).map(([brand, c]) => {
+                    {Object.entries(BRAND_COLORS).map(([brand, _c]) => {
                       const tot = STATIONS.filter(s => s.brand === brand).reduce((a, s) => a + s.dispensed, 0);
                       const pct = Math.round((tot / totalDispensed) * 100);
+                      const bk = brandKey(brand);
                       return (
                         <div key={brand}>
-                          <div className="flex justify-between text-xs font-bold mb-1" style={{ color: c.text }}>
+                          <div className={`flex justify-between text-xs font-bold mb-1 brand-text-${bk}`}>
                             <span>{brand}</span>
                             <span className="text-slate-400">{tot.toLocaleString()} L · {pct}%</span>
                           </div>
                           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: c.dot }} />
+                            <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                           </div>
                         </div>
                       );
@@ -398,14 +402,13 @@ export default function AdminDashboard({ onLogout }) {
                   </thead>
                   <tbody>
                     {RECENT_TXN.slice(0, 6).map((tx, i) => {
-                      const ft = fuelTypeStyle(tx.type);
                       return (
                         <tr key={tx.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                           <td className="px-5 py-3 font-bold text-slate-800">{tx.resident}</td>
                           <td className="px-5 py-3 text-slate-500 text-xs">{tx.station}</td>
                           <td className="px-5 py-3 font-mono text-xs text-slate-600">{tx.plate}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ background: ft.bg, color: ft.color }}>{tx.type}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}>{tx.type}</span>
                           </td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{tx.liters.toFixed(1)} L</td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400">{tx.date} · {tx.time}</td>
@@ -420,7 +423,7 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ HEATMAP ══ */}
           {activePage === "heatmap" && (
-            <div className="flex gap-4" style={{ height: "calc(100vh - 140px)" }}>
+            <div className="flex gap-4 h-[calc(100vh-140px)]">
 
               {/* ── Map column ── */}
               <div className="flex-1 flex flex-col bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 min-w-0">
@@ -440,19 +443,16 @@ export default function AdminDashboard({ onLogout }) {
                 {/* Brand filter chips */}
                 <div className="px-5 py-2.5 border-b border-slate-100 flex gap-2 shrink-0 overflow-x-auto">
                   {["All", ...Object.keys(BRAND_COLORS)].map(b => {
-                    const bc = BRAND_COLORS[b];
                     const active = heatmapFilter === b;
+                    const ck = active ? `chip-active-${brandKey(b)}` : "bg-white text-slate-500 border-slate-200";
                     return (
                       <button
                         key={b}
                         onClick={() => setHeatmapFilter(b)}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
-                        style={active
-                          ? { background: b === "All" ? "#003366" : bc.dot, color: "#fff", borderColor: b === "All" ? "#003366" : bc.dot }
-                          : { background: "#fff", color: "#64748b", borderColor: "#e2e8f0" }}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${ck}`}
                       >
                         {b !== "All" && (
-                          <span className="w-2 h-2 rounded-full inline-block" style={{ background: active ? "#fff" : bc.dot }} />
+                          <span className={`w-2 h-2 rounded-full inline-block ${active ? "bg-white" : `brand-dot-${brandKey(b)}`}`} />
                         )}
                         {b}
                       </button>
@@ -486,7 +486,8 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
 
                 {/* Per-brand cards */}
-                {Object.entries(BRAND_COLORS).map(([brand, c]) => {
+                {Object.entries(BRAND_COLORS).map(([brand]) => {
+                  const bk            = brandKey(brand);
                   const brandStations = STATIONS.filter(s => s.brand === brand);
                   const brandTotal    = brandStations.reduce((a, s) => a + s.dispensed, 0);
                   const pct           = Math.round((brandTotal / totalDispensed) * 100);
@@ -495,25 +496,21 @@ export default function AdminDashboard({ onLogout }) {
                     <button
                       key={brand}
                       onClick={() => setHeatmapFilter(isActive ? "All" : brand)}
-                      className="w-full text-left rounded-2xl p-4 shadow-sm border-2 transition-all"
-                      style={{
-                        background:   isActive ? c.bg : "#fff",
-                        borderColor:  isActive ? c.dot : "#f1f5f9",
-                      }}
+                      className={`w-full text-left rounded-2xl p-4 shadow-sm border-2 transition-all brand-card ${isActive ? `brand-active-${bk}` : ""}`}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.dot }} />
-                          <span className="text-xs font-black" style={{ color: c.text }}>{brand}</span>
+                          <span className={`w-2.5 h-2.5 rounded-full inline-block brand-dot-${bk}`} />
+                          <span className={`text-xs font-black brand-text-${bk}`}>{brand}</span>
                         </div>
                         <span className="text-[10px] font-bold text-slate-400">{brandStations.length} stations</span>
                       </div>
-                      <p className="text-xl font-black leading-none" style={{ color: c.text }}>
+                      <p className={`text-xl font-black leading-none brand-text-${bk}`}>
                         {(brandTotal / 1000).toFixed(1)}k L
                       </p>
                       <p className="text-[10px] text-slate-400 mt-0.5 mb-2">{brandTotal.toLocaleString()} liters dispensed</p>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: c.dot }} />
+                        <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">{pct}% of total dispensed</p>
 
@@ -523,7 +520,7 @@ export default function AdminDashboard({ onLogout }) {
                           <div key={s.id} className="flex items-center justify-between">
                             <p className="text-[10px] text-slate-500 font-medium truncate flex-1 mr-2">{s.name.replace(`${brand} – `, "")}</p>
                             <div className="flex items-center gap-1 shrink-0">
-                              <span className="text-[10px] font-bold" style={{ color: c.text }}>{s.dispensed.toLocaleString()} L</span>
+                              <span className={`text-[10px] font-bold brand-text-${bk}`}>{s.dispensed.toLocaleString()} L</span>
                               <span className={`w-1.5 h-1.5 rounded-full ${s.status === "Online" ? "bg-green-400" : "bg-red-400"}`} />
                             </div>
                           </div>
@@ -572,23 +569,22 @@ export default function AdminDashboard({ onLogout }) {
                   <tbody>
                     {STATIONS.map((s, i) => {
                       const pct = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
-                      const bc  = BRAND_COLORS[s.brand] || { dot: "#999" };
-                      const sb  = statusBadge(s.status);
+                      const bk  = brandKey(s.brand);
                       return (
                         <tr key={s.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                           <td className="px-5 py-3 font-bold text-slate-800">{s.name}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: bc.bg || "#f5f5f5", color: bc.text || "#333" }}>{s.brand}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
                           </td>
                           <td className="px-5 py-3 text-slate-500 text-xs">{s.officer}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>{s.status}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(s.status)}`}>{s.status}</span>
                           </td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{s.dispensed.toLocaleString()} L</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: bc.dot }} />
+                                <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                               </div>
                               <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                             </div>
@@ -621,21 +617,21 @@ export default function AdminDashboard({ onLogout }) {
                   <tbody>
                     {RESIDENTS.map((r, i) => {
                       const pct = Math.round((r.used / 20) * 100);
-                      const sb  = statusBadge(r.status);
+                      const barFill = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                       return (
                         <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                           <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
                           <td className="px-5 py-3 font-mono text-xs text-slate-600">{r.plate}</td>
                           <td className="px-5 py-3 text-xs text-slate-500">{r.barangay}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>{r.status}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
                           </td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{r.used.toFixed(1)} L</td>
                           <td className="px-5 py-3 text-right font-bold text-green-700">{r.remaining.toFixed(1)} L</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 100 ? "#e53935" : pct >= 75 ? "#f57c00" : "#003366" }} />
+                                <div className={`h-full rounded-full ${barFill}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                               </div>
                               <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                             </div>
@@ -654,13 +650,13 @@ export default function AdminDashboard({ onLogout }) {
             <div className="space-y-4">
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: "Total",   value: RESIDENTS.length,                                          color: "#003366" },
-                  { label: "Active",  value: RESIDENTS.filter(r => r.status === "Active").length,       color: "#1565c0" },
-                  { label: "Maxed",   value: maxedResidents,                                            color: "#c62828" },
-                  { label: "New",     value: RESIDENTS.filter(r => r.status === "New").length,          color: "#2e7d32" },
+                  { label: "Total",   value: RESIDENTS.length,                                          colorClass: "text-[#003366]" },
+                  { label: "Active",  value: RESIDENTS.filter(r => r.status === "Active").length,       colorClass: "text-[#1565c0]" },
+                  { label: "Maxed",   value: maxedResidents,                                            colorClass: "text-[#c62828]" },
+                  { label: "New",     value: RESIDENTS.filter(r => r.status === "New").length,          colorClass: "text-[#2e7d32]" },
                 ].map(c => (
                   <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
-                    <p className="text-3xl font-black font-headline" style={{ color: c.color }}>{c.value}</p>
+                    <p className={`text-3xl font-black font-headline ${c.colorClass}`}>{c.value}</p>
                     <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{c.label}</p>
                   </div>
                 ))}
@@ -687,7 +683,7 @@ export default function AdminDashboard({ onLogout }) {
                   <tbody>
                     {RESIDENTS.map((r, i) => {
                       const pct = Math.round((r.used / 20) * 100);
-                      const sb  = statusBadge(r.status);
+                      const barFill = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                       return (
                         <tr key={r.id} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-blue-50/30 transition-colors`}>
                           <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
@@ -695,14 +691,14 @@ export default function AdminDashboard({ onLogout }) {
                           <td className="px-5 py-3 text-xs text-slate-500">{r.vehicle}</td>
                           <td className="px-5 py-3 text-xs text-slate-500">{r.barangay}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>{r.status}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
                           </td>
                           <td className="px-5 py-3 text-right font-bold text-[#003366]">{r.used.toFixed(1)} L</td>
                           <td className="px-5 py-3 text-right font-bold text-green-700">{r.remaining.toFixed(1)} L</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 100 ? "#e53935" : pct >= 75 ? "#f57c00" : "#003366" }} />
+                                <div className={`h-full rounded-full ${barFill}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                               </div>
                               <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                             </div>
@@ -721,13 +717,13 @@ export default function AdminDashboard({ onLogout }) {
             <div className="space-y-4">
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: "Total Stations",  value: STATIONS.length,       color: "#003366" },
-                  { label: "Online",          value: onlineStations,         color: "#2e7d32" },
-                  { label: "Offline",         value: STATIONS.length - onlineStations, color: "#c62828" },
-                  { label: "Brands",          value: Object.keys(BRAND_COLORS).length, color: "#7b1fa2" },
+                  { label: "Total Stations",  value: STATIONS.length,       colorClass: "text-[#003366]" },
+                  { label: "Online",          value: onlineStations,         colorClass: "text-[#2e7d32]" },
+                  { label: "Offline",         value: STATIONS.length - onlineStations, colorClass: "text-[#c62828]" },
+                  { label: "Brands",          value: Object.keys(BRAND_COLORS).length, colorClass: "text-[#7b1fa2]" },
                 ].map(c => (
                   <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
-                    <p className="text-3xl font-black font-headline" style={{ color: c.color }}>{c.value}</p>
+                    <p className={`text-3xl font-black font-headline ${c.colorClass}`}>{c.value}</p>
                     <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{c.label}</p>
                   </div>
                 ))}
@@ -762,25 +758,24 @@ export default function AdminDashboard({ onLogout }) {
                   <tbody>
                     {filteredStations.map((s, i) => {
                       const pct = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
-                      const bc  = BRAND_COLORS[s.brand] || { bg: "#f5f5f5", text: "#333", dot: "#999" };
-                      const sb  = statusBadge(s.status);
+                      const bk  = brandKey(s.brand);
                       return (
                         <tr key={s.id} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-blue-50/30 transition-colors`}>
                           <td className="px-5 py-3 font-bold text-slate-800">{s.name}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: bc.bg, color: bc.text }}>{s.brand}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
                           </td>
                           <td className="px-5 py-3 text-xs text-slate-500">{s.barangay}</td>
                           <td className="px-5 py-3 text-xs text-slate-500">{s.officer}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: sb.bg, color: sb.color }}>{s.status}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(s.status)}`}>{s.status}</span>
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400">{(s.capacity / 1000).toFixed(0)}k L</td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{s.dispensed.toLocaleString()} L</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: bc.dot }} />
+                                <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                               </div>
                               <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                             </div>
@@ -799,12 +794,12 @@ export default function AdminDashboard({ onLogout }) {
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: "Today's Total",  value: `${RECENT_TXN.filter(t => t.date === "Today").reduce((a, t) => a + t.liters, 0).toFixed(1)} L`, color: "#003366" },
-                  { label: "Transactions",   value: RECENT_TXN.length,                                                                               color: "#1565c0" },
-                  { label: "Avg per Fill",   value: `${(RECENT_TXN.reduce((a, t) => a + t.liters, 0) / RECENT_TXN.length).toFixed(1)} L`,            color: "#7b1fa2" },
+                  { label: "Today's Total",  value: `${RECENT_TXN.filter(t => t.date === "Today").reduce((a, t) => a + t.liters, 0).toFixed(1)} L`, colorClass: "text-[#003366]" },
+                  { label: "Transactions",   value: RECENT_TXN.length,                                                                               colorClass: "text-[#1565c0]" },
+                  { label: "Avg per Fill",   value: `${(RECENT_TXN.reduce((a, t) => a + t.liters, 0) / RECENT_TXN.length).toFixed(1)} L`,            colorClass: "text-[#7b1fa2]" },
                 ].map(c => (
                   <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
-                    <p className="text-3xl font-black font-headline" style={{ color: c.color }}>{c.value}</p>
+                    <p className={`text-3xl font-black font-headline ${c.colorClass}`}>{c.value}</p>
                     <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{c.label}</p>
                   </div>
                 ))}
@@ -828,14 +823,13 @@ export default function AdminDashboard({ onLogout }) {
                   </thead>
                   <tbody>
                     {RECENT_TXN.map((tx, i) => {
-                      const ft = fuelTypeStyle(tx.type);
                       return (
                         <tr key={tx.id} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-blue-50/30 transition-colors`}>
                           <td className="px-5 py-3 font-bold text-slate-800">{tx.resident}</td>
                           <td className="px-5 py-3 text-xs text-slate-500">{tx.station}</td>
                           <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{tx.plate}</td>
                           <td className="px-5 py-3">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ background: ft.bg, color: ft.color }}>{tx.type}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}>{tx.type}</span>
                           </td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{tx.liters.toFixed(1)} L</td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400">{tx.date}</td>

@@ -35,7 +35,7 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
       {/* Profile bar */}
       <div className="mx-4 mt-5 mb-2 flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm border border-outline-variant/20">
         <div className="w-11 h-11 rounded-full border-2 border-[#003366] flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "24px" }}>
+          <span className="material-symbols-outlined text-[#003366] icon-lg">
             manage_accounts
           </span>
         </div>
@@ -44,35 +44,21 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
           <p className="text-xs text-slate-400 font-medium">Station Officer · {brand}</p>
         </div>
         <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
-          <span className="material-symbols-outlined text-yellow-400"
-            style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>
+          <span className="material-symbols-outlined text-yellow-400 icon-filled icon-base">
             local_gas_station
           </span>
           <span className="text-[9px] font-black text-white uppercase tracking-wider">Fuel Rationing</span>
         </div>
       </div>
 
-      <main
-        className="flex-1 pt-6 pb-36 px-4 max-w-md mx-auto w-full"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='0.03' fill-rule='evenodd'/%3E%3C/svg%3E\")",
-        }}
-      >
+      <main className="flex-1 pt-6 pb-36 px-4 max-w-md mx-auto w-full checkerboard-pattern">
         <div className="mt-4 bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
           {/* Status Header */}
-          <div className="p-8 text-center relative"
-            style={{ background: "linear-gradient(135deg, #003366 0%, #001e40 100%)" }}>
-            <div className="absolute inset-0 opacity-10"
-              style={{
-                backgroundImage:
-                  "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E\")",
-              }}
-            />
+          <div className="p-8 text-center relative header-gradient">
+            <div className="absolute inset-0 opacity-10 checkerboard-overlay" />
             <div className="relative z-10 flex flex-col items-center">
               <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-xl">
-                <span className="material-symbols-outlined text-5xl text-[#705d00]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}>
+                <span className="material-symbols-outlined text-5xl text-[#705d00] icon-filled">
                   check_circle
                 </span>
               </div>
@@ -124,8 +110,7 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
                 </div>
 
                 <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-2">
-                  <span className="material-symbols-outlined text-[#705d00]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}>
+                  <span className="material-symbols-outlined text-[#705d00] icon-filled">
                     local_gas_station
                   </span>
                   <div>
@@ -142,13 +127,13 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
                 <div className="grid grid-cols-2 gap-3">
                   {scannedResident.gasType && (
                     <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
-                      <span className="material-symbols-outlined text-[#705d00]" style={{ fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
+                      <span className="material-symbols-outlined text-[#705d00] icon-filled icon-base">local_gas_station</span>
                       <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Fuel Type</p>
                       <p className="font-headline font-bold text-sm text-on-surface">{scannedResident.gasType}</p>
                     </div>
                   )}
                   <div className={`bg-surface-container-low p-4 rounded-xl flex flex-col gap-1 ${!scannedResident.gasType ? "col-span-2" : ""}`}>
-                    <span className="material-symbols-outlined text-[#003366]" style={{ fontSize: "18px" }}>qr_code</span>
+                    <span className="material-symbols-outlined text-[#003366] icon-base">qr_code</span>
                     <p className="text-outline text-[10px] font-bold uppercase tracking-wider">QR Serial</p>
                     <p className="font-headline font-bold text-sm text-on-surface font-mono tracking-widest">{scannedResident.serial}</p>
                   </div>
@@ -219,8 +204,7 @@ export default function ValidationSuccess({ officer, scannedResident, onBack, ac
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex flex-col items-center text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-                <span className="material-symbols-outlined text-red-600"
-                  style={{ fontSize: "32px", fontVariationSettings: "'FILL' 1" }}>
+                <span className="material-symbols-outlined text-red-600 icon-filled text-[32px]">
                   warning
                 </span>
               </div>

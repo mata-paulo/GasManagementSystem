@@ -41,7 +41,7 @@ const grouped = history.reduce((acc, tx) => {
   if (!acc[tx.date]) acc[tx.date] = [];
   acc[tx.date].push(tx);
   return acc;
-}, {});
+}, {} as Record<string, typeof history>);
 
 export default function UserScanHistory({ activeTab, onTabChange, resident }) {
   const totalLiters = history.reduce((sum, tx) => sum + tx.liters, 0);
@@ -58,10 +58,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident }) {
             Your fuel transaction records
           </p>
         </div>
-        <span
-          className="material-symbols-outlined text-tertiary-fixed ml-auto"
-          style={{ fontSize: "28px", fontVariationSettings: "'FILL' 1" }}
-        >
+        <span className="material-symbols-outlined text-tertiary-fixed ml-auto icon-filled text-[28px]">
           receipt_long
         </span>
       </div>
@@ -124,10 +121,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident }) {
 
         {history.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-            <span
-              className="material-symbols-outlined text-outline"
-              style={{ fontSize: "48px" }}
-            >
+            <span className="material-symbols-outlined text-outline text-[48px]">
               receipt_long
             </span>
             <p className="text-sm text-on-surface-variant font-medium">

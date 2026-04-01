@@ -29,6 +29,30 @@
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   }
+  .icon-fill {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .icon-fill-active {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .icon-filled {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .icon-outline {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .icon-sm { font-size: 15px; }
+  .icon-base { font-size: 18px; }
+  .icon-lg { font-size: 24px; }
+  .checkerboard-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='0.03' fill-rule='evenodd'/%3E%3C/svg%3E");
+  }
+  .checkerboard-overlay {
+    background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E");
+  }
+  .header-gradient {
+    background: linear-gradient(135deg, #003366 0%, #001e40 100%);
+  }
   .banig-pattern {
     background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 20 L20 0 M20 40 L40 20 M0 0 L40 40' stroke='%23003366' stroke-width='1' fill='none' opacity='0.03'/%3E%3C/svg%3E");
   }
@@ -47,3 +71,104 @@
     50% { transform: translateY(40px); opacity: 1; }
   }
 }
+
+/* ── Fuel-type badge colours ── */
+.badge-diesel  { background: #fff3e0; color: #e65100; }
+.badge-premium { background: #f3e5f5; color: #7b1fa2; }
+.badge-regular { background: #e8f5e9; color: #2e7d32; }
+
+/* ── Status badge colours ── */
+.badge-active  { background: #e3f2fd; color: #1565c0; }
+.badge-maxed   { background: #fce4ec; color: #c62828; }
+.badge-new     { background: #e8f5e9; color: #2e7d32; }
+.badge-online  { background: #e8f5e9; color: #2e7d32; }
+.badge-offline { background: #fce4ec; color: #c62828; }
+
+/* ── Brand badge colours ── */
+.badge-brand-shell    { background: #fff3e0; color: #e65100; }
+.badge-brand-petron   { background: #e3f2fd; color: #1565c0; }
+.badge-brand-caltex   { background: #fce4ec; color: #c62828; }
+.badge-brand-phoenix  { background: #f3e5f5; color: #6a1b9a; }
+.badge-brand-seaoil   { background: #e8f5e9; color: #2e7d32; }
+
+/* ── Progress bar fill colours ── */
+.bar-fill-normal  { background: #003366; }
+.bar-fill-warning { background: #f57c00; }
+.bar-fill-danger  { background: #e53935; }
+
+/* ── Brand-specific bar fills & text ── */
+.brand-fill-shell   { background: #f57c00; }
+.brand-fill-petron  { background: #1976d2; }
+.brand-fill-caltex  { background: #e53935; }
+.brand-fill-phoenix { background: #8e24aa; }
+.brand-fill-seaoil  { background: #43a047; }
+
+.brand-text-shell   { color: #e65100; }
+.brand-text-petron  { color: #1565c0; }
+.brand-text-caltex  { color: #c62828; }
+.brand-text-phoenix { color: #6a1b9a; }
+.brand-text-seaoil  { color: #2e7d32; }
+
+/* ── Brand card (heatmap panel) ── */
+.brand-card { background: #fff; border-color: #f1f5f9; }
+.brand-dot-shell   { background: #f57c00; }
+.brand-dot-petron  { background: #1976d2; }
+.brand-dot-caltex  { background: #e53935; }
+.brand-dot-phoenix { background: #8e24aa; }
+.brand-dot-seaoil  { background: #43a047; }
+.brand-card.brand-active-shell   { background: #fff3e0; border-color: #f57c00; }
+.brand-card.brand-active-petron  { background: #e3f2fd; border-color: #1976d2; }
+.brand-card.brand-active-caltex  { background: #fce4ec; border-color: #e53935; }
+.brand-card.brand-active-phoenix { background: #f3e5f5; border-color: #8e24aa; }
+.brand-card.brand-active-seaoil  { background: #e8f5e9; border-color: #43a047; }
+.brand-card.brand-active-shell   .brand-dot-shell   { background: #fff; }
+.brand-card.brand-active-petron  .brand-dot-petron  { background: #fff; }
+.brand-card.brand-active-caltex  .brand-dot-caltex  { background: #fff; }
+.brand-card.brand-active-phoenix .brand-dot-phoenix { background: #fff; }
+.brand-card.brand-active-seaoil  .brand-dot-seaoil  { background: #fff; }
+
+/* ── Heatmap filter chip active states ── */
+.chip-active-all    { background: #003366; color: #fff; border-color: #003366; }
+.chip-active-shell  { background: #f57c00; color: #fff; border-color: #f57c00; }
+.chip-active-petron { background: #1976d2; color: #fff; border-color: #1976d2; }
+.chip-active-caltex { background: #e53935; color: #fff; border-color: #e53935; }
+.chip-active-phoenix{ background: #8e24aa; color: #fff; border-color: #8e24aa; }
+.chip-active-seaoil { background: #43a047; color: #fff; border-color: #43a047; }
+
+/* ── StatCard icon accent colours (AdminDashboard) ── */
+.stat-icon-navy-bg   { background: rgba(0,51,102,0.094); }
+.stat-icon-green-bg  { background: rgba(46,125,50,0.094); }
+.stat-icon-orange-bg { background: rgba(230,81,0,0.094); }
+.stat-icon-purple-bg { background: rgba(123,31,162,0.094); }
+.stat-icon-navy-text   { color: #003366; }
+.stat-icon-green-text  { color: #2e7d32; }
+.stat-icon-orange-text { color: #e65100; }
+.stat-icon-purple-text { color: #7b1fa2; }
+
+/* ── Allocation status (UserDashboard) ── */
+.alloc-section-good  { background: #e8f5e9; border-color: rgba(46,125,50,0.25); }
+.alloc-section-low   { background: #fff3e0; border-color: rgba(245,124,0,0.25); }
+.alloc-section-empty { background: #ffebee; border-color: rgba(198,40,40,0.25); }
+.alloc-bar-good  { color: #2e7d32; }
+.alloc-bar-low   { color: #f57c00; }
+.alloc-bar-empty { color: #c62828; }
+.alloc-text-good  { color: #2e7d32; }
+.alloc-text-low   { color: #e65100; }
+.alloc-text-empty { color: #c62828; }
+.alloc-fill-good  { background: #2e7d32; }
+.alloc-fill-low   { background: #f57c00; }
+.alloc-fill-empty { background: #c62828; }
+.alloc-circle-good  { border-color: #2e7d32; }
+.alloc-circle-low   { border-color: #f57c00; }
+.alloc-circle-empty { border-color: #c62828; }
+
+/* ── Announcement carousel (UserDashboard) ── */
+.ann-bg-0 { background: linear-gradient(135deg, #003366 0%, #0a4f8f 100%); }
+.ann-bg-1 { background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%); }
+.ann-bg-2 { background: linear-gradient(135deg, #4a148c 0%, #6a1f9a 100%); }
+.ann-badge-0 { color: #f9c23c; }
+.ann-badge-1 { color: #a5d6a7; }
+.ann-badge-2 { color: #ce93d8; }
+.ann-cta-0 { background: #f9c23c; color: #003366; }
+.ann-cta-1 { background: #a5d6a7; color: #003366; }
+.ann-cta-2 { background: #ce93d8; color: #003366; }

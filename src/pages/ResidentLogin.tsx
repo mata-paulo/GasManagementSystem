@@ -57,8 +57,7 @@ export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps)
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 rounded-2xl bg-primary-container flex items-center justify-center mb-4 shadow-lg">
             <span
-              className="material-symbols-outlined text-white"
-              style={{ fontSize: "40px", fontVariationSettings: "'FILL' 1" }}
+              className="material-symbols-outlined text-white icon-fill text-[40px]"
             >
               person
             </span>
