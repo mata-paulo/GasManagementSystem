@@ -137,6 +137,13 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         center: [lon, lat],
         zoom: 13,
         interactive: false,
+        attributionControl: false,
+      });
+      map.once("load", () => {
+        const container = mapPreviewRef.current;
+        if (!container) return;
+        (container.querySelector(".mapboxgl-ctrl-logo") as HTMLElement | null)?.style.setProperty("display", "none", "important");
+        (container.querySelector(".mapboxgl-ctrl-attrib") as HTMLElement | null)?.style.setProperty("display", "none", "important");
       });
       const el = document.createElement("div");
       el.style.cssText =
