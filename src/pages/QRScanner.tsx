@@ -305,66 +305,9 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
               QR code decoded successfully
             </div>
 
-            <div className="bg-white rounded-2xl overflow-hidden shadow-xl">
-              <div className="bg-[#003366] px-5 py-4">
-                <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">Decoded QR Data</p>
-                <p className="font-mono font-bold text-white text-lg tracking-widest mt-0.5">
-                  {decoded.firstCode}<span className="text-yellow-300">{decoded.lastCode}</span>{decoded.serial}
-                </p>
-              </div>
-
-              <div className="px-5 py-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 rounded-xl px-4 py-3">
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">First Name Code</p>
-                    <p className="font-headline font-black text-[#003366] text-2xl tracking-widest">{decoded.firstCode}</p>
-                    <p className="text-[9px] text-gray-400 mt-0.5">First 3 letters</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl px-4 py-3">
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Last Name Code</p>
-                    <p className="font-headline font-black text-[#003366] text-2xl tracking-widest">{decoded.lastCode}</p>
-                    <p className="text-[9px] text-gray-400 mt-0.5">First 3 letters</p>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 rounded-xl px-4 py-3">
-                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Registered At</p>
-                  <p className="font-bold text-gray-800 text-sm">{formatDecodedDate(decoded.date)}</p>
-                  <p className="text-[9px] text-gray-400 mt-0.5">Serial: {decoded.serial}</p>
-                </div>
-
-                {decoded.gasType && (
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <span className="material-symbols-outlined text-[#003366] icon-filled icon-base">local_gas_station</span>
-                    <div>
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Fuel Type</p>
-                      <p className="font-bold text-gray-800 text-sm">{decoded.gasType}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-amber-50 border-l-4 border-amber-400 px-3 py-2.5 rounded-r-xl flex gap-2 items-start">
-                  <span className="material-symbols-outlined text-amber-500 shrink-0 text-[14px]">id_card</span>
-                  <p className="text-[10px] text-amber-800 leading-relaxed">
-                    Verify the resident's name matches the code above. Ask for a valid ID to confirm identity.
-                  </p>
-                </div>
-              </div>
+            <div className="text-center text-white/60 text-xs pt-1">
+              Redirecting to validation...
             </div>
-
-            <button
-              onClick={handleConfirm}
-              className="w-full bg-[#003366] text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined icon-filled">verified</span>
-              Confirm & Validate
-            </button>
-            <button
-              onClick={handleScanAnother}
-              className="w-full bg-white/10 text-white font-headline font-bold py-3.5 rounded-xl active:scale-95 transition-all"
-            >
-              Scan Another
-            </button>
           </div>
         )}
       </div>

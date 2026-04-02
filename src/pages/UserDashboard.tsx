@@ -10,7 +10,7 @@ const DEFAULT_LON = 123.8854;
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
-  { id: "user-history", icon: "receipt_long", label: "Scan History" },
+  { id: "user-history", icon: "receipt_long", label: "Transaction History" },
   { id: "map", icon: "map", label: "Map" },
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
@@ -83,11 +83,15 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
         };
 
-  const recentTransactions = [
-    { id: 1, station: "Shell - Fuente Osmeña", date: "March 30, 2026", liters: 4.0, fuelType: "Regular" },
-    { id: 2, station: "Petron - Jones", date: "March 27, 2026", liters: 2.5, fuelType: "Regular" },
-    { id: 3, station: "Caltex - Mango", date: "March 24, 2026", liters: 1.5, fuelType: "Diesel" },
+  const allTransactions = [
+    { id: 1, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
+    { id: 2, station: "Petron – Jones Ave",    date: "Mar 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
+    { id: 3, station: "Caltex – Mango Ave",    date: "Mar 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
   ];
+
+  // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
+  const residentFuelType = resident?.gasType === "Diesel" ? "Diesel" : "Regular";
+  const recentTransactions = allTransactions.filter((tx) => tx.fuelType === residentFuelType);
 
   const touchStartX = useRef(null);
   const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
@@ -275,23 +279,28 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               <button className="text-xs font-bold text-primary-container hover:underline">View All</button>
             </div>
             <div className="space-y-2">
-              {recentTransactions.map((tx) => (
-                <div key={tx.id} className="bg-surface-container-lowest p-3 rounded-xl flex items-center justify-between border border-outline-variant/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-secondary-container/30 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[18px]">local_gas_station</span>
+              {recentTransactions.map((tx) => {
+                const total = tx.liters * tx.pricePerLiter;
+                return (
+                  <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-on-surface">{tx.station}</p>
-                      <p className="text-[10px] text-on-surface-variant">{tx.date} · {tx.fuelType}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
+                      <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                        {tx.fuelType}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
+                      <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-primary">{tx.liters.toFixed(1)} L</p>
-                    <p className="text-[9px] font-bold text-tertiary uppercase">Dispensed</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 

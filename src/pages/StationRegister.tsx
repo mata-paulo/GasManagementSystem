@@ -220,9 +220,12 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
     stationCode: "",
   });
   const [fuelCapacities, setFuelCapacities] = useState<Record<string, string>>({});
+  const [enabledFuels, setEnabledFuels] = useState<Set<string>>(new Set());
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const selectedFuels = form.brand ? BRAND_FUELS[form.brand] : [];
+  const activeFuels = selectedFuels.filter((f) => enabledFuels.has(f));
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -267,12 +270,20 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
       setError("Please select a brand.");
       return false;
     }
-    const hasInvalidFuelCapacity = selectedFuels.some((fuel) => {
+    if (activeFuels.length === 0) {
+      setError("Please enable at least one fuel type.");
+      return false;
+    }
+    const hasInvalidFuelCapacity = activeFuels.some((fuel) => {
       const value = fuelCapacities[fuel];
       return !value || Number(value) <= 0;
     });
     if (hasInvalidFuelCapacity) {
-      setError("Please enter capacity for all selected fuel types.");
+      setError("Please enter capacity for all enabled fuel types.");
+      return false;
+    }
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms and Conditions to proceed.");
       return false;
     }
     return true;
@@ -300,9 +311,9 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
       officerLastName: officerLastName.trim(),
       googleEmail: googleEmail.trim(),
       password,
-      availableFuels: selectedFuels,
+      availableFuels: activeFuels,
       fuelCapacities: Object.fromEntries(
-        selectedFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)])
+        activeFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)])
       ),
       stationCode: stationCode.trim().toUpperCase(),
       role: "station",
@@ -325,7 +336,7 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
               <div className="flex justify-between"><span className="text-gray-500">Barangay</span><span className="font-medium text-gray-800">{form.barangay}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Brand</span><span className="font-medium text-gray-800">{form.brand}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Representative</span><span className="font-medium text-gray-800">{`${form.officerFirstName} ${form.officerLastName}`.trim()}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Fuel Types</span><span className="font-medium text-gray-800">{selectedFuels.length}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Fuel Types</span><span className="font-medium text-gray-800">{activeFuels.length}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Station No.</span><span className="font-medium text-gray-800 uppercase">{form.stationCode}</span></div>
             </div>
             <div className="flex gap-3">
@@ -541,9 +552,8 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
                   onChange={(b) => {
                     setForm((prev) => ({ ...prev, brand: b as Brand }));
                     const fuels = BRAND_FUELS[b as Brand] || [];
-                    setFuelCapacities(
-                      Object.fromEntries(fuels.map((fuel) => [fuel, ""]))
-                    );
+                    setFuelCapacities(Object.fromEntries(fuels.map((fuel) => [fuel, ""])));
+                    setEnabledFuels(new Set(fuels));
                     setError("");
                   }}
                   options={BRANDS}
@@ -554,37 +564,94 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
 
               {selectedFuels.length > 0 && (
                 <div className="space-y-3">
-                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                    Fuel Capacity Per Type (Liters)
-                  </label>
-                  {selectedFuels.map((fuel) => (
-                    <div
-                      key={fuel}
-                      className="flex items-center justify-between gap-3 rounded-xl bg-surface-container-lowest border border-outline-variant px-3 py-2.5"
-                    >
-                      <p className="text-xs font-semibold text-on-surface-variant leading-tight">{fuel}</p>
-                      <div className="relative w-28 shrink-0">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={fuelCapacities[fuel] || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setFuelCapacities((prev) => ({ ...prev, [fuel]: value }));
-                            setError("");
-                          }}
-                          placeholder="0"
-                          className="w-full bg-white border border-outline-variant rounded-lg py-2 pl-3 pr-7 text-sm text-right"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-outline">
-                          L
-                        </span>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                      Fuel Types &amp; Capacity
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-medium">{activeFuels.length} of {selectedFuels.length} enabled</span>
+                  </div>
+                  {selectedFuels.map((fuel) => {
+                    const isEnabled = enabledFuels.has(fuel);
+                    return (
+                      <div
+                        key={fuel}
+                        className={`rounded-xl border px-3 py-2.5 transition-all ${isEnabled ? "bg-surface-container-lowest border-outline-variant" : "bg-slate-50 border-slate-200 opacity-60"}`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className={`text-xs font-semibold leading-tight ${isEnabled ? "text-on-surface-variant" : "text-slate-400"}`}>{fuel}</p>
+                          {/* Toggle switch */}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isEnabled}
+                            onClick={() => {
+                              setEnabledFuels((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(fuel)) next.delete(fuel);
+                                else next.add(fuel);
+                                return next;
+                              });
+                              setError("");
+                            }}
+                            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${isEnabled ? "bg-[#003366]" : "bg-slate-300"}`}
+                          >
+                            <span
+                              className={`inline-block h-5 w-5 mt-0.5 rounded-full bg-white shadow transition-transform duration-200 ${isEnabled ? "translate-x-5" : "translate-x-0.5"}`}
+                            />
+                          </button>
+                        </div>
+                        {isEnabled && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Capacity</label>
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={fuelCapacities[fuel] || ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setFuelCapacities((prev) => ({ ...prev, [fuel]: value }));
+                                  setError("");
+                                }}
+                                placeholder="0"
+                                className="w-full bg-white border border-outline-variant rounded-lg py-2 pl-3 pr-7 text-sm text-right"
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-outline">L</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
+
+              {/* Terms & Conditions */}
+              <label className="flex items-start gap-3 cursor-pointer select-none mt-1">
+                <div className="relative mt-0.5 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e) => { setAgreedToTerms(e.target.checked); setError(""); }}
+                    className="sr-only"
+                  />
+                  <div
+                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${agreedToTerms ? "bg-[#003366] border-[#003366]" : "bg-white border-slate-300"}`}
+                  >
+                    {agreedToTerms && (
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: "14px", fontVariationSettings: "'wght' 700" }}>check</span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs text-slate-600 leading-relaxed">
+                  I have read and agree to the{" "}
+                  <span className="font-bold text-[#003366]">Terms and Conditions</span>{" "}
+                  and{" "}
+                  <span className="font-bold text-[#003366]">Privacy Policy</span>{" "}
+                  of the Fuel Rationing System.
+                </span>
+              </label>
             </>
           )}
 

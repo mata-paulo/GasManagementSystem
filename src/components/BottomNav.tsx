@@ -10,6 +10,15 @@ const OFFICER_TABS: TabItem[] = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
+const USER_TABS: TabItem[] = [
+  { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+  { id: "user-history", icon: "receipt_long", label: "Scan History" },
+  { id: "map", icon: "map", label: "Map" },
+  { id: "settings", icon: "account_circle", label: "Account" },
+];
+
+export { USER_TABS };
+
 interface BottomNavProps {
   active: string;
   onChange: (tab: string) => void;

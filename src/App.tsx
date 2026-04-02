@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
 import RoleGuard from "./components/RoleGuard";
+import { USER_TABS } from "./components/BottomNav";
 import AuthLanding from "./pages/AuthLanding";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -39,6 +40,7 @@ export default function App() {
   const [screen, setScreen] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [officer, setOfficer] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [resident, setResident] = useState(null);
   const [scannedResident, setScannedResident] = useState(null);
 
@@ -243,6 +245,11 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onLogout={handleLogout}
+          tabs={[
+            { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+            { id: "history", icon: "receipt_long", label: "Scan History" },
+            { id: "settings", icon: "account_circle", label: "Account" },
+          ]}
         />
       </RoleGuard>
     );
@@ -311,18 +318,18 @@ export default function App() {
             setActiveTab("dashboard");
           }}
           onSave={(payload) => {
-            const total = Object.values(payload.fuelCapacities).reduce((a, b) => a + b, 0);
             setOfficer((prev) =>
               prev
                 ? {
                     ...prev,
+                    fuelInventory: payload.fuelInventory,
                     fuelCapacities: payload.fuelCapacities,
                     fuelPrices: payload.fuelPrices,
-                    availableFuels: Object.keys(payload.fuelCapacities),
-                    capacity: total,
+                    availableFuels: Object.keys(payload.fuelInventory),
                   }
                 : prev
             );
+            setLastUpdated(new Date());
             setScreen("dashboard");
             setActiveTab("dashboard");
           }}
@@ -340,6 +347,7 @@ export default function App() {
         onEditFuels={() => setScreen("fuel-setup")}
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}
+        lastUpdated={lastUpdated}
       />
     </RoleGuard>
   );
