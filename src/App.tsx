@@ -261,7 +261,6 @@ export default function App() {
           onShowQR={() => setScreen("qr-display")}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
-            { id: "user-history", icon: "receipt_long", label: "Scan History" },
             { id: "map", icon: "map", label: "Map" },
             { id: "settings", icon: "account_circle", label: "Account" },
           ]}
