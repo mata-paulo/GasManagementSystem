@@ -88,6 +88,10 @@ export default function App() {
 
   // ─── Unified login — routes each role to its own portal ───────────────────
   const handleLoginSuccess = (user, token, role) => {
+    if (!token || !role) {
+      setScreen("login");
+      return;
+    }
     login(user, role, token);
     if (role === "station") {
       setOfficer(user);
