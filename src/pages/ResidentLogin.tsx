@@ -48,7 +48,7 @@ export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps)
             Resident Login
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
-            Fuel Rationing System
+            A.G.A.S
           </p>
         </div>
       </div>

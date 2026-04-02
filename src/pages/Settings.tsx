@@ -102,7 +102,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
         </div>
 
         <p className="text-center text-slate-300 text-[10px] pt-5 pb-2">
-          © 2024 Mata Technologies Inc. · Fuel Rationing System
+          © 2024 Mata Technologies Inc. · A.G.A.S
         </p>
       </main>
 

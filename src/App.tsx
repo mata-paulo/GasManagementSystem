@@ -27,7 +27,7 @@ function SplashScreen() {
         local_gas_station
       </span>
       <p className="text-white/70 text-sm font-semibold tracking-wide">
-        Fuel Rationing System
+        A.G.A.S
       </p>
     </div>
   );

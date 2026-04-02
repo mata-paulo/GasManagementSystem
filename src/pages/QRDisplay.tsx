@@ -124,7 +124,7 @@ export default function QRDisplay({ resident, onDone }) {
             </button>
           </div>
           <p className="text-center text-outline text-[9px]">
-            © 2024 Mata Technologies Inc. · Fuel Rationing System
+            © 2024 Mata Technologies Inc. · A.G.A.S
           </p>
         </div>
       </div>

@@ -359,7 +359,7 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
             Station Registration
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
-            Fuel Rationing System
+            A.G.A.S
           </p>
         </div>
       </div>

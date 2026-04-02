@@ -13,7 +13,7 @@ export default function Header({ onClose }: HeaderProps) {
         </div>
         <div>
           <h1 className="text-[#003366] font-headline font-bold tracking-tight text-lg leading-none">
-            Fuel Rationing System
+            A.G.A.S
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-80">
             Official Portal

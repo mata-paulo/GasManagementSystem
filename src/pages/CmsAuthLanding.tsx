@@ -55,7 +55,7 @@ export default function CmsAuthLanding({ onBack, onLogin }: CmsAuthLandingProps)
         </button>
 
         <p className="text-center text-[10px] text-outline pt-2">
-          © 2024 Mata Technologies Inc. · Fuel Rationing System
+          © 2024 Mata Technologies Inc. · A.G.A.S
         </p>
       </div>
     </div>

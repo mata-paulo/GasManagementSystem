@@ -22,7 +22,7 @@ export default function AuthLanding({ onLogin, onResidentRegister }: AuthLanding
         </p>
 
         <h1 className="font-headline font-black text-white text-4xl text-center leading-tight mb-2">
-          Fuel Rationing System
+          A.G.A.S
         </h1>
 
         <p className="text-white/60 text-sm text-center max-w-[260px] leading-relaxed">
@@ -61,7 +61,7 @@ export default function AuthLanding({ onLogin, onResidentRegister }: AuthLanding
         </button>
 
         <p className="text-center text-[10px] text-outline pt-2">
-          © 2024 Mata Technologies Inc. · Fuel Rationing System
+          © 2024 Mata Technologies Inc. · A.G.A.S
         </p>
       </div>
     </div>

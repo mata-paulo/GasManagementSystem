@@ -43,7 +43,7 @@ export default function AdminLogin({ onBack, onSuccess }: AdminLoginProps) {
             Admin Login
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
-            Fuel Rationing System
+            A.G.A.S
           </p>
         </div>
       </div>

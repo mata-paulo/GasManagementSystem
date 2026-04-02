@@ -279,7 +279,7 @@ export default function AdminDashboard({ onLogout }) {
             <h1 className="text-base font-black text-[#003366]">
               {NAV_ITEMS.find(n => n.id === activePage)?.label || "Overview"}
             </h1>
-            <p className="text-xs text-slate-400">Cebu City Fuel Rationing System · March 30, 2026</p>
+            <p className="text-xs text-slate-400">Cebu City A.G.A.S · March 30, 2026</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 bg-green-50 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full border border-green-200">
