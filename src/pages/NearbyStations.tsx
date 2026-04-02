@@ -229,43 +229,11 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     if (!location) return;
     const { lat, lon } = location;
     setLoadingStations(true);
-<<<<<<< Updated upstream
     const withDistance = STATIC_STATIONS
       .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
       .sort((a, b) => a.distance - b.distance);
     setStations(withDistance);
     setLoadingStations(false);
-=======
-<<<<<<< Updated upstream
-
-    const query = `[out:json][timeout:25];node["amenity"="fuel"](around:5000,${lat},${lon});out body;`;
-    fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const sorted = (data.elements || [])
-          .map((el) => ({
-            id: el.id,
-            name: el.tags?.name || el.tags?.brand || "Gas Station",
-            brand: el.tags?.brand || null,
-            lat: el.lat,
-            lon: el.lon,
-            distance: getDistance(lat, lon, el.lat, el.lon),
-          }))
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 10);
-        setStations(sorted);
-      })
-      .catch(() => setStations([]))
-      .finally(() => setLoadingStations(false));
-=======
-    const withDistance = STATIC_STATIONS
-      .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
-      .filter((st) => st.distance <= 5000)
-      .sort((a, b) => a.distance - b.distance);
-    setStations(withDistance);
-    setLoadingStations(false);
->>>>>>> Stashed changes
->>>>>>> Stashed changes
   }, [location]);
 
   const filteredStations =
