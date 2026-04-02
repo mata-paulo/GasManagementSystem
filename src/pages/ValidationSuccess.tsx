@@ -69,23 +69,13 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
     : selectedFuelOption.toLowerCase().includes("regular")
       ? { bgFrom: "#fee2e2", bgTo: "#fecaca", border: "#fca5a5", text: "#991b1b" }
       : { bgFrom: "#ffedd5", bgTo: "#fed7aa", border: "#fdba74", text: "#9a3412" };
-  const circleColor =
-    previewRemaining <= 7
-      ? "#c62828"
-      : "#2e7d32";
-  const allocationBg =
-    previewRemaining <= 7
-      ? "#fdecec"
-      : "#eaf4ea";
-  const allocationBorder =
-    previewRemaining <= 7
-      ? "#f4b9b9"
-      : "#b8e3bf";
-  const textColor = circleColor;
-  const textMutedColor =
-    previewRemaining <= 7
-      ? "#9f1d1d"
-      : "#1f5f27";
+  const isLow = previewRemaining <= 7;
+  const circleColor    = isLow ? "#dc2626" : "#16a34a";
+  const allocationBg   = isLow ? "#fef2f2" : "#f0fdf4";
+  const allocationBorder = isLow ? "#fca5a5" : "#e5e5eb";
+  const textColor      = isLow ? "#dc2626" : "#15803d";
+  const textMutedColor = isLow ? "#991b1b" : "#166534";
+  const barColor       = isLow ? "#ef4444" : "#16a34a";
 
 
   return (
@@ -184,29 +174,39 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                     </div>
                     <p className="text-lg sm:text-2xl font-bold mt-1" style={{ color: textColor }}>Remaining</p>
                   </div>
-                  <div
-                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-[3px] sm:border-4 bg-white flex flex-col items-center justify-center shrink-0"
-                    style={{ borderColor: circleColor }}
-                  >
-                    <span
-                      className="text-xl sm:text-3xl font-black leading-none"
-                      style={{ color: circleColor }}
-                    >
-                      {Math.round((previewRemaining / fuelLimit) * 100)}%
-                    </span>
-                    <span
-                      className="text-[8px] sm:text-[9px] font-bold uppercase"
-                      style={{ color: circleColor }}
-                    >
-                      Left
-                    </span>
-                  </div>
+                  {(() => {
+                    const pct = Math.round((previewRemaining / fuelLimit) * 100);
+                    const r = 22;
+                    const circ = 2 * Math.PI * r;
+                    const dash = (pct / 100) * circ;
+                    return (
+                      <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
+                        <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90 absolute inset-0">
+                          {/* Track */}
+                          <circle cx="32" cy="32" r={r} fill="none" stroke={allocationBorder} strokeWidth="5" />
+                          {/* Arc */}
+                          <circle
+                            cx="32" cy="32" r={r}
+                            fill="none"
+                            stroke={circleColor}
+                            strokeWidth="5"
+                            strokeLinecap="round"
+                            strokeDasharray={`${dash} ${circ}`}
+                          />
+                        </svg>
+                        <div className="relative flex flex-col items-center leading-none">
+                          <span className="text-sm font-black" style={{ color: circleColor }}>{pct}%</span>
+                          <span className="text-[8px] font-bold uppercase" style={{ color: circleColor }}>Left</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="mt-3 h-3 sm:h-4 w-full rounded-full bg-white/70 overflow-hidden">
                   <div
                     className="h-full rounded-full flex items-center justify-end pr-2"
-                    style={{ backgroundColor: textColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}
+                    style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}
                   >
                     <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
                   </div>
@@ -242,27 +242,52 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                     );
                   })}
                 </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={literInput}
-                  onChange={(e) => setLiterInput(e.target.value)}
-                  placeholder="Enter liters"
-                  className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
-                />
-                <div className="grid grid-cols-5 gap-2">
-                  {[2, 5, 10, 15, 20].map((amount) => (
-                    <button
-                      key={amount}
-                      type="button"
-                      onClick={() => setLiterInput(String(amount))}
-                      className="rounded-lg border border-outline-variant/40 bg-white py-2.5 text-sm font-bold text-[#003366] active:scale-95 transition-all hover:bg-slate-50"
-                    >
-                      {amount} L
-                    </button>
-                  ))}
-                </div>
+                {remainingLiters <= 0 ? (
+                  <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold px-4 py-3 text-center">
+                    No allocation remaining — this resident has used their full weekly limit.
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      max={remainingLiters}
+                      step="0.1"
+                      value={literInput}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val > remainingLiters) {
+                          setLiterInput(String(remainingLiters));
+                        } else {
+                          setLiterInput(e.target.value);
+                        }
+                        setActionError("");
+                      }}
+                      placeholder={`Max ${remainingLiters.toFixed(1)} L`}
+                      className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
+                    />
+                    <div className="grid grid-cols-5 gap-2">
+                      {[2, 5, 10, 15, 20].map((amount) => {
+                        const exceeds = amount > remainingLiters;
+                        return (
+                          <button
+                            key={amount}
+                            type="button"
+                            disabled={exceeds}
+                            onClick={() => { setLiterInput(String(amount)); setActionError(""); }}
+                            className={`rounded-lg border py-2.5 text-sm font-bold transition-all ${
+                              exceeds
+                                ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
+                                : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
+                            }`}
+                          >
+                            {amount} L
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -285,9 +310,9 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleConfirmDispense}
-                disabled={!literInput || parseFloat(literInput) <= 0}
+                disabled={remainingLiters <= 0 || !literInput || parseFloat(literInput) <= 0}
                 className={`w-full font-headline font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                  literInput && parseFloat(literInput) > 0
+                  remainingLiters > 0 && literInput && parseFloat(literInput) > 0
                     ? "bg-[#2e7d32] text-white active:scale-95 active:bg-[#1b5e20]"
                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
                 }`}

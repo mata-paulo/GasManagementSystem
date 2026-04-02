@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
 import RoleGuard from "./components/RoleGuard";
+import { USER_TABS } from "./components/BottomNav";
 import AuthLanding from "./pages/AuthLanding";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -261,6 +262,7 @@ export default function App() {
           onShowQR={() => setScreen("qr-display")}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+            { id: "user-history", icon: "receipt_long", label: "Scan History" },
             { id: "map", icon: "map", label: "Map" },
             { id: "settings", icon: "account_circle", label: "Account" },
           ]}
