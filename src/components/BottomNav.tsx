@@ -25,7 +25,7 @@ export default function BottomNav({ active, onChange, tabs = OFFICER_TABS }: Bot
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className={`flex flex-col items-center justify-center py-2 px-5 rounded-xl transition-all duration-200 ${
+            className={`flex flex-1 flex-col items-center justify-center py-2 rounded-xl transition-all duration-200 ${
               isActive
                 ? "bg-[#003366] text-white scale-105"
                 : "text-slate-400 hover:text-[#705d00]"

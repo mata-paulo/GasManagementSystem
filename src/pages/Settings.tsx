@@ -4,9 +4,6 @@ const APP_VERSION = "V 1.0.0";
 
 const menuItems = [
   { icon: "qr_code", label: "My QR Code", section: "main" },
-  { icon: "receipt_long", label: "Fuel Transactions", section: "main" },
-  { icon: "inventory_2", label: "Allocation Info", section: "main" },
-  { icon: "local_gas_station", label: "Participating Stations", section: "main" },
   { icon: "settings", label: "Settings", section: "main" },
   { icon: "help_outline", label: "Help & Support", section: "support" },
   { icon: "info", label: "About the App", section: "support" },
@@ -20,7 +17,7 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-export default function Settings({ officer, activeTab, onTabChange, onLogout, tabs = USER_TABS }) {
+export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, tabs = USER_TABS }) {
   const name = officer
     ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim()
     : "Station Officer";
@@ -66,6 +63,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
               {items.map((item, i) => (
                 <button
                   key={item.label}
+                  onClick={item.label === "My QR Code" ? onShowQR : undefined}
                   className={`w-full flex items-center gap-4 px-5 py-4 transition-colors active:bg-slate-50 ${
                     i < items.length - 1 ? "border-b border-slate-100" : ""
                   }`}
@@ -85,13 +83,8 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, ta
           </div>
         ))}
 
-        {/* Legal + Version + Sign out */}
+        {/* Version + Sign out */}
         <div className="mt-5 mx-4 bg-white rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10">
-          <button className="w-full flex items-center gap-4 px-5 py-4 border-b border-slate-100 active:bg-slate-50 transition-colors">
-            <span className="material-symbols-outlined text-[#003366] text-[22px]">gavel</span>
-            <span className="flex-1 text-sm font-medium text-slate-800 text-left">Legal</span>
-            <span className="material-symbols-outlined text-slate-300 text-[20px]">chevron_right</span>
-          </button>
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-4">
               <span className="material-symbols-outlined text-[#003366] text-[22px]">smartphone</span>

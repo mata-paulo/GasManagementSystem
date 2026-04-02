@@ -49,8 +49,8 @@ export default function UserScanHistory({ activeTab, onTabChange, resident }) {
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-primary-container shadow-sm sticky top-0 z-40">
-        <div>
+      <div className="flex items-center px-6 py-4 bg-primary-container shadow-sm sticky top-0 z-40">
+        <div className="flex-1 flex flex-col items-center">
           <h1 className="text-white font-headline font-bold text-lg leading-none">
             Scan History
           </h1>
@@ -58,7 +58,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident }) {
             Your fuel transaction records
           </p>
         </div>
-        <span className="material-symbols-outlined text-tertiary-fixed ml-auto icon-filled text-[28px]">
+        <span className="material-symbols-outlined text-tertiary-fixed icon-filled text-[28px]">
           receipt_long
         </span>
       </div>

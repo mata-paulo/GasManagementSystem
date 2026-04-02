@@ -28,9 +28,10 @@ interface OfficerData {
   capacity?: string | number;
 }
 
-export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
+export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onTabChange }: {
   officer: OfficerData;
   onScan: () => void;
+  onEditFuels?: () => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
 }) {

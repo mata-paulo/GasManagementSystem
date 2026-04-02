@@ -140,6 +140,7 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -149,7 +150,7 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
   };
 
   // ── Step 1: validate personal info then advance ──
-  const handleStep1 = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
     const { firstName, lastName, barangay, email, password, confirmPassword } = form;
     if (!firstName.trim() || !lastName.trim() || !barangay || !email.trim() || !password.trim() || !confirmPassword.trim()) {
@@ -173,10 +174,14 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
   };
 
   // ── Step 2: validate vehicle info then show confirm dialog ──
-  const handleStep2 = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleStep2 = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.plate.trim() || !gasType) {
       setError("Please fill in plate number and fuel type.");
+      return;
+    }
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms and Conditions to register.");
       return;
     }
     setError("");
@@ -221,14 +226,20 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
               <h3 className="font-headline font-bold text-[#003366] text-lg">Confirm Registration</h3>
             </div>
             <p className="text-sm text-gray-600 mb-4">Please review your information before submitting.</p>
+
+            {/* Plate Number highlight */}
+            <div className="flex flex-col items-center bg-[#1a4f8a] rounded-xl py-4 px-6 mb-4">
+              <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Plate Number</p>
+              <p className="font-headline font-black text-white text-3xl tracking-[0.2em] uppercase">{form.plate}</p>
+            </div>
+
             <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm mb-5">
               <div className="flex justify-between"><span className="text-gray-500">Name</span><span className="font-medium text-gray-800">{form.firstName} {form.lastName}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium text-gray-800 truncate max-w-[180px]">{form.email}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Barangay</span><span className="font-medium text-gray-800">{form.barangay}</span></div>
               <div className="h-px bg-gray-200 my-1" />
               <div className="flex justify-between"><span className="text-gray-500">Vehicle</span><span className="font-medium text-gray-800 capitalize">{vehicleType}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Plate No.</span><span className="font-medium text-gray-800 uppercase tracking-widest">{form.plate}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Fuel Type</span><span className="font-medium text-gray-800">{gasType}</span></div>
+<div className="flex justify-between"><span className="text-gray-500">Fuel Type</span><span className="font-medium text-gray-800">{gasType}</span></div>
             </div>
             <div className="flex gap-3">
               <button type="button" onClick={() => setShowConfirm(false)}
@@ -246,7 +257,7 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
 
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 bg-slate-100/80 backdrop-blur-md shadow-sm sticky top-0 z-40">
-        <button onClick={handleBack} aria-label="Go back"
+        <button type="button" onClick={handleBack} aria-label="Go back"
           className="p-2 hover:bg-slate-200/50 rounded-full transition-all active:scale-95 text-[#003366]">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
@@ -450,6 +461,34 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                 <span className="material-symbols-outlined text-tertiary text-base shrink-0">info</span>
                 Your QR code will be available to view after registration is complete.
               </div>
+
+              {/* Terms and Conditions */}
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <div className="relative shrink-0 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e) => { setAgreedToTerms(e.target.checked); setError(""); }}
+                    className="sr-only"
+                  />
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                    agreedToTerms
+                      ? "bg-[#003366] border-[#003366]"
+                      : "bg-white border-outline-variant"
+                  }`}>
+                    {agreedToTerms && (
+                      <span className="material-symbols-outlined text-white text-[14px]">check</span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs text-on-surface-variant leading-relaxed">
+                  I have read and agree to the{" "}
+                  <span className="font-semibold text-[#003366]">Terms and Conditions</span>{" "}
+                  and{" "}
+                  <span className="font-semibold text-[#003366]">Privacy Policy</span>{" "}
+                  of the AGAS Gas Allocation System.
+                </span>
+              </label>
 
               <button type="submit"
                 className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">

@@ -17,37 +17,13 @@ const USER_TABS = [
 
 const ANNOUNCEMENTS = [
   {
-    tag: "Fuel Rationing System",
-    title: "Ration smart and let our app manage the rest!",
-    subtitle: "Participating stations include Shell, Petron, and Caltex locations across Cebu City.",
-    cta: "View My Allocation",
-    bgClass: "bg-gradient-to-br from-[#003366] to-[#0a4f8f]",
-    decorIcon: "local_gas_station",
-    badgeIcon: "verified_user",
-    badgeIconClass: "text-[#f9c23c]",
-    tagClass: "text-[#f9c23c]",
-    ctaClass: "bg-[#f9c23c] text-[#003366]",
-  },
-  {
-    tag: "Weekly Reminder",
-    title: "Use your allocation before it resets every Monday!",
-    subtitle: "Unused fuel quota does not carry over. Claim yours at any accredited station.",
-    cta: "Find Nearby Stations",
-    bgClass: "bg-gradient-to-br from-[#1b5e20] to-[#2e7d32]",
-    decorIcon: "event_repeat",
-    badgeIcon: "notifications_active",
-    badgeIconClass: "text-[#a5d6a7]",
-    tagClass: "text-[#a5d6a7]",
-    ctaClass: "bg-[#a5d6a7] text-[#003366]",
-  },
-  {
-    tag: "How It Works",
-    title: "Show your QR code and get your fuel allocation fast!",
-    subtitle: "Present your QR code and valid ID at the station counter before fueling.",
-    cta: "View My QR Code",
+    tag: "We Value Your Feedback",
+    title: "Let us know how we can serve you better!",
+    subtitle: "Share your experience and help us improve the AGAS fuel allocation service for everyone.",
+    cta: "Share Feedback",
     bgClass: "bg-gradient-to-br from-[#4a148c] to-[#6a1f9a]",
-    decorIcon: "qr_code_2",
-    badgeIcon: "info",
+    decorIcon: "rate_review",
+    badgeIcon: "favorite",
     badgeIconClass: "text-[#ce93d8]",
     tagClass: "text-[#ce93d8]",
     ctaClass: "bg-[#ce93d8] text-[#003366]",
@@ -80,7 +56,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           iconClass: "text-[#2e7d32] icon-fill text-[32px]",
           valueClass: "text-4xl font-black font-headline leading-none text-[#2e7d32]",
           labelClass: "text-base font-bold mt-1 text-[#2e7d32]",
-          circleClass: "border-[#2e7d32]",
+          circleColor: "#2e7d32",
           pctClass: "text-lg font-black leading-none text-[#2e7d32]",
           barClass: "bg-[#2e7d32]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#2e7d32]",
@@ -91,7 +67,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           iconClass: "text-[#f57c00] icon-fill text-[32px]",
           valueClass: "text-4xl font-black font-headline leading-none text-[#f57c00]",
           labelClass: "text-base font-bold mt-1 text-[#e65100]",
-          circleClass: "border-[#f57c00]",
+          circleColor: "#f57c00",
           pctClass: "text-lg font-black leading-none text-[#f57c00]",
           barClass: "bg-[#f57c00]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#f57c00]",
@@ -101,7 +77,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           iconClass: "text-[#c62828] icon-fill text-[32px]",
           valueClass: "text-4xl font-black font-headline leading-none text-[#c62828]",
           labelClass: "text-base font-bold mt-1 text-[#c62828]",
-          circleClass: "border-[#c62828]",
+          circleColor: "#c62828",
           pctClass: "text-lg font-black leading-none text-[#c62828]",
           barClass: "bg-[#c62828]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
@@ -129,37 +105,44 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   useEffect(() => {
     if (!mapPreviewRef.current || mapInstanceRef.current) return;
 
-    const initMap = (lat, lon) => {
-      if (!mapPreviewRef.current) return;
-      const map = new mapboxgl.Map({
-        container: mapPreviewRef.current,
-        style: "mapbox://styles/mapbox/streets-v12",
-        center: [lon, lat],
-        zoom: 13,
-        interactive: false,
-        attributionControl: false,
-      });
-      map.once("load", () => {
-        const container = mapPreviewRef.current;
-        if (!container) return;
-        (container.querySelector(".mapboxgl-ctrl-logo") as HTMLElement | null)?.style.setProperty("display", "none", "important");
-        (container.querySelector(".mapboxgl-ctrl-attrib") as HTMLElement | null)?.style.setProperty("display", "none", "important");
-      });
-      const el = document.createElement("div");
-      el.style.cssText =
-        "width:14px;height:14px;border-radius:50%;background:#003366;border:2px solid #fff;box-shadow:0 0 0 3px rgba(0,51,102,0.25)";
-      new mapboxgl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
-      mapInstanceRef.current = map;
-    };
+    // Start map immediately with default center — don't wait for GPS
+    const map = new mapboxgl.Map({
+      container: mapPreviewRef.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: [DEFAULT_LON, DEFAULT_LAT],
+      zoom: 13,
+      interactive: false,
+      attributionControl: false,
+      fadeDuration: 0,
+    });
 
+    const markerEl = document.createElement("div");
+    markerEl.style.cssText =
+      "width:14px;height:14px;border-radius:50%;background:#003366;border:2px solid #fff;box-shadow:0 0 0 3px rgba(0,51,102,0.25)";
+    const marker = new mapboxgl.Marker({ element: markerEl })
+      .setLngLat([DEFAULT_LON, DEFAULT_LAT])
+      .addTo(map);
+
+    map.once("load", () => {
+      const container = mapPreviewRef.current;
+      if (!container) return;
+      (container.querySelector(".mapboxgl-ctrl-logo") as HTMLElement | null)?.style.setProperty("display", "none", "important");
+      (container.querySelector(".mapboxgl-ctrl-attrib") as HTMLElement | null)?.style.setProperty("display", "none", "important");
+    });
+
+    mapInstanceRef.current = map;
+
+    // Update center once GPS resolves
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => initMap(pos.coords.latitude, pos.coords.longitude),
-        () => initMap(DEFAULT_LAT, DEFAULT_LON),
-        { timeout: 8000 }
+        (pos) => {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          map.setCenter([lon, lat]);
+          marker.setLngLat([lon, lat]);
+        },
+        () => {},
+        { timeout: 5000, maximumAge: 60000 }
       );
-    } else {
-      initMap(DEFAULT_LAT, DEFAULT_LON);
     }
 
     return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
@@ -232,9 +215,22 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 </div>
                 <p className={statusConfig.labelClass}>Remaining</p>
               </div>
-              <div className={`w-16 h-16 rounded-full flex flex-col items-center justify-center border-4 bg-white shrink-0 ${statusConfig.circleClass}`}>
-                <span className={statusConfig.pctClass}>{pctLeft}%</span>
-                <span className="text-[8px] font-bold text-slate-400 uppercase">Left</span>
+              <div className="relative w-16 h-16 shrink-0">
+                <svg viewBox="0 0 56 56" className="w-full h-full -rotate-90">
+                  <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5" />
+                  <circle
+                    cx="28" cy="28" r="22" fill="none"
+                    stroke={statusConfig.circleColor}
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 22}`}
+                    strokeDashoffset={`${2 * Math.PI * 22 * (1 - pctLeft / 100)}`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className={statusConfig.pctClass}>{pctLeft}%</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">Left</span>
+                </div>
               </div>
             </div>
 
