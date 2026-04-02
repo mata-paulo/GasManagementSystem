@@ -16,6 +16,7 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [decoded, setDecoded] = useState<DecodedQR | null>(null);
   const [error, setError] = useState("");
@@ -125,6 +126,15 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
   const handleClose = () => {
     stopCamera();
     onClose();
+  };
+
+  const handleConfirm = () => {
+    if (decoded) onSuccess(decoded);
+  };
+
+  const handleScanAnother = () => {
+    setDecoded(null);
+    setError("");
   };
 
   const switchMode = (next: ScannerMode) => {

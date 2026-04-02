@@ -38,10 +38,12 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
   const stationCode = officer?.stationCode || "N/A";
   const barangay = officer?.barangay || "Not set";
   const brand = officer?.brand || "Station";
-  const capacity = totalCapacityLabel(officer);
-  const fuelCapacities = officer?.fuelCapacities || {};
-  const fuelPrices = officer?.fuelPrices || {};
-  const fuelInventory = officer?.fuelInventory || {};
+  const rawCapacity = officer?.capacity;
+  const capacity = rawCapacity ? String(rawCapacity) : "N/A";
+  const fuelCapacities = (officer as any)?.fuelCapacities || {};
+  const fuelPrices = (officer as any)?.fuelPrices || {};
+  const fuelInventory = (officer as any)?.fuelInventory || {};
+  const todayTotal = recentTransactions.slice(0, MAX_DASHBOARD_TRANSACTIONS).reduce((sum, tx) => sum + tx.liters, 0);
   const fuelInventoryCards: Array<[string, number]> = Object.keys(fuelCapacities).length
     ? Object.entries(fuelCapacities)
     : [
@@ -91,7 +93,6 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
               </div>
               <button
                 type="button"
-                onClick={onEditFuels}
                 className="w-full sm:w-auto min-h-10 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md text-white text-xs font-black uppercase tracking-wider px-5 py-2.5 active:scale-[0.98] transition-all duration-300 ease-out flex items-center justify-center gap-2"
               >
                 <span className="material-symbols-outlined text-base shrink-0" style={{ fontSize: "16px", fontVariationSettings: "'FILL' 0" }}>edit</span>
@@ -129,7 +130,7 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">Recent Transactions</h3>
-              <button className="text-xs font-bold text-primary-container hover:underline">View All</button>
+              <button type="button" className="text-xs font-bold text-primary-container hover:underline">View All</button>
             </div>
             <div className="space-y-2">
               {recentTransactions.map((tx) => (
@@ -141,15 +142,8 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
                     <div className="min-w-0">
                       <p className="text-sm font-black text-slate-800 truncate">{tx.name}</p>
                       <p className="text-[10px] font-medium text-slate-400">
-                        {tx.plate} · {tx.date} · {tx.time}
+                        {tx.plate} · {tx.time}
                       </p>
-                      <span
-                        className="inline-block mt-1 text-[8px] font-black px-2 py-0.5 rounded-full max-w-full truncate"
-                        style={{ background: txTheme.soft, color: txTheme.text }}
-                        title={tx.fuelType}
-                      >
-                        {tx.fuelType}
-                      </span>
                     </div>
                   </div>
                   <div className="text-right shrink-0 max-w-[48%]">
@@ -161,8 +155,7 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
                     </span>
                   </div>
                 </div>
-                );
-              })}
+              ))}
             </div>
           </section>
         </div>
@@ -171,6 +164,7 @@ export default function Dashboard({ officer, onScan, activeTab, onTabChange }: {
       {/* Floating Scan QR button */}
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
+          type="button"
           onClick={onScan}
           className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
         >

@@ -13,7 +13,6 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [forgotView, setForgotView] = useState<boolean>(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [resetEmail, setResetEmail] = useState<string>("");
   const [resetSent, setResetSent] = useState<boolean>(false);
 

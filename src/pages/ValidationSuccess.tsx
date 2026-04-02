@@ -16,7 +16,9 @@ type ValidationSuccessProps = {
   onTabChange: (tab: string) => void;
 };
 
-export default function ValidationSuccess({ scannedResident, onBack, activeTab, onTabChange }: ValidationSuccessProps) {
+export default function ValidationSuccess({ officer, scannedResident, onBack, activeTab, onTabChange }: ValidationSuccessProps) {
+  const managerName = officer?.officerFirstName || officer?.firstName || "Officer";
+  const brand = officer?.brand || "Station";
   const firstName = scannedResident?.firstCode || "JCX";
   const lastName = scannedResident?.lastCode || "LEQ";
   const plateNumber = "ABC-1234";
@@ -237,6 +239,8 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                     <p className="font-headline font-bold text-sm text-on-surface font-mono tracking-widest">{scannedResident.serial}</p>
                   </div>
                 </div>
+              )}
+                </div>
               </div>
 
               {/* Liter Input */}
@@ -311,6 +315,7 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
             {/* Action Buttons */}
             <div className="flex flex-col gap-3 pt-2">
               <button
+                type="button"
                 onClick={handleConfirmDispense}
                 className="w-full bg-[#2e7d32] text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
               >
@@ -318,6 +323,7 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                 Confirm Dispense
               </button>
               <button
+                type="button"
                 onClick={onBack}
                 className="w-full bg-surface-container-high text-on-surface-variant font-headline font-bold py-4 rounded-xl active:scale-95 transition-all"
               >

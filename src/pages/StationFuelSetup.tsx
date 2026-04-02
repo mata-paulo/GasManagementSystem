@@ -190,6 +190,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
                       type="number"
                       min={0}
                       step={1}
+                      aria-label={`Capacity in liters for ${name}`}
                       value={capacities[name] ?? ""}
                       onChange={(e) => {
                         setCapacities((prev) => ({ ...prev, [name]: e.target.value }));
@@ -206,6 +207,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
                       type="number"
                       min={0}
                       step={0.01}
+                      aria-label={`Price per liter in pesos for ${name}`}
                       value={prices[name] ?? ""}
                       onChange={(e) => {
                         setPrices((prev) => ({ ...prev, [name]: e.target.value }));
