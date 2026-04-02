@@ -252,6 +252,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleUserTabChange}
           onLogout={handleLogout}
+          onShowQR={() => setScreen("qr-display")}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Scan History" },

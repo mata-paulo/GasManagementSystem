@@ -28,9 +28,11 @@ const FILTERS = [
 ];
 
 const STANDARD_FUELS = [
-  { name: "Diesel", type: "Diesel", price: 0 },
-  { name: "Regular/Unleaded Gasoline", type: "Gasoline", price: 0 },
-  { name: "Premium", type: "Premium", price: 0 },
+  { name: "Diesel",                    type: "Diesel",       price: 0 },
+  { name: "Premium Diesel",            type: "PremiumDiesel", price: 0 },
+  { name: "Regular/Unleaded (91)",     type: "Gasoline",     price: 0 },
+  { name: "Premium (95)",              type: "Premium95",    price: 0 },
+  { name: "Super Premium (97)",        type: "Premium97",    price: 0 },
 ];
 
 const BRAND_FUELS = {
@@ -45,10 +47,12 @@ const BRAND_FUELS = {
   default: STANDARD_FUELS,
 };
 
-const FUEL_TYPE_COLORS = {
-  Diesel: { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
-  Gasoline: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
-  Premium: { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
+const FUEL_TYPE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  Diesel:       { bg: "bg-amber-50",  text: "text-amber-700",  dot: "bg-amber-500"  },
+  PremiumDiesel:{ bg: "bg-green-50",  text: "text-green-700",  dot: "bg-green-500"  },
+  Gasoline:     { bg: "bg-blue-50",   text: "text-blue-700",   dot: "bg-blue-500"   },
+  Premium95:    { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
+  Premium97:    { bg: "bg-rose-50",   text: "text-rose-700",   dot: "bg-rose-500"   },
 };
 
 const STATIC_STATIONS = [
@@ -153,7 +157,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   const dragStartHeight = useRef(null);
 
   const PEEK_HEIGHT = Math.round(window.innerHeight * 0.28);
-  const OPEN_HEIGHT = Math.round(window.innerHeight * 0.55);
+  const OPEN_HEIGHT = Math.round(window.innerHeight * 0.58);
 
   const [location, setLocation] = useState(null);
   const [geoError, setGeoError] = useState(null);
@@ -170,6 +174,8 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
   const drawerOpen = drawerHeight > PEEK_HEIGHT + 20;
   const drawerRef = useRef<HTMLDivElement>(null);
+  const stationRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const stationListRef = useRef<HTMLDivElement>(null);
   const handleBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -314,7 +320,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         (b, c) => b.extend(c),
         new mapboxgl.LngLatBounds(coords[0], coords[0])
       );
-      map.fitBounds(bounds, { padding: { top: 80, bottom: 260, left: 40, right: 40 }, duration: 900 });
+      map.fitBounds(bounds, { padding: { top: 80, bottom: OPEN_HEIGHT + 24, left: 40, right: 40 }, duration: 900 });
     } catch {
       // silently fail
     } finally {
@@ -333,9 +339,19 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
   const handleSelectStation = (st) => {
     setSelectedStation(st);
+    setExpandedId(st.id);
     setDrawerHeight(OPEN_HEIGHT);
     drawRoute(st);
     mapRef.current?.flyTo({ center: [st.lon, st.lat], zoom: 15, duration: 800 });
+    setTimeout(() => {
+      const listEl = stationListRef.current;
+      const stationEl = stationRefs.current[st.id];
+      if (!listEl || !stationEl) return;
+      const listRect = listEl.getBoundingClientRect();
+      const stationRect = stationEl.getBoundingClientRect();
+      const offset = stationRect.top - listRect.top + listEl.scrollTop - 8;
+      listEl.scrollTo({ top: offset, behavior: "smooth" });
+    }, 320);
   };
 
   // ── Drawer drag ─────────────────────────────────────────────────────────────
@@ -380,12 +396,12 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     <div className="flex flex-col bg-background h-dvh">
 
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-primary-container shadow-sm shrink-0">
-        <div>
+      <div className="flex items-center px-6 py-4 bg-primary-container shadow-sm shrink-0">
+        <div className="flex-1 flex flex-col items-center">
           <h1 className="text-white font-headline font-bold text-lg leading-none">Nearby Stations</h1>
           <p className="text-[10px] text-white/70 font-bold uppercase tracking-wider mt-0.5">Gas stations within 5 km</p>
         </div>
-        <span className="material-symbols-outlined text-tertiary-fixed ml-auto icon-filled text-[28px]">
+        <span className="material-symbols-outlined text-tertiary-fixed icon-filled text-[28px]">
           local_gas_station
         </span>
       </div>
@@ -499,7 +515,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
           )}
 
           {/* Station list */}
-          <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4 space-y-2">
+          <div ref={stationListRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4 space-y-2">
             {loadingStations && [1, 2, 3].map((i) => (
               <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
             ))}
@@ -519,6 +535,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
               return (
                 <div
                   key={st.id}
+                  ref={(el) => { stationRefs.current[st.id] = el; }}
                   className={`rounded-xl border overflow-hidden transition-all ${
                     isSelected ? "border-[#003366]" : "border-slate-100"
                   }`}

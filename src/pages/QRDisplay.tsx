@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { encodeQR } from "../utils/qrCodec";
 
-function formatTimestamp(iso) {
+function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
     month: "short",
     day: "numeric",
@@ -39,40 +39,19 @@ export default function QRDisplay({ resident, onDone }) {
     <div className="flex flex-col h-dvh bg-primary-container overflow-hidden">
 
       {/* Header */}
-      <div className="shrink-0 px-5 py-[10%] text-center">
-        <div className="flex items-center justify-center gap-2 mb-3">
-          <span className="material-symbols-outlined text-green-300 icon-filled text-[26px]">
-            check_circle
-          </span>
-          <div className="text-left">
-            <h1 className="text-white font-headline font-bold text-2xl leading-none">Registration Successful</h1>
-            <p className="text-[13px] text-on-primary-container font-bold uppercase tracking-widest opacity-70">
-              Fuel Rationing System · Official Portal
-            </p>
-          </div>
-        </div>
-        <p className="text-on-primary-container text-[13px] font-bold uppercase tracking-widest mb-1">
-          Fuel Allocation QR Code
+      <div className="shrink-0 px-5 py-[8%] text-center">
+        <p className="text-on-primary-container text-[11px] font-bold uppercase tracking-widest mb-2 opacity-70">
+          A.G.A.S QR Code
         </p>
-        <h2 className="font-headline font-black text-white text-3xl leading-tight">{fullName}</h2>
-        <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
-          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-bold tracking-wider">
-            <span className="material-symbols-outlined text-tertiary-fixed icon-filled icon-sm">
-              {vehicleType === "motorcycle" ? "two_wheeler" : vehicleType === "truck" ? "local_shipping" : "directions_car"}
-            </span>
-            {plate}
-          </span>
-          <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
-            <span className="material-symbols-outlined text-tertiary-fixed icon-sm">location_on</span>
-            {barangay}
-          </span>
-          {gasType && (
-            <span className="inline-flex items-center gap-1 bg-white/10 border border-white/20 px-3 py-1 rounded-full text-white text-sm font-semibold">
-              <span className="material-symbols-outlined text-yellow-300 icon-filled icon-sm">local_gas_station</span>
-              {gasType}
-            </span>
-          )}
-        </div>
+        <h1 className="font-headline font-black text-white text-4xl tracking-[0.15em] uppercase leading-tight">
+          {plate}
+        </h1>
+        {gasType && (
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <span className="material-symbols-outlined text-yellow-300 icon-filled text-[20px]">local_gas_station</span>
+            <p className="text-white font-bold text-base tracking-wide">{gasType}</p>
+          </div>
+        )}
       </div>
 
       {/* White card */}
@@ -85,7 +64,7 @@ export default function QRDisplay({ resident, onDone }) {
               value={qrData}
               size={Math.min(window.innerWidth - 96, 300)}
               level="H"
-              includeMargin={false}
+              marginSize={0}
               fgColor="#001e40"
               bgColor="#ffffff"
               className="w-full h-auto"
