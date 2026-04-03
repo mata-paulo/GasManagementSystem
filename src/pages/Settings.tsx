@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import BottomNav from "../components/BottomNav";
 
 const APP_VERSION = "V 1.0.0";
@@ -18,10 +18,95 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-const VEHICLE_TYPES = ["Car", "Motorcycle", "Tricycle", "Jeepney", "Truck", "Van"];
+const VEHICLE_TYPES = ["Car", "Motorcycle", "Truck"];
 const GAS_TYPES     = ["Regular", "Diesel", "Premium"];
 
-export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, tabs = USER_TABS }) {
+const BARANGAYS = [
+  "Adlaon","Agsungot","Apas","Babag","Bagong Puhon","Banilad","Basak Pardo","Basak San Nicolas",
+  "Binaliw","Bonbon","Buhisan","Bulacao","Buot-Taup","Busay","Calamba","Cambinocot","Camputhaw",
+  "Capitol Site","Carreta","Central","Cogon Pardo","Cogon Ramos","Day-as","Duljo-Fatima","Ermita",
+  "Ermita South","Guadalupe","Guba","Hippodromo","Inayawan","Kalubihan","Kalunasan","Kamagayan",
+  "Kasambagan","Kinasang-an","Labangon","Lahug","Lorega","Lorega San Miguel","Lusaran","Luz",
+  "Mabini","Mabolo","Malubog","Mambaling","Mantuyong","Mohon","Motore","Nasipit","Pardo",
+  "Pahina Central","Pahina San Nicolas","Pamutan","Pari-an","Paril","Pasil","Pit-os",
+  "Poblacion Pardo","Pulangbato","Punta Princesa","Quiot Pardo","Sambag I","Sambag II",
+  "San Antonio","San Jose","San Nicolas Central","San Roque","Santa Cruz","Santo Niño",
+  "Sapangdaku","Sawang Calero","Sinsin","Sirao","Sudlon I","Sudlon II","T. Padilla",
+  "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong Pardo","Tuburan","Tungkop","Zapatera",
+].sort();
+
+function PickerSheet({ title, options, value, onSelect, onClose }: {
+  title: string; options: string[]; value: string;
+  onSelect: (v: string) => void; onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = options.filter((o) => o.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      {/* Sheet */}
+      <div className="relative bg-white rounded-t-2xl flex flex-col max-h-[75vh]">
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-200 rounded-full" />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
+          <p className="font-bold text-[#003366] text-base">{title}</p>
+          <button type="button" onClick={onClose}>
+            <span className="material-symbols-outlined text-slate-400 text-[22px]">close</span>
+          </button>
+        </div>
+        {/* Search */}
+        <div className="px-4 py-3 shrink-0">
+          <div className="flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2.5">
+            <span className="material-symbols-outlined text-slate-400 text-[18px]">search</span>
+            <input
+              autoFocus
+              type="text"
+              placeholder={`Search ${title.toLowerCase()}…`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch("")}>
+                <span className="material-symbols-outlined text-slate-400 text-[16px]">close</span>
+              </button>
+            )}
+          </div>
+        </div>
+        {/* List */}
+        <div className="overflow-y-auto flex-1 pb-6">
+          {filtered.length === 0 && (
+            <p className="text-center text-slate-400 text-sm py-8">No results found</p>
+          )}
+          {filtered.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => { onSelect(option); onClose(); }}
+              className={`w-full flex items-center justify-between px-5 py-3.5 border-b border-slate-50 text-left ${
+                value === option ? "bg-blue-50" : "active:bg-slate-50"
+              }`}
+            >
+              <span className={`text-sm font-medium ${value === option ? "text-[#003366] font-bold" : "text-slate-700"}`}>
+                {option}
+              </span>
+              {value === option && (
+                <span className="material-symbols-outlined text-[#003366] text-[18px]">check</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, onUpdateProfile = undefined, tabs = USER_TABS }) {
   const name        = officer ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim() : "Station Officer";
   const plate       = officer?.plate       || "N/A";
   const vehicleType = officer?.vehicleType || "N/A";
@@ -30,6 +115,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
   const initials    = `${officer?.firstName?.[0] ?? ""}${officer?.lastName?.[0] ?? ""}`.toUpperCase() || "?";
 
   const [editing, setEditing] = useState(false);
+  const [picker, setPicker] = useState<"vehicleType" | "barangay" | null>(null);
   const [form, setForm] = useState({
     firstName:   officer?.firstName   || "",
     lastName:    officer?.lastName    || "",
@@ -60,17 +146,19 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
     </div>
   );
 
-  const selectField = (label: string, key: keyof typeof form, options: string[]) => (
+  const pickerTrigger = (label: string, key: "vehicleType" | "barangay") => (
     <div key={key}>
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-      <select
-        title={label}
-        value={form[key]}
-        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-        className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 font-medium bg-slate-50 focus:outline-none focus:border-[#003366] focus:bg-white"
+      <button
+        type="button"
+        onClick={() => setPicker(key)}
+        className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium bg-slate-50 flex items-center justify-between"
       >
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
+        <span className={form[key] ? "text-slate-800" : "text-slate-400"}>
+          {form[key] || `Select ${label.toLowerCase()}`}
+        </span>
+        <span className="material-symbols-outlined text-slate-400 text-[18px]">expand_more</span>
+      </button>
     </div>
   );
 
@@ -79,8 +167,11 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
     return (
       <div className="flex flex-col min-h-dvh bg-[#f5f5f5]">
         {/* Header */}
-        <div className="bg-[#003366] px-5 pt-10 pb-5 shrink-0">
-          <div className="flex items-center gap-3 mb-1">
+        <div
+          className="bg-[#003366] px-5 pb-5 shrink-0"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 1rem)' }}
+        >
+          <div className="flex items-center gap-3 mt-3 mb-1">
             <button type="button" onClick={() => setEditing(false)} className="text-white/70 active:text-white">
               <span className="material-symbols-outlined text-[24px]">arrow_back</span>
             </button>
@@ -100,7 +191,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
             <p className="text-xs font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
             {field("Plate Number", "plate", "e.g. ABC 1234")}
-            {selectField("Vehicle Type", "vehicleType", VEHICLE_TYPES)}
+            {pickerTrigger("Vehicle Type", "vehicleType")}
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
               <div className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
@@ -113,14 +204,14 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
 
           <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
             <p className="text-xs font-bold text-[#003366] uppercase tracking-widest">Location</p>
-            {field("Barangay", "barangay", "Enter your barangay")}
+            {pickerTrigger("Barangay", "barangay")}
           </div>
 
           {/* Save */}
           <div className="mx-4 mt-5 space-y-3">
             <button
               type="button"
-              onClick={() => setEditing(false)}
+              onClick={() => { onUpdateProfile?.(form); setEditing(false); }}
               className="w-full bg-[#003366] text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[18px]">save</span>
@@ -135,6 +226,26 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
             </button>
           </div>
         </div>
+
+        {/* Pickers */}
+        {picker === "vehicleType" && (
+          <PickerSheet
+            title="Vehicle Type"
+            options={VEHICLE_TYPES}
+            value={form.vehicleType}
+            onSelect={(v) => setForm((f) => ({ ...f, vehicleType: v }))}
+            onClose={() => setPicker(null)}
+          />
+        )}
+        {picker === "barangay" && (
+          <PickerSheet
+            title="Barangay"
+            options={BARANGAYS}
+            value={form.barangay}
+            onSelect={(v) => setForm((f) => ({ ...f, barangay: v }))}
+            onClose={() => setPicker(null)}
+          />
+        )}
       </div>
     );
   }
@@ -241,7 +352,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
         </div>
 
         <p className="text-center text-slate-300 text-[10px] pt-3 pb-1">
-          © 2024 Mata Technologies Inc. · A.G.A.S
+          © 2026 Mata Technologies Inc. · A.G.A.S
         </p>
       </main>
 
@@ -249,3 +360,4 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
     </div>
   );
 }
+

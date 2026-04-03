@@ -284,6 +284,7 @@ export default function App() {
           onLogout={handleLogout}
           onShowQR={() => setScreen("qr-display")}
           onChangePassword={() => setScreen("change-password")}
+          onUpdateProfile={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Transactions" },
@@ -373,3 +374,4 @@ export default function App() {
     </RoleGuard>
   );
 }
+

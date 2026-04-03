@@ -2,7 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { QRCodeSVG } from "qrcode.react";
+import html2canvas from "html2canvas";
 import { encodeQR } from "../utils/qrCodec";
+
+function formatTimestamp(iso: string) {
+  return new Date(iso).toLocaleString("en-PH", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+}
 
 mapboxgl.accessToken =
   "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
@@ -112,6 +120,7 @@ export default function ResidentWebPortal({ resident, onLogout }) {
   const stationListRef                  = useRef<HTMLDivElement>(null);
   const stationRowRefs                  = useRef<Record<number, HTMLElement | null>>({});
   const qrRef                           = useRef<HTMLDivElement>(null);
+  const webCaptureRef                   = useRef<HTMLDivElement>(null);
 
   const firstName    = resident?.firstName || "Resident";
   const lastName     = resident?.lastName  || "";
@@ -199,18 +208,58 @@ export default function ResidentWebPortal({ resident, onLogout }) {
   }, [brandFilter]);
 
   /* ── Download QR ── */
-  const handleDownloadQR = () => {
-    const svg = qrRef.current?.querySelector("svg");
-    if (!svg) return;
-    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url; a.download = `AGAS_QR_${plate}.svg`; a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadQR = async () => {
+    if (!webCaptureRef.current) return;
+    const canvas = await html2canvas(webCaptureRef.current, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+    });
+    const url = canvas.toDataURL("image/png");
+    const a   = document.createElement("a");
+    a.href = url; a.download = `AGAS_QR_${plate}.png`; a.click();
   };
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden">
+
+      {/* ── Hidden branded capture card (used for Download QR) ── */}
+      <div
+        ref={webCaptureRef}
+        style={{ position: "fixed", top: "-9999px", left: 0, width: 420, background: "#ffffff", fontFamily: "sans-serif" }}
+      >
+        {/* Navy header */}
+        <div style={{ background: "#001e40", padding: "22px 28px", textAlign: "center" }}>
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S · Gas Allocation QR</p>
+          <p style={{ color: "#ffffff", fontWeight: 900, fontSize: 32, letterSpacing: 6, textTransform: "uppercase", margin: 0 }}>{plate}</p>
+          {gasType && (
+            <p style={{ color: "#fde047", fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 0 }}>⛽ {gasType}</p>
+          )}
+        </div>
+        {/* QR + info */}
+        <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+          <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
+            {[
+              { label: "Full Name",  value: fullName },
+              { label: "Plate No.", value: plate },
+              { label: "Vehicle",   value: vehicleType },
+              { label: "Barangay",  value: barangay },
+              { label: "Fuel Type", value: gasType },
+              { label: "Registered", value: formatTimestamp(registeredAt) },
+            ].map((d) => (
+              <div key={d.label} style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px" }}>
+                <p style={{ fontSize: 8, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "0 0 2px" }}>{d.label}</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#001e40", margin: 0 }}>{d.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Footer */}
+        <div style={{ background: "#f1f5f9", padding: "10px 28px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
+          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>© 2026 Mata Technologies Inc. · A.G.A.S — Access to Goods and Assistance System</p>
+        </div>
+      </div>
 
       {/* ── Sidebar ── */}
       <aside
@@ -762,7 +811,7 @@ export default function ResidentWebPortal({ resident, onLogout }) {
               </button>
 
               <p className="text-center text-slate-300 text-[10px] pb-2">
-                © 2024 Mata Technologies Inc. · A.G.A.S
+                © 2026 Mata Technologies Inc. · A.G.A.S
               </p>
             </div>
           )}
@@ -772,3 +821,4 @@ export default function ResidentWebPortal({ resident, onLogout }) {
     </div>
   );
 }
+

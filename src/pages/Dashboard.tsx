@@ -376,3 +376,4 @@ export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onT
     </div>
   );
 }
+

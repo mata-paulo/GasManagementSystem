@@ -617,3 +617,4 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     </div>
   );
 }
+

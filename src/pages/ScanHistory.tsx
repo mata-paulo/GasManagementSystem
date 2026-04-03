@@ -208,3 +208,4 @@ export default function ScanHistory({ officer, activeTab, onTabChange }) {
     </div>
   );
 }
+

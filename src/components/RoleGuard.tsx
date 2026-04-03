@@ -43,3 +43,4 @@ export default function RoleGuard({ requiredRole, onDeny, children }: RoleGuardP
 
   return children;
 }
+

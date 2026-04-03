@@ -50,3 +50,4 @@ export default function BottomNav({ active, onChange, tabs = OFFICER_TABS }: Bot
     </nav>
   );
 }
+
