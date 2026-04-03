@@ -319,8 +319,12 @@ export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onT
           {/* ── Recent Transactions ── */}
           <section className="px-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">Recent Transactions</h3>
-              <button type="button" className="text-xs font-bold text-[#003366] hover:underline">View All</button>
+              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">
+                Recent Transactions
+              </h3>
+              <button type="button" onClick={() => onTabChange("history")} className="text-xs font-bold text-primary-container hover:underline">
+                View All
+              </button>
             </div>
 
             <div className="space-y-2">

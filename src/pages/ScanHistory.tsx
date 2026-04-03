@@ -61,7 +61,7 @@ function downloadCSV(data: typeof history, filterLabel: string) {
 
 const PAGE_SIZE = 10;
 
-export default function ScanHistory({ officer, activeTab, onTabChange }) {
+export default function ScanHistory({ officer, activeTab, onTabChange, onScan }) {
   const [activeFilter, setActiveFilter] = useState("all");
   const [page, setPage] = useState(1);
 
@@ -99,12 +99,12 @@ export default function ScanHistory({ officer, activeTab, onTabChange }) {
         </div>
 
         {/* Filter pills */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex gap-1.5 flex-wrap">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => { setActiveFilter(f.id); setPage(1); }}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
+              className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
                 activeFilter === f.id
                   ? "bg-[#003366] text-white"
                   : "bg-white text-slate-500 border border-slate-200"
@@ -204,6 +204,18 @@ export default function ScanHistory({ officer, activeTab, onTabChange }) {
           </div>
         )}
       </main>
+
+      <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
+        <button
+          type="button"
+          onClick={onScan}
+          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
+        >
+          <span className="material-symbols-outlined icon-filled">qr_code_scanner</span>
+          Scan QR Code
+        </button>
+      </div>
+
       <BottomNav active={activeTab} onChange={onTabChange} />
     </div>
   );

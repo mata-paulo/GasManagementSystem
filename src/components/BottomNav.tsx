@@ -6,7 +6,7 @@ interface TabItem {
 
 const OFFICER_TABS: TabItem[] = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
-  { id: "history", icon: "receipt_long", label: "Scan History" },
+  { id: "history", icon: "receipt_long", label: "Transaction" },
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 

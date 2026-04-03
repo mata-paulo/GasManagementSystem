@@ -3,8 +3,19 @@ import BottomNav from "../components/BottomNav";
 
 const APP_VERSION = "V 1.0.0";
 
+const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
+  Shell:      { bg: "#FBCE07", fg: "#DD1D21", abbr: "SH" },
+  Petron:     { bg: "#0059A7", fg: "#ffffff", abbr: "PE" },
+  Caltex:     { bg: "#C8102E", fg: "#ffffff", abbr: "CX" },
+  Phoenix:    { bg: "#F47920", fg: "#ffffff", abbr: "PX" },
+  Seaoil:     { bg: "#00677F", fg: "#ffffff", abbr: "SO" },
+  "Flying V": { bg: "#8B1A1A", fg: "#ffffff", abbr: "FV" },
+  Diatoms:    { bg: "#2E7D32", fg: "#ffffff", abbr: "DI" },
+  Default:    { bg: "#003366", fg: "#ffffff", abbr: "⛽" },
+};
+
 const menuItems = [
-  { icon: "qr_code", label: "My QR Code", section: "main" },
+
   { icon: "settings", label: "Settings", section: "main" },
   { icon: "help_outline", label: "Help & Support", section: "support" },
   { icon: "info", label: "About the App", section: "support" },
@@ -124,6 +135,9 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
     barangay:    officer?.barangay    || "",
     gasType:     officer?.gasType     || "",
   });
+
+  const brand = officer?.brand as string | undefined;
+  const logo = brand ? (BRAND_LOGO[brand] ?? BRAND_LOGO.Default) : null;
 
   const grouped = menuItems.reduce((acc, item) => {
     if (!acc[item.section]) acc[item.section] = [];
@@ -255,18 +269,31 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
       <main className="flex-1 pb-20 max-w-2xl mx-auto w-full flex flex-col justify-between overflow-hidden">
 
         {/* Profile card */}
-        <div className="bg-[#003366] mx-4 mt-4 mb-1 rounded-2xl overflow-hidden shadow-md">
-          {/* Top section */}
-          <div className="flex items-center gap-4 px-5 pt-4 pb-3">
-            <div className="w-14 h-14 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center shrink-0">
-              <span className="text-white font-black text-xl">{initials}</span>
-            </div>
+        <div className="bg-white mx-4 mt-5 mb-1 rounded-2xl px-5 py-4 shadow-sm border border-outline-variant/10">
+          <div className="flex items-center gap-4">
+            {logo ? (
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2"
+                style={{ background: logo.bg, borderColor: logo.fg + "40" }}
+              >
+                <span className="font-headline font-black text-xl" style={{ color: logo.fg }}>
+                  {logo.abbr}
+                </span>
+              </div>
+            ) : (
+              <div className="w-14 h-14 rounded-full border-2 border-[#2e7d32] flex items-center justify-center shrink-0 bg-white shadow-sm">
+                <span className="material-symbols-outlined text-[#2e7d32] text-[28px]">
+                  manage_accounts
+                </span>
+              </div>
+            )}
             <div className="flex-1 min-w-0">
-              <p className="font-headline font-black text-white text-lg leading-tight truncate">{name}</p>
-              <span className="inline-flex items-center gap-1 bg-green-500/20 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-green-400/30 mt-1">
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-                Active · Verified
-              </span>
+              <p className="font-headline font-black text-[#003366] text-lg leading-tight truncate">
+                {name}
+              </p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                {brand ?? "View and edit profile"}
+              </p>
             </div>
             <button
               type="button"
