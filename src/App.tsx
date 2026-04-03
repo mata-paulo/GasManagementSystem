@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import NearbyStations from "./pages/NearbyStations";
 import UserScanHistory from "./pages/UserScanHistory";
 import AdminDashboard from "./pages/AdminDashboard";
+import ChangePassword from "./pages/ChangePassword";
 
 // ─── Splash shown while restoring session from localStorage ──────────────────
 function SplashScreen() {
@@ -49,9 +50,14 @@ export default function App() {
     if (loading) return;
 
     // Direct link support: ?register=station  → opens station registration
+    // Direct link support: ?screen=change-password → opens change password
     const params = new URLSearchParams(window.location.search);
     if (params.get("register") === "station") {
       setScreen("station-register");
+      return;
+    }
+    if (params.get("screen") === "change-password") {
+      setScreen("change-password");
       return;
     }
 
@@ -241,6 +247,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onLogout={handleLogout}
+          onChangePassword={() => setScreen("change-password")}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "history", icon: "receipt_long", label: "Scan History" },
@@ -248,6 +255,13 @@ export default function App() {
           ]}
         />
       </RoleGuard>
+    );
+  }
+
+  if (screen === "change-password") {
+    const returnScreen = auth.role === "resident" ? "user-settings" : "settings";
+    return (
+      <ChangePassword onSuccess={() => setScreen(returnScreen)} />
     );
   }
 
@@ -260,6 +274,7 @@ export default function App() {
           onTabChange={handleUserTabChange}
           onLogout={handleLogout}
           onShowQR={() => setScreen("qr-display")}
+          onChangePassword={() => setScreen("change-password")}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Transactions" },

@@ -17,7 +17,7 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, tabs = USER_TABS }) {
+export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, tabs = USER_TABS }) {
   const name = officer
     ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim()
     : "Station Officer";
@@ -85,6 +85,16 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
 
         {/* Version + Sign out */}
         <div className="mt-5 mx-4 bg-white rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10">
+          {onChangePassword && (
+            <button
+              onClick={onChangePassword}
+              className="w-full flex items-center gap-4 px-5 py-4 border-b border-slate-100 active:bg-slate-50 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[#003366] text-[22px]">lock_reset</span>
+              <span className="flex-1 text-sm font-medium text-slate-800 text-left">Change Password</span>
+              <span className="material-symbols-outlined text-slate-300 text-[20px]">chevron_right</span>
+            </button>
+          )}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-4">
               <span className="material-symbols-outlined text-[#003366] text-[22px]">smartphone</span>
