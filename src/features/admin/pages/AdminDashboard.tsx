@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import {
   WEEKLY_FUEL_LIMIT,
+  assignStationUser,
   fetchAdminDashboardData,
   getAccountDisplayName,
   getWeekKey,
+  isStationUserOnline,
   type AdminDashboardData,
 } from "@/lib/data/agas";
 
@@ -168,7 +170,12 @@ const NAV_ITEMS = [
   { id: "stations",      icon: "store",              label: "Stations"      },
   { id: "transactions",  icon: "receipt_long",       label: "Transactions"  },
   { id: "analytics",     icon: "bar_chart",          label: "Analytics"     },
+  { id: "users",         icon: "manage_accounts",    label: "Users"         },
 ];
+
+const ADMIN_BASE_PATH = "/admin";
+const DEFAULT_ADMIN_PAGE = "overview";
+const ADMIN_PAGE_IDS = new Set(NAV_ITEMS.map((item) => item.id));
 
 const TREND_DATA = [
   { label: "Mon", value: 2840 },
@@ -191,6 +198,16 @@ const statusBadgeClass = (s: string) =>
   s === "Maxed" ? "badge-maxed" : s === "New" ? "badge-new"
   : s === "Online" ? "badge-online" : s === "Offline" ? "badge-offline" : "badge-active";
 
+const inviteEmailBadgeClass = (status?: string) =>
+  status === "sent"
+    ? "bg-green-100 text-green-700"
+    : status === "failed"
+      ? "bg-red-100 text-red-700"
+      : "bg-slate-100 text-slate-600";
+
+const inviteEmailStatusLabel = (status?: string) =>
+  status === "sent" ? "Email Sent" : status === "failed" ? "Email Failed" : "Email Queued";
+
 const brandBadgeClass = (brand: string) =>
   ({ Shell: "badge-brand-shell", Petron: "badge-brand-petron", Caltex: "badge-brand-caltex",
      Phoenix: "badge-brand-phoenix", "Sea Oil": "badge-brand-seaoil",
@@ -210,6 +227,33 @@ type AdminStationRow = {
   lat: number;
   lng: number;
   status: "Online" | "Offline";
+  userCount: number;
+};
+
+type StationUserRow = {
+  uid: string;
+  name: string;
+  email: string;
+  barangay: string;
+  stationName: string;
+  stationDirectoryId?: string;
+  stationSourceId?: number;
+  status: string;
+  assignmentStatus?: string;
+  invitedAt?: string;
+  acceptedAt?: string;
+  todayTxns?: number;
+  todayLiters?: number;
+  weekTxns?: number;
+  weekLiters?: number;
+  monthTxns?: number;
+  monthLiters?: number;
+};
+
+type StationAssignmentForm = {
+  firstName: string;
+  lastName: string;
+  email: string;
 };
 
 type AdminResidentRow = {
@@ -308,6 +352,31 @@ function matchesPeriod(date: Date | null, filter: string): boolean {
   return true;
 }
 
+function getStationSummaryKey(station: Pick<AdminStationRow, "uid" | "id">): string {
+  return `${station.uid}:${station.id}`;
+}
+
+function normalizeAdminPage(page: string | null | undefined): string {
+  return page && ADMIN_PAGE_IDS.has(page) ? page : DEFAULT_ADMIN_PAGE;
+}
+
+function getAdminPageFromPath(pathname: string): string {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  if (normalizedPath === ADMIN_BASE_PATH) {
+    return DEFAULT_ADMIN_PAGE;
+  }
+  if (!normalizedPath.startsWith(`${ADMIN_BASE_PATH}/`)) {
+    return DEFAULT_ADMIN_PAGE;
+  }
+
+  const page = normalizedPath.slice(`${ADMIN_BASE_PATH}/`.length).split("/")[0];
+  return normalizeAdminPage(page);
+}
+
+function getAdminPath(page: string): string {
+  return `${ADMIN_BASE_PATH}/${normalizeAdminPage(page)}`;
+}
+
 function buildBrandPrices(stations: AdminDashboardData["stations"]) {
   const grouped = new Map<string, Map<string, { total: number; count: number }>>();
 
@@ -324,6 +393,53 @@ function buildBrandPrices(stations: AdminDashboardData["stations"]) {
       const next = brandGroup.get(label) ?? { total: 0, count: 0 };
       brandGroup.set(label, { total: next.total + price, count: next.count + 1 });
     }
+  }
+
+  const output: Record<string, { label: string; price: number }[]> = {};
+  for (const [brand, prices] of grouped.entries()) {
+    output[brand] = [...prices.entries()]
+      .map(([label, stats]) => ({
+        label,
+        price: stats.count > 0 ? stats.total / stats.count : 0,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return { ...DEFAULT_BRAND_PRICES, ...output };
+}
+
+function mergeBrandPriceGroups(
+  grouped: Map<string, Map<string, { total: number; count: number }>>,
+  brand: string,
+  prices: Array<{ label: string; price: number }>,
+) {
+  if (!grouped.has(brand)) grouped.set(brand, new Map());
+  const brandGroup = grouped.get(brand)!;
+
+  for (const entry of prices) {
+    const price = Number(entry.price);
+    if (!entry.label || !Number.isFinite(price) || price <= 0) continue;
+
+    const next = brandGroup.get(entry.label) ?? { total: 0, count: 0 };
+    brandGroup.set(entry.label, { total: next.total + price, count: next.count + 1 });
+  }
+}
+
+function buildMergedBrandPrices(
+  stations: AdminDashboardData["stations"],
+  stationDirectory: AdminDashboardData["stationDirectory"],
+) {
+  const grouped = new Map<string, Map<string, { total: number; count: number }>>();
+
+  for (const station of stationDirectory) {
+    mergeBrandPriceGroups(grouped, normalizeBrand(station.brand), station.brandPrices ?? []);
+  }
+
+  for (const station of stations) {
+    const prices = Object.entries(station.fuelPrices ?? {})
+      .map(([label, rawPrice]) => ({ label, price: Number(rawPrice) }))
+      .filter((entry) => Number.isFinite(entry.price) && entry.price > 0);
+    mergeBrandPriceGroups(grouped, normalizeBrand(station.brand), prices);
   }
 
   const output: Record<string, { label: string; price: number }[]> = {};
@@ -356,8 +472,53 @@ function findStaticStation(stationName: string, brand: string, barangay: string)
   );
 }
 
+function findDirectoryStation(
+  stationDirectory: AdminDashboardData["stationDirectory"],
+  stationName: string,
+  brand: string,
+  barangay: string,
+) {
+  const nameKey = normalizeText(stationName);
+  const brandKeyValue = normalizeBrand(brand);
+  const barangayKey = normalizeText(barangay);
+
+  return (
+    stationDirectory.find((item) => normalizeText(item.name) === nameKey) ??
+    stationDirectory.find(
+      (item) =>
+        normalizeBrand(item.brand) === brandKeyValue &&
+        normalizeText(item.barangay) === barangayKey,
+    ) ??
+    stationDirectory.find((item) => normalizeBrand(item.brand) === brandKeyValue) ??
+    null
+  );
+}
+
+function stationAccountMatchesStationRow(
+  station: AdminDashboardData["stations"][number],
+  row: Pick<AdminStationRow, "id" | "name" | "brand" | "barangay">,
+  stationDirectory: AdminDashboardData["stationDirectory"],
+) {
+  const directoryMatch = findDirectoryStation(
+    stationDirectory,
+    getAccountDisplayName(station),
+    normalizeBrand(station.brand),
+    station.barangay ?? "Unknown",
+  );
+
+  if (directoryMatch) {
+    return directoryMatch.sourceId === row.id;
+  }
+
+  return (
+    normalizeText(getAccountDisplayName(station)) === normalizeText(row.name) &&
+    normalizeBrand(station.brand) === normalizeBrand(row.brand) &&
+    normalizeText(station.barangay ?? "Unknown") === normalizeText(row.barangay)
+  );
+}
+
 export default function AdminDashboard({ onLogout }) {
-  const [activePage, setActivePage] = useState("overview");
+  const [activePage, setActivePage] = useState(() => getAdminPageFromPath(window.location.pathname));
   const [stationFilter, setStationFilter] = useState("All");
   const [heatmapFilter, setHeatmapFilter] = useState("All");
   const [residentSearch, setResidentSearch] = useState("");
@@ -382,17 +543,50 @@ export default function AdminDashboard({ onLogout }) {
   const [txDrawerStation, setTxDrawerStation] = useState<{ name: string; brand: string; txns: AdminTransactionRow[] } | null>(null);
   const [txDrawerFilter, setTxDrawerFilter] = useState("All");
   const [allocDrawerStationId, setAllocDrawerStationId] = useState<number | null>(null);
+  const [userDrawerStationId, setUserDrawerStationId] = useState<number | null>(null);
+  const [usersSearch, setUsersSearch] = useState("");
+  const [usersPage, setUsersPage] = useState(1);
+  const USERS_PER_PAGE = 10;
+  const [userForm, setUserForm] = useState<StationAssignmentForm>({
+    firstName: "",
+    lastName: "",
+    email: "",
+  });
+  const [userFormError, setUserFormError] = useState("");
+  const [userFormSuccess, setUserFormSuccess] = useState("");
+  const [assigningUser, setAssigningUser] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
     residents: [],
     stations: [],
     admins: [],
     transactions: [],
+    stationDirectory: [],
+    stationInvites: [],
   });
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
   const mapRef   = useRef(null);
   const mapInst  = useRef(null);
+
+  const navigateToPage = (page: string, options?: { replace?: boolean }) => {
+    const nextPage = normalizeAdminPage(page);
+    const nextPath = getAdminPath(nextPage);
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+
+    setActivePage(nextPage);
+
+    if (currentPath === nextPath) {
+      return;
+    }
+
+    if (options?.replace) {
+      window.history.replaceState({}, "", nextPath);
+      return;
+    }
+
+    window.history.pushState({}, "", nextPath);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -424,11 +618,29 @@ export default function AdminDashboard({ onLogout }) {
     };
   }, []);
 
+  useEffect(() => {
+    const nextPage = getAdminPageFromPath(window.location.pathname);
+    setActivePage(nextPage);
+
+    if (!window.location.pathname.startsWith(ADMIN_BASE_PATH)) {
+      window.history.replaceState({}, "", getAdminPath(nextPage));
+    }
+
+    const handlePopState = () => {
+      setActivePage(getAdminPageFromPath(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
   const currentWeekKey = getWeekKey();
 
   const BRAND_PRICES = useMemo(
-    () => buildBrandPrices(dashboardData.stations),
-    [dashboardData.stations],
+    () => buildMergedBrandPrices(dashboardData.stations, dashboardData.stationDirectory),
+    [dashboardData.stations, dashboardData.stationDirectory],
   );
 
   const stationDispensedByUid = useMemo(() => {
@@ -446,7 +658,7 @@ export default function AdminDashboard({ onLogout }) {
     }, new Map());
   }, [currentWeekKey, dashboardData.transactions]);
 
-  const STATIONS = useMemo<AdminStationRow[]>(() => {
+  const ACCOUNT_STATIONS = useMemo<AdminStationRow[]>(() => {
     return dashboardData.stations
       .map((station, index) => {
         const name = getAccountDisplayName(station);
@@ -457,8 +669,7 @@ export default function AdminDashboard({ onLogout }) {
           [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
           [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
           "—";
-        const status: AdminStationRow["status"] =
-          station.status?.toLowerCase() === "offline" ? "Offline" : "Online";
+        const status: AdminStationRow["status"] = isStationUserOnline(station) ? "Online" : "Offline";
 
         return {
           id: index + 1,
@@ -472,10 +683,323 @@ export default function AdminDashboard({ onLogout }) {
           lat: staticMatch?.lat ?? DEFAULT_LAT,
           lng: staticMatch?.lng ?? DEFAULT_LNG,
           status,
+          userCount: 0,
         };
       })
       .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
   }, [dashboardData.stations, stationDispensedByUid]);
+
+  const STATIONS = useMemo<AdminStationRow[]>(() => {
+    const matchedDirectoryIds = new Set<string>();
+    const stationUserSummaryByRowKey = new Map<string, { userCount: number; onlineCount: number }>();
+
+    for (const row of ACCOUNT_STATIONS) {
+      const matchedUsers = dashboardData.stations.filter((account) =>
+        stationAccountMatchesStationRow(account, row, dashboardData.stationDirectory)
+      );
+      stationUserSummaryByRowKey.set(getStationSummaryKey(row), {
+        userCount: matchedUsers.length,
+        onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
+      });
+    }
+
+    for (const directoryStation of dashboardData.stationDirectory) {
+      const key = `directory:${directoryStation.id}:${directoryStation.sourceId}`;
+      if (!stationUserSummaryByRowKey.has(key)) {
+        const pseudoRow = {
+          id: directoryStation.sourceId,
+          uid: `directory:${directoryStation.id}`,
+          name: directoryStation.name,
+          brand: normalizeBrand(directoryStation.brand),
+          barangay: directoryStation.barangay ?? "Unknown",
+          officer: directoryStation.officer ?? "—",
+          capacity: directoryStation.capacity ?? 0,
+          dispensed: directoryStation.dispensed ?? 0,
+          lat: directoryStation.lat,
+          lng: directoryStation.lon,
+          status: "Offline" as const,
+          userCount: 0,
+        };
+        const matchedUsers = dashboardData.stations.filter((account) =>
+          stationAccountMatchesStationRow(account, pseudoRow, dashboardData.stationDirectory)
+        );
+        stationUserSummaryByRowKey.set(key, {
+          userCount: matchedUsers.length,
+          onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
+        });
+      }
+    }
+
+    const mergedAccountRows = ACCOUNT_STATIONS.map((station) => {
+      const directoryMatch = findDirectoryStation(
+        dashboardData.stationDirectory,
+        station.name,
+        station.brand,
+        station.barangay,
+      );
+
+      if (directoryMatch) {
+        matchedDirectoryIds.add(directoryMatch.id);
+      }
+
+      const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(station));
+      const hasOnlineAssignedUser = (summary?.onlineCount ?? 0) > 0;
+      const status: AdminStationRow["status"] = hasOnlineAssignedUser ? "Online" : "Offline";
+
+      return {
+        ...station,
+        id: directoryMatch?.sourceId ?? station.id,
+        barangay: directoryMatch?.barangay ?? station.barangay,
+        officer: directoryMatch?.officer ?? station.officer,
+        capacity: station.capacity || directoryMatch?.capacity || 0,
+        dispensed: station.dispensed || directoryMatch?.dispensed || 0,
+        lat: directoryMatch?.lat ?? station.lat,
+        lng: directoryMatch?.lon ?? station.lng,
+        status,
+        userCount: summary?.userCount ?? 0,
+      };
+    });
+
+    const directoryRows = dashboardData.stationDirectory
+      .filter((station) => !matchedDirectoryIds.has(station.id))
+      .map((station) => {
+        const summary = stationUserSummaryByRowKey.get(`directory:${station.id}:${station.sourceId}`);
+        const status: AdminStationRow["status"] = (summary?.onlineCount ?? 0) > 0 ? "Online" : "Offline";
+
+        return ({
+        id: station.sourceId,
+        uid: `directory:${station.id}`,
+        name: station.name,
+        brand: normalizeBrand(station.brand),
+        barangay: station.barangay ?? "Unknown",
+        officer: station.officer ?? "—",
+        capacity: station.capacity ?? 0,
+        dispensed: station.dispensed ?? 0,
+        lat: station.lat,
+        lng: station.lon,
+        status,
+        userCount: summary?.userCount ?? 0,
+      });
+      });
+
+    return [...mergedAccountRows, ...directoryRows]
+      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name))
+      .map((row) => {
+        const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(row));
+        return {
+          ...row,
+          status: (summary?.onlineCount ?? 0) > 0 ? "Online" : "Offline",
+          userCount: summary?.userCount ?? row.userCount,
+        };
+      });
+  }, [ACCOUNT_STATIONS, dashboardData.stationDirectory, dashboardData.stations]);
+
+  const selectedUserDrawerStation = useMemo(
+    () => STATIONS.find((station) => station.id === userDrawerStationId) ?? null,
+    [STATIONS, userDrawerStationId],
+  );
+
+  const selectedUserDrawerDirectory = useMemo(() => {
+    if (!selectedUserDrawerStation) return null;
+    return findDirectoryStation(
+      dashboardData.stationDirectory,
+      selectedUserDrawerStation.name,
+      selectedUserDrawerStation.brand,
+      selectedUserDrawerStation.barangay,
+    );
+  }, [dashboardData.stationDirectory, selectedUserDrawerStation]);
+
+  const selectedStationUsers = useMemo<StationUserRow[]>(() => {
+    if (!selectedUserDrawerStation) return [];
+
+    return dashboardData.stations
+      .filter((station) =>
+        stationAccountMatchesStationRow(
+          station,
+          selectedUserDrawerStation,
+          dashboardData.stationDirectory,
+        )
+      )
+      .map((station) => ({
+        uid: station.uid,
+        name: [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+          [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+          station.email ||
+          "Station User",
+        email: station.email ?? "—",
+        barangay: station.barangay ?? "Unknown",
+        stationName: getAccountDisplayName(station),
+        stationDirectoryId: station.stationDirectoryId,
+        stationSourceId: station.stationSourceId,
+        status: isStationUserOnline(station) ? "online" : "offline",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboardData.stationDirectory, dashboardData.stations, selectedUserDrawerStation]);
+
+  const selectedPendingInvites = useMemo(() => {
+    if (!selectedUserDrawerDirectory) return [];
+
+    return dashboardData.stationInvites
+      .filter((invite) =>
+        invite.stationDirectoryId === selectedUserDrawerDirectory.id &&
+        invite.status === "pending"
+      )
+      .sort((a, b) => (b.invitedAt ?? "").localeCompare(a.invitedAt ?? ""));
+  }, [dashboardData.stationInvites, selectedUserDrawerDirectory]);
+
+  const STATION_USERS = useMemo<StationUserRow[]>(() => {
+    const inviteByUid = new Map(
+      dashboardData.stationInvites.map((invite) => [invite.uid, invite]),
+    );
+
+    return dashboardData.stations
+      .map((station) => {
+        const invite = inviteByUid.get(station.uid);
+        const assignedStation =
+          STATIONS.find((row) => stationAccountMatchesStationRow(station, row, dashboardData.stationDirectory)) ??
+          null;
+        const txns = dashboardData.transactions.filter((tx) => tx.stationUid === station.uid);
+        const todayTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Today"));
+        const weekTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Week"));
+        const monthTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Month"));
+
+        return {
+          uid: station.uid,
+          name: [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+            [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+            station.email ||
+            "Station User",
+          email: station.email ?? "—",
+          barangay: station.barangay ?? assignedStation?.barangay ?? "Unknown",
+          stationName: assignedStation?.name ?? getAccountDisplayName(station),
+          stationDirectoryId: station.stationDirectoryId,
+          stationSourceId: station.stationSourceId ?? assignedStation?.id,
+          status: isStationUserOnline(station) ? "online" : "offline",
+          assignmentStatus: station.assignmentStatus ?? invite?.status ?? "active",
+          invitedAt: invite?.invitedAt,
+          acceptedAt: invite?.acceptedAt ?? station.inviteAcceptedAt,
+          todayTxns: todayTxns.length,
+          todayLiters: todayTxns.reduce((sum, tx) => sum + tx.liters, 0),
+          weekTxns: weekTxns.length,
+          weekLiters: weekTxns.reduce((sum, tx) => sum + tx.liters, 0),
+          monthTxns: monthTxns.length,
+          monthLiters: monthTxns.reduce((sum, tx) => sum + tx.liters, 0),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [STATIONS, dashboardData.stationDirectory, dashboardData.stationInvites, dashboardData.stations, dashboardData.transactions]);
+
+  const PENDING_INVITES = useMemo(
+    () => dashboardData.stationInvites.filter((invite) => invite.status === "pending"),
+    [dashboardData.stationInvites],
+  );
+
+  useEffect(() => {
+    setUserFormError("");
+    setUserFormSuccess("");
+    setUserForm({
+      firstName: "",
+      lastName: "",
+      email: "",
+    });
+  }, [userDrawerStationId]);
+
+  async function handleAssignUserToStation() {
+    if (!selectedUserDrawerStation || !selectedUserDrawerDirectory) return;
+
+    const firstName = userForm.firstName.trim();
+    const lastName = userForm.lastName.trim();
+    const email = userForm.email.trim().toLowerCase();
+
+    if (!firstName || !lastName || !email) {
+      setUserFormError("Complete the user details before assigning the station role.");
+      return;
+    }
+
+    setAssigningUser(true);
+    setUserFormError("");
+    setUserFormSuccess("");
+
+    try {
+      const result = await assignStationUser({
+        stationDirectoryId: selectedUserDrawerDirectory.id,
+        firstName,
+        lastName,
+        email,
+      });
+
+      setUserForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+      });
+
+      const optimisticInvite = result.pendingInvite ?? {
+        id: result.uid,
+        uid: result.uid,
+        email,
+        firstName,
+        lastName,
+        stationDirectoryId: selectedUserDrawerDirectory.id,
+        stationSourceId: result.stationSourceId,
+        stationName: result.stationName,
+        brand: selectedUserDrawerStation.brand,
+        barangay: selectedUserDrawerStation.barangay,
+        status: "pending" as const,
+        deliveryMethod: result.inviteDeliveryMethod,
+        emailStatus: result.inviteEmailStatus,
+        invitedAt: new Date().toISOString(),
+        inviteSentAt: result.inviteEmailStatus === "sent" ? new Date().toISOString() : undefined,
+        emailError: result.inviteEmailError ?? undefined,
+      };
+
+      try {
+        const refreshedData = await fetchAdminDashboardData();
+        if (
+          result.assignmentStatus === "pending" &&
+          !refreshedData.stationInvites.some((invite) => invite.id === result.uid)
+        ) {
+          setDashboardData({
+            ...refreshedData,
+            stationInvites: [optimisticInvite, ...refreshedData.stationInvites],
+          });
+        } else {
+          setDashboardData(refreshedData);
+        }
+      } catch {
+        if (result.assignmentStatus === "pending") {
+          setDashboardData((prev) => ({
+            ...prev,
+            stationInvites: [
+              optimisticInvite,
+              ...prev.stationInvites.filter((invite) => invite.id !== result.uid),
+            ],
+          }));
+        }
+      }
+
+      if (result.assignmentStatus !== "pending") {
+        setUserFormSuccess(`User assigned to ${selectedUserDrawerStation.name}.`);
+        return;
+      }
+
+      if (result.inviteEmailStatus === "sent") {
+        setUserFormSuccess(`Invite created and email sent to ${email} for ${selectedUserDrawerStation.name}.`);
+        return;
+      }
+
+      setUserFormSuccess("");
+      setUserFormError(
+        result.inviteEmailError?.trim()
+          ? `The invite was saved as pending for ${email}, but the email could not be sent automatically. ${result.inviteEmailError}`
+          : `The invite was saved as pending for ${email}, but the email could not be sent automatically.`
+      );
+    } catch (err) {
+      setUserFormError(err instanceof Error ? err.message : "Failed to assign station user.");
+    } finally {
+      setAssigningUser(false);
+    }
+  }
 
   const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
     const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -735,7 +1259,7 @@ export default function AdminDashboard({ onLogout }) {
   /* ── Sidebar nav item ── */
   const NavItem = ({ item }) => (
     <button
-      onClick={() => setActivePage(item.id)}
+      onClick={() => navigateToPage(item.id)}
       className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
         activePage === item.id
           ? "bg-[#003366] text-white"
@@ -898,7 +1422,7 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-sm font-black text-[#003366]">Real-time Transactions</p>
                         <p className="text-xs text-slate-400">Latest fuel dispensing activity</p>
                       </div>
-                      <button onClick={() => setActivePage("transactions")} className="text-xs font-bold text-[#003366] hover:underline flex items-center gap-1">
+                      <button onClick={() => navigateToPage("transactions")} className="text-xs font-bold text-[#003366] hover:underline flex items-center gap-1">
                         View All <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                       </button>
                     </div>
@@ -1551,33 +2075,40 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      <th className="text-left px-5 py-3">Station Name</th>
-                      <th className="text-left px-5 py-3">Brand</th>
-                      <th className="text-left px-5 py-3">Gas Prices</th>
-                      <th className="text-left px-5 py-3">Barangay</th>
-                      <th className="text-left px-5 py-3">Status</th>
-                      <th className="text-right px-5 py-3">Capacity</th>
-                      <th className="text-right px-5 py-3">Dispensed</th>
-                      <th className="text-left px-5 py-3 w-28">Usage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stSlice.length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400 text-sm">No stations found.</td></tr>
-                    ) : stSlice.map((s, i) => {
-                      const pct    = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
-                      const bk     = brandKey(s.brand);
-                      const prices = BRAND_PRICES[s.brand] ?? [];
+                      <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="text-left px-5 py-3">Station Name</th>
+                        <th className="text-left px-5 py-3">Brand</th>
+                        <th className="text-center px-5 py-3">Users</th>
+                        <th className="text-left px-5 py-3">Gas Prices</th>
+                        <th className="text-left px-5 py-3">Barangay</th>
+                        <th className="text-left px-5 py-3">Status</th>
+                        <th className="text-right px-5 py-3">Capacity</th>
+                        <th className="text-right px-5 py-3">Dispensed</th>
+                        <th className="text-left px-5 py-3 w-28">Usage</th>
+                        <th className="text-right px-5 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stSlice.length === 0 ? (
+                        <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No stations found.</td></tr>
+                      ) : stSlice.map((s, i) => {
+                        const pct    = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
+                        const bk     = brandKey(s.brand);
+                        const prices = BRAND_PRICES[s.brand] ?? [];
                       return (
                         <tr key={s.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
                           <td className="px-5 py-3 font-bold text-slate-800 text-xs">{s.name}</td>
-                          <td className="px-5 py-3">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <div className="flex flex-col gap-0.5">
-                              {prices.map((p, pi) => (
+                            <td className="px-5 py-3">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              <div className="inline-flex items-center justify-center min-w-10 px-2 py-1 rounded-full bg-slate-100 text-[#003366] text-[11px] font-black">
+                                {s.userCount}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex flex-col gap-0.5">
+                                {prices.map((p, pi) => (
                                 <div key={pi} className="flex items-center gap-1.5">
                                   <span className="text-[9px] text-slate-500 truncate max-w-[110px]">{p.label}</span>
                                   <span className="text-[9px] font-black text-[#003366] shrink-0">₱{p.price.toFixed(2)}</span>
@@ -1592,17 +2123,26 @@ export default function AdminDashboard({ onLogout }) {
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400">{(s.capacity / 1000).toFixed(0)}k L</td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{s.dispensed.toLocaleString()} L</td>
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                               </div>
-                              <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button
+                                onClick={() => setUserDrawerStationId(s.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[#003366] text-[11px] font-black hover:bg-slate-50 transition-all"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">group_add</span>
+                                Manage
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
                 <PaginationBar page={stSafePage} totalPages={stTotalPages} onPage={setStationPage} />
@@ -2283,8 +2823,326 @@ export default function AdminDashboard({ onLogout }) {
             );
           })()}
 
+          {/* ══ USERS ══ */}
+          {activePage === "users" && (() => {
+            const query = usersSearch.trim().toLowerCase();
+            const filteredUsers = query
+              ? STATION_USERS.filter((user) =>
+                  user.name.toLowerCase().includes(query) ||
+                  user.email.toLowerCase().includes(query) ||
+                  user.stationName.toLowerCase().includes(query) ||
+                  user.barangay.toLowerCase().includes(query)
+                )
+              : STATION_USERS;
+            const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
+            const safePage = Math.min(usersPage, totalPages || 1);
+            const pageSlice = filteredUsers.slice((safePage - 1) * USERS_PER_PAGE, safePage * USERS_PER_PAGE);
+            const todayActiveUsers = STATION_USERS.filter((user) => (user.todayTxns ?? 0) > 0).length;
+            const weekActiveUsers = STATION_USERS.filter((user) => (user.weekTxns ?? 0) > 0).length;
+            const monthActiveUsers = STATION_USERS.filter((user) => (user.monthTxns ?? 0) > 0).length;
+
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-5 gap-3">
+                  {[
+                    { label: "Assigned Users", value: STATION_USERS.length, colorClass: "text-[#003366]" },
+                    { label: "Pending Invites", value: PENDING_INVITES.length, colorClass: "text-[#c62828]" },
+                    { label: "Active Today", value: todayActiveUsers, colorClass: "text-[#1565c0]" },
+                    { label: "Active This Week", value: weekActiveUsers, colorClass: "text-[#2e7d32]" },
+                    { label: "Active This Month", value: monthActiveUsers, colorClass: "text-[#7b1fa2]" },
+                  ].map((card) => (
+                    <div key={card.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
+                      <p className={`text-3xl font-black font-headline ${card.colorClass}`}>{card.value}</p>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{card.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100">
+                    <p className="text-sm font-black text-[#003366]">Pending Invites</p>
+                    <p className="text-xs text-slate-400">Users who have been invited by email but have not accepted their station assignment yet.</p>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {PENDING_INVITES.length === 0 ? (
+                      <div className="px-5 py-10 text-center text-slate-400 text-sm">No pending invites.</div>
+                    ) : PENDING_INVITES.map((invite) => (
+                      <div key={invite.id} className="px-5 py-4 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate">
+                            {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
+                          </p>
+                          <p className="text-xs text-slate-400 truncate">{invite.email}</p>
+                          <p className="text-[11px] text-slate-500 mt-1 truncate">{invite.stationName}</p>
+                          {invite.emailError && (
+                            <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
+                              {inviteEmailStatusLabel(invite.emailStatus)}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "Just now"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-black text-[#003366]">Station Users</p>
+                      <p className="text-xs text-slate-400">
+                        {query ? `${filteredUsers.length} result${filteredUsers.length !== 1 ? "s" : ""} for "${usersSearch}"` : `${STATION_USERS.length} station-role users`}
+                      </p>
+                    </div>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
+                      <input
+                        type="text"
+                        placeholder="Search user, email, station..."
+                        value={usersSearch}
+                        onChange={(e) => { setUsersSearch(e.target.value); setUsersPage(1); }}
+                        className="pl-8 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20 w-64"
+                      />
+                      {usersSearch && (
+                        <button
+                          onClick={() => { setUsersSearch(""); setUsersPage(1); }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">close</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="text-left px-5 py-3">User</th>
+                        <th className="text-left px-5 py-3">Assigned Station</th>
+                        <th className="text-left px-5 py-3">Status</th>
+                        <th className="text-right px-5 py-3">Today</th>
+                        <th className="text-right px-5 py-3">Week</th>
+                        <th className="text-right px-5 py-3">Month</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageSlice.length === 0 ? (
+                        <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No station users found.</td></tr>
+                      ) : pageSlice.map((user, index) => (
+                        <tr key={user.uid} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
+                          <td className="px-5 py-3">
+                            <div>
+                              <p className="font-bold text-slate-800">{user.name}</p>
+                              <p className="text-xs text-slate-400">{user.email}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div>
+                              <p className="text-xs font-bold text-[#003366]">{user.stationName}</p>
+                              <p className="text-[11px] text-slate-400">{user.barangay}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(user.status.toLowerCase() === "offline" ? "Offline" : "Online")}`}>
+                                {user.status}
+                              </span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${user.assignmentStatus === "pending" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                                {user.assignmentStatus === "pending" ? "Invite Pending" : "Assigned"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#003366]">{user.todayTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.todayLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#1565c0]">{user.weekTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.weekLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#2e7d32]">{user.monthTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.monthLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <PaginationBar page={safePage} totalPages={totalPages} onPage={setUsersPage} />
+                </div>
+              </div>
+            );
+          })()}
+
         </main>
       </div>
+
+      {activePage === "stations" && selectedUserDrawerStation !== null && (
+        <>
+          <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setUserDrawerStationId(null)} />
+          <div className="fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl border-l border-slate-100 z-50 flex flex-col">
+            <div className="bg-[#003366] p-5 shrink-0">
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-yellow-400 text-[22px]">groups</span>
+                </div>
+                <button onClick={() => setUserDrawerStationId(null)} className="text-white/50 hover:text-white transition-colors mt-0.5">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+              <p className="text-white font-black text-sm leading-tight mb-1">{selectedUserDrawerStation.name}</p>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(selectedUserDrawerStation.brand)}`}>{selectedUserDrawerStation.brand}</span>
+                <span className="text-[10px] font-bold bg-white/10 text-white/70 px-2 py-0.5 rounded-md">
+                  {selectedUserDrawerStation.userCount} assigned users
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Barangay</p>
+                  <p className="text-white font-black text-sm mt-1">{selectedUserDrawerStation.barangay}</p>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Status</p>
+                  <p className="text-white font-black text-sm mt-1">{selectedUserDrawerStation.status}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50">
+              <div className="p-4 border-b border-slate-100 bg-white">
+                <p className="text-sm font-black text-[#003366]">User Management</p>
+                <p className="text-xs text-slate-400 mb-3">Assign an existing user email or invite a new station user.</p>
+
+                {!selectedUserDrawerDirectory && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    This station row is not linked to a seeded station directory record yet.
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="First name"
+                      value={userForm.firstName}
+                      onChange={(e) => setUserForm((prev) => ({...prev, firstName: e.target.value}))}
+                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Last name"
+                      value={userForm.lastName}
+                      onChange={(e) => setUserForm((prev) => ({...prev, lastName: e.target.value}))}
+                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                    />
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((prev) => ({...prev, email: e.target.value}))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    An invite email will be sent to this user. Existing accounts keep their current login, while new users receive a secure setup link to activate station access.
+                  </p>
+                  {userFormError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{userFormError}</div>
+                  )}
+                  {userFormSuccess && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{userFormSuccess}</div>
+                  )}
+                  <button
+                    onClick={() => void handleAssignUserToStation()}
+                    disabled={assigningUser || !selectedUserDrawerDirectory}
+                    className="w-full rounded-xl bg-[#003366] text-white font-black py-3 text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {assigningUser ? "Sending Invite..." : "Invite User"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-black text-[#003366]">Pending Invites</p>
+                      <p className="text-xs text-slate-400">{selectedPendingInvites.length} invite{selectedPendingInvites.length !== 1 ? "s" : ""} waiting for acceptance</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedPendingInvites.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">
+                        No pending invites for this station.
+                      </div>
+                    ) : selectedPendingInvites.map((invite) => (
+                      <div key={invite.id} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-slate-800 truncate">
+                              {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate">{invite.email}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Invited {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "just now"}
+                            </p>
+                            {invite.emailError && (
+                              <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                              Pending
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
+                              {inviteEmailStatusLabel(invite.emailStatus)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-black text-[#003366]">Assigned Users</p>
+                    <p className="text-xs text-slate-400">{selectedStationUsers.length} user{selectedStationUsers.length !== 1 ? "s" : ""} linked to this station</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {selectedStationUsers.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                      No users assigned yet.
+                    </div>
+                  ) : selectedStationUsers.map((user) => (
+                    <div key={user.uid} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate">{user.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                          <p className="text-[11px] text-slate-500 mt-1">{user.stationName}</p>
+                        </div>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(user.status.toLowerCase() === "offline" ? "Offline" : "Online")}`}>
+                          {user.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ═══ TRANSACTION STATION BREAKDOWN DRAWER ═══ */}
       {activePage === "transactions" && txViewBy === "Stations" && txDrawerStation !== null && (() => {

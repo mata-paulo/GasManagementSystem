@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import { fetchStationDirectory, type StationDirectoryRecord } from "@/lib/data/agas";
 
 mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
@@ -120,13 +121,52 @@ const STATIC_STATIONS = [
   { id: 54, name: "Oh My Gas Marketing",               brand: "Other",    address: "Talamban area, Cebu City",                              rating: 5.0, hours: "Open 24 hours",  lat: 10.3816738, lon: 123.9207148 },
 ];
 
+function normalizeBrandKey(value) {
+  return (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function inferFuelType(label) {
+  const normalized = (label || "").toLowerCase();
+  if (normalized.includes("premium diesel")) return "PremiumDiesel";
+  if (normalized.includes("diesel")) return "Diesel";
+  if (normalized.includes("97") || normalized.includes("racing")) return "Premium97";
+  if (normalized.includes("95") || normalized.includes("premium") || normalized.includes("silver") || normalized.includes("blaze")) return "Premium95";
+  return "Gasoline";
+}
+
 function getBrandFuels(name, brand) {
   const key = [name, brand].find((v) =>
-    v && Object.keys(BRAND_FUELS).some((k) => v.toLowerCase().includes(k.toLowerCase()))
+    v && Object.keys(BRAND_FUELS).some((k) => normalizeBrandKey(v).includes(normalizeBrandKey(k)))
   );
   if (!key) return BRAND_FUELS.default;
-  const match = Object.keys(BRAND_FUELS).find((k) => key.toLowerCase().includes(k.toLowerCase()));
+  const match = Object.keys(BRAND_FUELS).find((k) => normalizeBrandKey(key).includes(normalizeBrandKey(k)));
   return BRAND_FUELS[match] || BRAND_FUELS.default;
+}
+
+function normalizeStationBrand(brand) {
+  const normalized = normalizeBrandKey(brand);
+  if (normalized === "seaoil") return "Sea Oil";
+  return brand;
+}
+
+function mapDirectoryStation(station) {
+  return {
+    id: station.sourceId,
+    name: station.name,
+    brand: normalizeStationBrand(station.brand),
+    address: station.address,
+    rating: station.rating ?? null,
+    hours: station.hours,
+    lat: station.lat,
+    lon: station.lon,
+    brandPrices: Array.isArray(station.brandPrices)
+      ? station.brandPrices.map((item) => ({
+          name: item.label,
+          type: inferFuelType(item.label),
+          price: item.price,
+        }))
+      : [],
+  };
 }
 
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -233,19 +273,49 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   // ── Load static stations ────────────────────────────────────────────────────
   useEffect(() => {
     if (!location) return;
-    const { lat, lon } = location;
-    setLoadingStations(true);
-    const withDistance = STATIC_STATIONS
-      .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
-      .sort((a, b) => a.distance - b.distance);
-    setStations(withDistance);
-    setLoadingStations(false);
+    let cancelled = false;
+
+    const loadStations = async () => {
+      const { lat, lon } = location;
+      setLoadingStations(true);
+
+      try {
+        const directoryStations = await fetchStationDirectory();
+        const sourceStations = directoryStations.length > 0
+          ? directoryStations.map((station) => mapDirectoryStation(station))
+          : STATIC_STATIONS;
+
+        if (cancelled) return;
+
+        const withDistance = sourceStations
+          .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
+          .sort((a, b) => a.distance - b.distance);
+        setStations(withDistance);
+      } catch {
+        if (cancelled) return;
+
+        const withDistance = STATIC_STATIONS
+          .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
+          .sort((a, b) => a.distance - b.distance);
+        setStations(withDistance);
+      } finally {
+        if (!cancelled) {
+          setLoadingStations(false);
+        }
+      }
+    };
+
+    void loadStations();
+
+    return () => {
+      cancelled = true;
+    };
   }, [location]);
 
   const filteredStations =
     activeFilter === "All"
       ? stations
-      : stations.filter((st) => st.brand === activeFilter);
+      : stations.filter((st) => normalizeBrandKey(st.brand) === normalizeBrandKey(activeFilter));
 
   // ── Markers ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -530,7 +600,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
             {!loadingStations && filteredStations.map((st, idx) => {
               const isSelected = selectedStation?.id === st.id;
               const isExpanded = expandedId === st.id;
-              const fuels = getBrandFuels(st.name, st.brand);
+              const fuels = st.brandPrices?.length ? st.brandPrices : getBrandFuels(st.name, st.brand);
 
               return (
                 <div

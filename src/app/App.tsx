@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/app/providers/AuthContext";
+import { acceptPendingStationAssignment } from "@/lib/data/agas";
 import ChangePassword from "@/features/account/pages/ChangePassword";
 import Settings from "@/features/account/pages/Settings";
 import AdminDashboard from "@/features/admin/pages/AdminDashboard";
@@ -86,6 +87,24 @@ export default function App() {
     }
   }, [loading, auth.isAuthenticated, auth.role, auth.user]);
 
+  useEffect(() => {
+    if (loading || !auth.isAuthenticated || auth.role !== "station") return;
+    const uid = typeof auth.user?.uid === "string" ? auth.user.uid : "";
+    const assignmentStatus =
+      typeof auth.user?.assignmentStatus === "string" ? auth.user.assignmentStatus : "";
+    if (!uid || assignmentStatus !== "pending") return;
+
+    let cancelled = false;
+    void acceptPendingStationAssignment(uid).then((accepted) => {
+      if (!accepted || cancelled) return;
+      setOfficer((prev) => (prev ? { ...prev, assignmentStatus: "active" } : prev));
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, auth.isAuthenticated, auth.role, auth.user]);
+
   // ─── Tab navigation ────────────────────────────────────────────────────────
   const handleOfficerTabChange = (tab) => {
     setActiveTab(tab);
@@ -152,6 +171,9 @@ export default function App() {
     logout();
     setOfficer(null);
     setResident(null);
+    if (window.location.pathname.startsWith("/admin")) {
+      window.history.replaceState({}, "", "/");
+    }
     setScreen("landing");
     setActiveTab("dashboard");
   };

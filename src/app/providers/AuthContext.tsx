@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { signOut } from "firebase/auth";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { parseStoredSession, type AuthUser, type Role, type StoredSession } from "@/lib/auth/authService";
-import { auth as firebaseAuth } from "@/lib/firebase/client";
+import { auth as firebaseAuth, db } from "@/lib/firebase/client";
 
 interface AuthState {
   user: AuthUser | null;
@@ -22,6 +23,17 @@ const SESSION_KEY = "frs_auth_session";
 
 interface AuthProviderProps {
   children: ReactNode;
+}
+
+async function updateStationPresence(
+  uid: string,
+  status: "online" | "offline",
+): Promise<void> {
+  await setDoc(doc(db, "accounts", uid), {
+    presenceStatus: status,
+    lastSeenAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -47,6 +59,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setLoading(false);
   }, []);
 
+  useEffect(() => {
+    if (!auth.isAuthenticated || auth.role !== "station" || typeof auth.user?.uid !== "string") {
+      return;
+    }
+
+    const uid = auth.user.uid;
+    void updateStationPresence(uid, "online").catch(() => undefined);
+
+    const heartbeat = window.setInterval(() => {
+      void updateStationPresence(uid, "online").catch(() => undefined);
+    }, 60_000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void updateStationPresence(uid, "online").catch(() => undefined);
+      }
+    };
+
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [auth.isAuthenticated, auth.role, auth.user]);
+
   /**
    * Call after a successful login API response.
    * Persists the token and sets auth state.
@@ -63,6 +101,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Clears all auth state and removes the persisted token.
    */
   const logout = (): void => {
+    if (auth.role === "station" && typeof auth.user?.uid === "string") {
+      void updateStationPresence(auth.user.uid, "offline").catch(() => undefined);
+    }
     void signOut(firebaseAuth).catch(() => undefined);
     localStorage.removeItem(SESSION_KEY);
     setAuth({ user: null, role: null, isAuthenticated: false });

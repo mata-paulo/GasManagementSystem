@@ -29,6 +29,28 @@ Optional:
 |---|---|
 | `VITE_REGISTER_RESIDENT_URL` | Explicit registration endpoint override |
 
+## Functions Variables
+
+Custom station invite emails are sent by the Cloud Function using SMTP.
+
+Required for invite email delivery:
+
+| Variable | Purpose |
+|---|---|
+| `SMTP_HOST` | SMTP server host |
+| `SMTP_PORT` | SMTP server port |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASS` | SMTP password or app password |
+| `SMTP_FROM_EMAIL` | From address shown in invite emails |
+
+Optional for invite email delivery:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `SMTP_SECURE` | Use TLS/SSL transport | `true` when port is `465`, otherwise `false` |
+| `SMTP_FROM_NAME` | Display name for invite emails | `AGAS` |
+| `APP_BASE_URL` | Base URL used in generated invite links | `https://agas-fuel-rationing-system.web.app` |
+
 ## Backward Compatibility
 
 The frontend also accepts some legacy variable names for compatibility:
@@ -57,6 +79,14 @@ VITE_FIREBASE_APP_ID=1:1234567890:web:abcdef
 VITE_FIREBASE_FUNCTIONS_REGION=asia-southeast1
 VITE_USE_FIREBASE_EMULATORS=false
 VITE_MAPBOX_TOKEN=your-mapbox-token
+
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_FROM_EMAIL=no-reply@example.com
+SMTP_FROM_NAME=AGAS
+APP_BASE_URL=https://agas-fuel-rationing-system.web.app
 ```
 
 ## Important Dev Detail

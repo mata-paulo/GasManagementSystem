@@ -39,6 +39,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /stationDirectory/{stationId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /stationInvites/{inviteId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
