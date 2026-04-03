@@ -234,6 +234,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onScan={handleScan}
+          onLogout={handleLogout}
         />
       </RoleGuard>
     );
@@ -360,6 +361,7 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}
         lastUpdated={lastUpdated}
+        onLogout={handleLogout}
       />
     </RoleGuard>
   );
