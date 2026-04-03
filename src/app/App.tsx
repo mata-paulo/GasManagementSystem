@@ -84,7 +84,7 @@ export default function App() {
     } else {
       setScreen("landing");
     }
-  }, [loading]);
+  }, [loading, auth.isAuthenticated, auth.role, auth.user]);
 
   // ─── Tab navigation ────────────────────────────────────────────────────────
   const handleOfficerTabChange = (tab) => {
@@ -285,7 +285,8 @@ export default function App() {
   }
 
   if (screen === "change-password") {
-    const returnScreen = auth.role === "resident" ? "user-settings" : "settings";
+    const returnScreen =
+      auth.role === "resident" ? "user-settings" : auth.role === "admin" ? "admin" : "settings";
     return (
       <ChangePassword onSuccess={() => setScreen(returnScreen)} />
     );

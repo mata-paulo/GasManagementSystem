@@ -4,6 +4,7 @@
     "lint": "eslint --config eslint.config.js .",
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "admin:provision": "npm run build && node lib/scripts/provisionAdmin.js",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,storage,auth,hosting",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",

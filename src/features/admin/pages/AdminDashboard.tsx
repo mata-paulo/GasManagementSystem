@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
+import {
+  WEEKLY_FUEL_LIMIT,
+  fetchAdminDashboardData,
+  getAccountDisplayName,
+  getWeekKey,
+  type AdminDashboardData,
+} from "@/lib/data/agas";
 
 mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
 /* ─── Mock Data ─── */
-const STATIONS = [
+const STATIC_STATIONS = [
   // ── Shell (13) ──
   { id:  1, name: "Shell Robinsons Mobility Station",  brand: "Shell",    barangay: "Ermita",          officer: "Ricardo Santos",   capacity: 180000, dispensed: 5420, lat: 10.3025851, lng: 123.9110295, status: "Online"  },
   { id:  2, name: "Shell – Osmeña Blvd / Jones Ave",   brand: "Shell",    barangay: "Lorega",          officer: "Gemma Reyes",      capacity: 150000, dispensed: 4610, lat: 10.3039010, lng: 123.8950550, status: "Online"  },
@@ -69,7 +76,7 @@ const STATIONS = [
   { id: 54, name: "Oh My Gas Marketing",               brand: "Other",    barangay: "Talamban",        officer: "Len Po",           capacity:  60000, dispensed: 1060, lat: 10.3816738, lng: 123.9207148, status: "Online"  },
 ];
 
-const RESIDENTS = [
+const STATIC_RESIDENTS = [
   { id: 1,  name: "Rico Blanco",         plate: "GAE-1234", barangay: "Mabolo",      vehicle: "Car",        remaining: 5.0,  used: 15.0, status: "Active" },
   { id: 2,  name: "Maria Clara Santos",  plate: "YHM-8890", barangay: "Lahug",       vehicle: "Car",        remaining: 0.0,  used: 20.0, status: "Maxed"  },
   { id: 3,  name: "Juan Dela Cruz",      plate: "ABC-5678", barangay: "Banilad",     vehicle: "Motorcycle", remaining: 11.5, used: 8.5,  status: "Active" },
@@ -90,7 +97,7 @@ const RESIDENTS = [
   { id: 18, name: "Marites Gomez",       plate: "CDE-7744", barangay: "Ermita",      vehicle: "Motorcycle", remaining: 7.5,  used: 12.5, status: "Active" },
 ];
 
-const RECENT_TXN = [
+const STATIC_RECENT_TXN = [
   { id: 1, resident: "Rico Blanco",        station: "Shell – Fuente Osmeña", plate: "GAE-1234", liters: 15.0, type: "Regular", pricePerLiter: 63.15, time: "10:24 AM", date: "Today"     },
   { id: 2, resident: "Maria Clara Santos", station: "Petron – Jones Ave",    plate: "YHM-8890", liters: 20.0, type: "Diesel",  pricePerLiter: 56.85, time: "09:45 AM", date: "Today"     },
   { id: 3, resident: "Juan Dela Cruz",     station: "Caltex – Lahug",        plate: "ABC-5678", liters: 8.5,  type: "Premium", pricePerLiter: 67.25, time: "08:12 AM", date: "Today"     },
@@ -101,7 +108,7 @@ const RECENT_TXN = [
   { id: 8, resident: "Grace Tolentino",    station: "Sea Oil – Pardo",       plate: "VWX-6650", liters: 15.0, type: "Diesel",  pricePerLiter: 56.25, time: "11:40 AM", date: "Yesterday" },
 ];
 
-const BRAND_PRICES: Record<string, { label: string; price: number }[]> = {
+const DEFAULT_BRAND_PRICES: Record<string, { label: string; price: number }[]> = {
   Shell: [
     { label: "FuelSave Diesel",       price: 57.25 },
     { label: "FuelSave Unleaded (91)", price: 63.15 },
@@ -173,8 +180,12 @@ const TREND_DATA = [
   { label: "Sun", value: 4150 },
 ];
 
-const fuelBadgeClass = (type: string) =>
-  type === "Diesel" ? "badge-diesel" : type === "Premium" ? "badge-premium" : "badge-regular";
+const fuelBadgeClass = (type: string) => {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("diesel")) return "badge-diesel";
+  if (normalized.includes("premium") || normalized.includes("super")) return "badge-premium";
+  return "badge-regular";
+};
 
 const statusBadgeClass = (s: string) =>
   s === "Maxed" ? "badge-maxed" : s === "New" ? "badge-new"
@@ -186,6 +197,164 @@ const brandBadgeClass = (brand: string) =>
      "Flying V": "badge-brand-shell", Diatoms: "badge-brand-seaoil", Other: "badge-active" })[brand] ?? "badge-active";
 
 const brandKey = (brand: string) => brand.toLowerCase().replace(/\s/g, "");
+
+type AdminStationRow = {
+  id: number;
+  uid: string;
+  name: string;
+  brand: string;
+  barangay: string;
+  officer: string;
+  capacity: number;
+  dispensed: number;
+  lat: number;
+  lng: number;
+  status: "Online" | "Offline";
+};
+
+type AdminResidentRow = {
+  id: number;
+  uid: string;
+  name: string;
+  plate: string;
+  barangay: string;
+  vehicle: string;
+  remaining: number;
+  used: number;
+  status: "Active" | "Maxed" | "New";
+};
+
+type AdminTransactionRow = {
+  id: string;
+  resident: string;
+  residentUid: string;
+  station: string;
+  stationUid: string;
+  brand: string;
+  plate: string;
+  liters: number;
+  type: string;
+  pricePerLiter: number;
+  time: string;
+  date: string;
+  createdAt: Date | null;
+};
+
+const DEFAULT_LAT = 10.3157;
+const DEFAULT_LNG = 123.8854;
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeBrand(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (!normalized) return "Other";
+  if (normalized.includes("shell")) return "Shell";
+  if (normalized.includes("petron")) return "Petron";
+  if (normalized.includes("caltex")) return "Caltex";
+  if (normalized.includes("phoenix")) return "Phoenix";
+  if (normalized.includes("seaoil")) return "Sea Oil";
+  if (normalized.includes("flyingv")) return "Flying V";
+  if (normalized.includes("diatoms")) return "Diatoms";
+  return "Other";
+}
+
+function formatVehicleLabel(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (normalized === "motorcycle") return "Motorcycle";
+  if (normalized === "truck") return "Truck";
+  if (normalized === "car") return "Car";
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown";
+}
+
+function formatTransactionType(value: string | null | undefined): string {
+  if (!value) return "Regular";
+  const normalized = value.toLowerCase();
+  if (normalized.includes("diesel")) return "Diesel";
+  if (normalized.includes("premium") || normalized.includes("super")) return "Premium";
+  return "Regular";
+}
+
+function formatTransactionDateLabel(date: Date | null): string {
+  if (!date) return "Pending";
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((startOfToday.getTime() - startOfDate.getTime()) / 86400000);
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
+function matchesPeriod(date: Date | null, filter: string): boolean {
+  if (!date || filter === "All") return true;
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const diffDays = (startOfToday.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) / 86400000;
+
+  if (filter === "Today") return diffDays === 0;
+  if (filter === "Week") return diffDays >= 0 && diffDays < 7;
+  if (filter === "Month") return date >= startOfMonth;
+  return true;
+}
+
+function buildBrandPrices(stations: AdminDashboardData["stations"]) {
+  const grouped = new Map<string, Map<string, { total: number; count: number }>>();
+
+  for (const station of stations) {
+    const brand = normalizeBrand(station.brand);
+    const prices = station.fuelPrices ?? {};
+    if (!grouped.has(brand)) grouped.set(brand, new Map());
+
+    for (const [label, rawPrice] of Object.entries(prices)) {
+      const price = Number(rawPrice);
+      if (!Number.isFinite(price) || price <= 0) continue;
+
+      const brandGroup = grouped.get(brand)!;
+      const next = brandGroup.get(label) ?? { total: 0, count: 0 };
+      brandGroup.set(label, { total: next.total + price, count: next.count + 1 });
+    }
+  }
+
+  const output: Record<string, { label: string; price: number }[]> = {};
+  for (const [brand, prices] of grouped.entries()) {
+    output[brand] = [...prices.entries()]
+      .map(([label, stats]) => ({
+        label,
+        price: stats.count > 0 ? stats.total / stats.count : 0,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return { ...DEFAULT_BRAND_PRICES, ...output };
+}
+
+function findStaticStation(stationName: string, brand: string, barangay: string) {
+  const nameKey = normalizeText(stationName);
+  const brandKeyValue = normalizeBrand(brand);
+  const barangayKey = normalizeText(barangay);
+
+  return (
+    STATIC_STATIONS.find((item) => normalizeText(item.name) === nameKey) ??
+    STATIC_STATIONS.find(
+      (item) =>
+        normalizeBrand(item.brand) === brandKeyValue &&
+        normalizeText(item.barangay) === barangayKey,
+    ) ??
+    STATIC_STATIONS.find((item) => normalizeBrand(item.brand) === brandKeyValue) ??
+    null
+  );
+}
 
 export default function AdminDashboard({ onLogout }) {
   const [activePage, setActivePage] = useState("overview");
@@ -210,12 +379,186 @@ export default function AdminDashboard({ onLogout }) {
   const [txFilter, setTxFilter] = useState("All");
   const [txViewBy, setTxViewBy] = useState("All");
   const [txStationBrand, setTxStationBrand] = useState("All");
-  const [txDrawerStation, setTxDrawerStation] = useState<{ name: string; brand: string; txns: typeof RECENT_TXN } | null>(null);
+  const [txDrawerStation, setTxDrawerStation] = useState<{ name: string; brand: string; txns: AdminTransactionRow[] } | null>(null);
   const [txDrawerFilter, setTxDrawerFilter] = useState("All");
   const [allocDrawerStationId, setAllocDrawerStationId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
+    residents: [],
+    stations: [],
+    admins: [],
+    transactions: [],
+  });
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const mapRef   = useRef(null);
   const mapInst  = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboardData() {
+      setLoadingData(true);
+      setLoadError("");
+
+      try {
+        const next = await fetchAdminDashboardData();
+        if (!cancelled) {
+          setDashboardData(next);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Failed to load admin dashboard data.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingData(false);
+        }
+      }
+    }
+
+    void loadDashboardData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentWeekKey = getWeekKey();
+
+  const BRAND_PRICES = useMemo(
+    () => buildBrandPrices(dashboardData.stations),
+    [dashboardData.stations],
+  );
+
+  const stationDispensedByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
+      acc.set(tx.stationUid, (acc.get(tx.stationUid) ?? 0) + tx.liters);
+      return acc;
+    }, new Map());
+  }, [dashboardData.transactions]);
+
+  const residentUsageByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
+      if (tx.weekKey !== currentWeekKey) return acc;
+      acc.set(tx.residentUid, (acc.get(tx.residentUid) ?? 0) + tx.liters);
+      return acc;
+    }, new Map());
+  }, [currentWeekKey, dashboardData.transactions]);
+
+  const STATIONS = useMemo<AdminStationRow[]>(() => {
+    return dashboardData.stations
+      .map((station, index) => {
+        const name = getAccountDisplayName(station);
+        const brand = normalizeBrand(station.brand);
+        const barangay = station.barangay ?? "Unknown";
+        const staticMatch = findStaticStation(name, brand, barangay);
+        const officer =
+          [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+          [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+          "—";
+        const status: AdminStationRow["status"] =
+          station.status?.toLowerCase() === "offline" ? "Offline" : "Online";
+
+        return {
+          id: index + 1,
+          uid: station.uid,
+          name,
+          brand,
+          barangay,
+          officer,
+          capacity: Object.values(station.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0),
+          dispensed: Math.round((stationDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
+          lat: staticMatch?.lat ?? DEFAULT_LAT,
+          lng: staticMatch?.lng ?? DEFAULT_LNG,
+          status,
+        };
+      })
+      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
+  }, [dashboardData.stations, stationDispensedByUid]);
+
+  const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
+    const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    return dashboardData.residents
+      .map((resident, index) => {
+        const used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
+        const remaining = Math.max(WEEKLY_FUEL_LIMIT - used, 0);
+        const registeredAt = resident.registeredAt ? new Date(resident.registeredAt) : null;
+        const isNew = used === 0 && registeredAt != null && !Number.isNaN(registeredAt.getTime()) && registeredAt.getTime() >= newCutoff;
+        const status: AdminResidentRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
+
+        return {
+          id: index + 1,
+          uid: resident.uid,
+          name: getAccountDisplayName(resident),
+          plate: resident.plate ?? "—",
+          barangay: resident.barangay ?? "—",
+          vehicle: formatVehicleLabel(resident.vehicleType),
+          remaining,
+          used,
+          status,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboardData.residents, residentUsageByUid]);
+
+  const RECENT_TXN = useMemo<AdminTransactionRow[]>(() => {
+    const stationsByUid = new Map(STATIONS.map((station) => [station.uid, station]));
+
+    return dashboardData.transactions.map((tx) => {
+      const station = stationsByUid.get(tx.stationUid);
+      return {
+        id: tx.id,
+        resident: tx.residentName || "Unknown Resident",
+        residentUid: tx.residentUid,
+        station: tx.stationName || station?.name || "Unknown Station",
+        stationUid: tx.stationUid,
+        brand: station?.brand ?? normalizeBrand(tx.stationBrand),
+        plate: tx.plate || "—",
+        liters: tx.liters,
+        type: formatTransactionType(tx.fuelType),
+        pricePerLiter: tx.pricePerLiter,
+        time: tx.createdAt
+          ? tx.createdAt.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
+          : "Pending",
+        date: formatTransactionDateLabel(tx.createdAt),
+        createdAt: tx.createdAt,
+      };
+    });
+  }, [STATIONS, dashboardData.transactions]);
+
+  const TREND_DATA = useMemo(() => {
+    const today = new Date();
+    const buckets = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setHours(0, 0, 0, 0);
+      date.setDate(today.getDate() - (6 - index));
+      return {
+        key: date.toISOString().slice(0, 10),
+        label: date.toLocaleDateString("en-PH", { weekday: "short" }),
+        value: 0,
+      };
+    });
+
+    const bucketIndex = new Map(buckets.map((bucket, index) => [bucket.key, index]));
+    for (const tx of dashboardData.transactions) {
+      if (!tx.createdAt) continue;
+      const dateKey = new Date(
+        tx.createdAt.getFullYear(),
+        tx.createdAt.getMonth(),
+        tx.createdAt.getDate(),
+      ).toISOString().slice(0, 10);
+      const index = bucketIndex.get(dateKey);
+      if (index == null) continue;
+      buckets[index].value += tx.liters;
+    }
+
+    return buckets.map(({ label, value }) => ({
+      label,
+      value: Math.round(value * 10) / 10,
+    }));
+  }, [dashboardData.transactions]);
 
   // Reusable pagination bar
   const PaginationBar = ({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) => {
@@ -259,9 +602,14 @@ export default function AdminDashboard({ onLogout }) {
   const totalDispensed  = STATIONS.reduce((s, st) => s + st.dispensed,  0);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
   const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
-  const weeklyQuota     = RESIDENTS.length * 20;
+  const weeklyQuota     = RESIDENTS.length * WEEKLY_FUEL_LIMIT;
   const totalUsed       = RESIDENTS.reduce((s, r) => s + r.used, 0);
-  const utilizationPct  = Math.min(100, Math.round((totalUsed / weeklyQuota) * 100));
+  const utilizationPct  = weeklyQuota > 0 ? Math.min(100, Math.round((totalUsed / weeklyQuota) * 100)) : 0;
+  const headerDate = new Date().toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
   /* ── Mapbox init (heatmap page or overview) ── */
   useEffect(() => {
@@ -370,8 +718,7 @@ export default function AdminDashboard({ onLogout }) {
     });
 
     return () => { map.remove(); mapInst.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage]);
+  }, [BRAND_PRICES, STATIONS, activePage]);
 
   /* ── Sync heatmap brand filter → Mapbox layer filter ── */
   useEffect(() => {
@@ -471,7 +818,7 @@ export default function AdminDashboard({ onLogout }) {
             <h1 className="text-base font-black text-[#003366]">
               {activePage === "overview" ? "A.G.A.S Admin Overview" : NAV_ITEMS.find(n => n.id === activePage)?.label || "Overview"}
             </h1>
-            <p className="text-xs text-slate-400">Cebu City A.G.A.S · March 30, 2026</p>
+            <p className="text-xs text-slate-400">Cebu City A.G.A.S · {headerDate}</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 bg-green-50 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full border border-green-200">
@@ -486,6 +833,16 @@ export default function AdminDashboard({ onLogout }) {
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto p-6">
+          {loadingData && (
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-500 shadow-sm">
+              Loading live admin data…
+            </div>
+          )}
+          {loadError && (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 shadow-sm">
+              {loadError}
+            </div>
+          )}
 
           {/* ══ OVERVIEW ══ */}
           {activePage === "overview" && (() => {
@@ -603,7 +960,7 @@ export default function AdminDashboard({ onLogout }) {
                           return tot > 0;
                         }).map(([brand]) => {
                           const tot = STATIONS.filter(s => s.brand === brand).reduce((a, s) => a + s.dispensed, 0);
-                          const pct = Math.round((tot / totalDispensed) * 100);
+                          const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
                           const bk  = brandKey(brand);
                           return (
                             <div key={brand}>
@@ -776,7 +1133,7 @@ export default function AdminDashboard({ onLogout }) {
                   const bk            = brandKey(brand);
                   const brandStations = STATIONS.filter(s => s.brand === brand);
                   const brandTotal    = brandStations.reduce((a, s) => a + s.dispensed, 0);
-                  const pct           = Math.round((brandTotal / totalDispensed) * 100);
+                  const pct           = totalDispensed > 0 ? Math.round((brandTotal / totalDispensed) * 100) : 0;
                   const isActive      = heatmapFilter === brand;
                   return (
                     <button
@@ -919,7 +1276,7 @@ export default function AdminDashboard({ onLogout }) {
                     </thead>
                     <tbody>
                       {RESIDENTS.slice((allocResidentPage - 1) * ALLOC_PER_PAGE, allocResidentPage * ALLOC_PER_PAGE).map((r, i) => {
-                        const pct     = Math.round((r.used / 20) * 100);
+                        const pct     = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
                         const barFill = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                         return (
                           <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
@@ -1045,7 +1402,7 @@ export default function AdminDashboard({ onLogout }) {
                     {pageSlice.length === 0 ? (
                       <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No residents found.</td></tr>
                     ) : pageSlice.map((r, i) => {
-                      const pct        = Math.round((r.used / 20) * 100);
+                      const pct        = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
                       const barFill    = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                       const rTxns      = RECENT_TXN.filter(t => t.resident === r.name);
                       const totalSpent = rTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
@@ -1256,18 +1613,14 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ TRANSACTIONS ══ */}
           {activePage === "transactions" && (() => {
-            const filteredTxn = RECENT_TXN.filter(t => {
-              if (txFilter === "Today") return t.date === "Today";
-              if (txFilter === "Week")  return t.date === "Today" || t.date === "Yesterday";
-              return true;
-            });
+            const filteredTxn = RECENT_TXN.filter((t) => matchesPeriod(t.createdAt, txFilter));
             const totalLiters  = filteredTxn.reduce((a, t) => a + t.liters, 0);
             const totalRevenue = filteredTxn.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
             const avgFill      = filteredTxn.length ? totalLiters / filteredTxn.length : 0;
 
             // Group by resident
             const byResident = Object.values(
-              filteredTxn.reduce<Record<string, { name: string; plate: string; txns: typeof RECENT_TXN }>>((acc, t) => {
+              filteredTxn.reduce<Record<string, { name: string; plate: string; txns: AdminTransactionRow[] }>>((acc, t) => {
                 if (!acc[t.resident]) acc[t.resident] = { name: t.resident, plate: t.plate, txns: [] };
                 acc[t.resident].txns.push(t);
                 return acc;
@@ -1276,10 +1629,9 @@ export default function AdminDashboard({ onLogout }) {
 
             // Group by station (all, before brand filter)
             const allByStation = Object.values(
-              filteredTxn.reduce<Record<string, { name: string; brand: string; txns: typeof RECENT_TXN }>>((acc, t) => {
+              filteredTxn.reduce<Record<string, { name: string; brand: string; txns: AdminTransactionRow[] }>>((acc, t) => {
                 if (!acc[t.station]) {
-                  const st = STATIONS.find(s => t.station.toLowerCase().includes(s.name.split("–")[0].trim().toLowerCase()));
-                  acc[t.station] = { name: t.station, brand: st?.brand ?? "", txns: [] };
+                  acc[t.station] = { name: t.station, brand: t.brand, txns: [] };
                 }
                 acc[t.station].txns.push(t);
                 return acc;
@@ -1297,10 +1649,7 @@ export default function AdminDashboard({ onLogout }) {
             // Apply brand filter to individual transactions (for All view)
             const filteredTxnAll = txStationBrand === "All"
               ? filteredTxn
-              : filteredTxn.filter(t => {
-                  const st = STATIONS.find(s => t.station.toLowerCase().includes(s.name.split("–")[0].trim().toLowerCase()));
-                  return st?.brand === txStationBrand;
-                });
+              : filteredTxn.filter((t) => t.brand === txStationBrand);
 
             // Totals for filtered station rows
             const stationTotalLiters  = byStation.reduce((a, s) => a + s.txns.reduce((b, t) => b + t.liters, 0), 0);
@@ -1855,7 +2204,7 @@ export default function AdminDashboard({ onLogout }) {
                     {Object.entries(BRAND_COLORS).map(([brand]) => {
                       const tot = STATIONS.filter(s => s.brand === brand).reduce((a, s) => a + s.dispensed, 0);
                       if (tot === 0) return null;
-                      const pct = Math.round((tot / totalDispensed) * 100);
+                      const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
                       const bk  = brandKey(brand);
                       return (
                         <div key={brand}>
@@ -1885,7 +2234,7 @@ export default function AdminDashboard({ onLogout }) {
                       { label: "Truck",      icon: "local_shipping", color: "text-orange-600", bg: "bg-orange-50", bar: "bg-orange-500" },
                     ].map(v => {
                       const cnt = RESIDENTS.filter(r => r.vehicle === v.label).length;
-                      const pct = Math.round((cnt / RESIDENTS.length) * 100);
+                      const pct = RESIDENTS.length > 0 ? Math.round((cnt / RESIDENTS.length) * 100) : 0;
                       return (
                         <div key={v.label} className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg ${v.bg} flex items-center justify-center shrink-0`}>
@@ -1943,12 +2292,7 @@ export default function AdminDashboard({ onLogout }) {
         const prices = BRAND_PRICES[s.brand] ?? [];
 
         // Apply drawer date filter
-        const drawerTxns = s.txns.filter(t => {
-          if (txDrawerFilter === "Today") return t.date === "Today";
-          if (txDrawerFilter === "Week")  return t.date === "Today" || t.date === "Yesterday";
-          if (txDrawerFilter === "Month") return true;
-          return true;
-        });
+        const drawerTxns = s.txns.filter((t) => matchesPeriod(t.createdAt, txDrawerFilter));
         const liters  = drawerTxns.reduce((a, t) => a + t.liters, 0);
         const revenue = drawerTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
 
