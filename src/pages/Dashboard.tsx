@@ -72,6 +72,16 @@ function fuelTypeTheme(fuelType: string): FuelTheme {
   return { soft: "#f1f5f9", text: "#475569", muted: "#64748b", gradient: "#64748b" };
 }
 
+function fuelBarColor(fuelType: string): string {
+  const n = fuelType.toLowerCase();
+  if (n.includes("premium diesel")) return "bg-green-500";
+  if (n.includes("diesel"))         return "bg-slate-500";
+  if (n.includes("regular") || n.includes("unleaded")) return "bg-amber-500";
+  if (n.includes("super premium"))  return "bg-blue-600";
+  if (n.includes("premium"))        return "bg-red-500";
+  return "bg-slate-400";
+}
+
 function nameInitials(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -116,246 +126,229 @@ export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onT
     const interval = setInterval(() => setLastUpdateLabel(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
-  const stationCode = officer?.stationCode || "N/A";
-  const barangay = officer?.barangay || "Not set";
-  const brand = officer?.brand || "Station Name";
 
+  const stationCode    = officer?.stationCode || "N/A";
+  const barangay       = officer?.barangay    || "Not set";
+  const brand          = officer?.brand       || "Station Name";
   const fuelCapacities = officer?.fuelCapacities || {};
-  const fuelPrices = officer?.fuelPrices || {};
-  const fuelInventory = officer?.fuelInventory || {};
+  const fuelPrices     = officer?.fuelPrices     || {};
+  const fuelInventory  = officer?.fuelInventory  || {};
+  const totalCapacity  = totalCapacityLabel(officer);
 
-  const totalCapacity = totalCapacityLabel(officer);
-  const dieselCapacity = ["Diesel", "Premium Diesel"].reduce((acc, f) => {
-    const v = fuelCapacities[f];
-    return acc + (typeof v === "number" ? v : Number(v) || 0);
-  }, 0);
-  const gasolineCapacity = [
-    "Regular/Unleaded (91)",
-    "Premium (95)",
-    "Super Premium (97)",
-  ].reduce((acc, f) => {
-    const v = fuelCapacities[f];
-    return acc + (typeof v === "number" ? v : Number(v) || 0);
-  }, 0);
+  const visibleFuels = ORDERED_FUELS.filter((f) => {
+    const af = officer?.availableFuels;
+    if (!Array.isArray(af) || af.length === 0) return true;
+    return af.includes(f);
+  });
+
+  // Summary stats
+  const totalLitersToday = recentTransactions.reduce((s, t) => s + t.liters, 0);
+  const totalRevenueToday = recentTransactions.reduce((s, t) => s + t.liters * t.pricePerLiter, 0);
+
+  const sorted = [...recentTransactions].sort(
+    (a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime()
+  );
 
   return (
-    <div className="flex flex-col min-h-dvh bg-[#eef2f7]">
+    <div className="flex flex-col min-h-dvh bg-[#f0f2f5]">
       <main className="flex-1 pb-44 max-w-2xl mx-auto w-full">
-
         <div className="space-y-5">
 
-          {/* Top navy area */}
-          <div className="px-4 pt-5  space-y-3">
-
-          {/* Station Header */}
-          <section className="rounded-2xl px-4 py-4 flex flex-col gap-3" style={{ background: "linear-gradient(135deg, #0a1628 0%, #0d3270 100%)" }}>
-            {/* Top row: icon + name + online */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-                  <span
-                    className="material-symbols-outlined text-white shrink-0"
-                    style={{ fontSize: "22px", fontVariationSettings: "'FILL' 1" }}
-                  >
-                    local_gas_station
-                  </span>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-headline font-black text-white text-base leading-tight truncate">{brand}</p>
-                  <p className="text-xs text-white/50">Barangay {barangay}</p>
-                  <p className="text-xs text-white/50">ID: {stationCode}</p>
-                </div>
-              </div>
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowStatusMenu((p) => !p)}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1 border ${
-                    stationStatus === "online"
-                      ? "bg-emerald-500/20 border-emerald-400/40"
-                      : "bg-white/10 border-white/20"
-                  }`}
-                >
-                  {stationStatus === "online" ? (
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                    </span>
-                  ) : (
-                    <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
-                  )}
-                  <span className={`text-[10px] font-black uppercase tracking-wider ${stationStatus === "online" ? "text-emerald-400" : "text-slate-400"}`}>
-                    {stationStatus === "online" ? "Online" : "Offline"}
-                  </span>
-                  <span className="material-symbols-outlined text-white/50" style={{ fontSize: "14px" }}>expand_more</span>
-                </button>
-
-                {showStatusMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
-                    <div className="absolute right-0 top-full mt-1.5 z-50 bg-[#0d2a5e] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[120px]">
-                      <button
-                        type="button"
-                        onClick={() => { setStationStatus("online"); setShowStatusMenu(false); }}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors"
-                      >
-                        <span className="relative flex h-2 w-2">
-                          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                        </span>
-                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">Online</span>
-                        {stationStatus === "online" && <span className="material-symbols-outlined text-emerald-400 ml-auto" style={{ fontSize: "14px" }}>check</span>}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setStationStatus("offline"); setShowStatusMenu(false); }}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors"
-                      >
-                        <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
-                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Offline</span>
-                        {stationStatus === "offline" && <span className="material-symbols-outlined text-slate-400 ml-auto" style={{ fontSize: "14px" }}>check</span>}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom row: stats */}
-            <div className="flex justify-between pt-3 border-t border-white/10">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Total Capacity</p>
-                <p className="font-black text-white text-base leading-tight mt-0.5">
-                  {(dieselCapacity + gasolineCapacity).toLocaleString()} L
-                </p>
-              </div>
-              
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Last Update</p>
-                <p className="font-black text-white text-base leading-tight mt-0.5">{lastUpdateLabel}</p>
-              </div>
-            </div>
-          </section>
-
-          </div>{/* end navy area */}
-
-          {/* Fuel Type Inventory */}
-          <section className="px-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">
-                Fuel Type Inventory
-              </h3>
-              <button onClick={onEditFuels} type="button" className="text-xs font-bold text-primary-container hover:underline">
-                <span className="px-1 material-symbols-outlined shrink-0" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 0" }}>
-                edit
-              </span>
-              Fuel &amp; Pricing
-              </button>
-            </div>
-            {ORDERED_FUELS.filter((f) => {
-              const af = officer?.availableFuels;
-              if (!Array.isArray(af) || af.length === 0) return true;
-              return af.includes(f);
-            }).map((fuelType) => {
-              const theme = fuelTypeTheme(fuelType);
-              const capacityLiters = fuelCapacities[fuelType] ?? 0;
-              const inventoryLiters = fuelInventory[fuelType] ?? capacityLiters;
-              const price = fuelPrices[fuelType] ?? 0;
-
-              return (
-                <div
-                  key={fuelType}
-                  className="rounded-2xl shadow-sm overflow-hidden flex items-center gap-3 px-4 py-3"
-                  style={{ background: theme.gradient }}
-                >
-                  {/* Icon */}
-                  <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 bg-white/20">
-                    <span
-                      className="material-symbols-outlined"
-                      style={{ color: "#fff", fontSize: "20px", fontVariationSettings: "'FILL' 1" }}
-                    >
+          {/* ── Station header ── */}
+          <div className="px-4 pt-5">
+            <section
+              className="rounded-2xl px-4 py-4 flex flex-col gap-3 shadow-lg"
+              style={{ background: "linear-gradient(135deg, #0a1628 0%, #0d3270 100%)" }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-white" style={{ fontSize: "22px", fontVariationSettings: "'FILL' 1" }}>
                       local_gas_station
                     </span>
                   </div>
-
-                  {/* Left: name + label + price */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-headline font-black text-sm text-white leading-tight truncate">{fuelType}</p>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-white/60 mt-0.5"></p>
-                    <p className="font-headline font-bold text-base leading-none text-white">
-                      ₱{Number(price).toFixed(2)}
-                    </p>
-                  </div>
-
-                  {/* Right: current → capacity */}
-                  <div className="shrink-0 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className="font-black text-sm text-white">{Number(inventoryLiters).toLocaleString()} L</span>
-                      <span className="material-symbols-outlined text-white/60" style={{ fontSize: "18px" }}>trending_flat</span>
-                      <span className="font-black text-sm text-white">{Number(capacityLiters).toLocaleString()} L</span>
-                    </div>
-                    <div className="flex justify-between gap-2 mt-0.5">
-                      <p className="text-[9px] px-1 font-bold uppercase tracking-wider text-white/60">Current</p>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-white/60">Capacity</p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="font-headline font-black text-white text-base leading-tight truncate">{brand}</p>
+                    <p className="text-xs text-white/50">Barangay {barangay} · ID: {stationCode}</p>
                   </div>
                 </div>
-              );
-            })}
+
+                {/* Status pill */}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowStatusMenu((p) => !p)}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1 border ${
+                      stationStatus === "online"
+                        ? "bg-emerald-500/20 border-emerald-400/40"
+                        : "bg-white/10 border-white/20"
+                    }`}
+                  >
+                    {stationStatus === "online" ? (
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
+                    )}
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${stationStatus === "online" ? "text-emerald-400" : "text-slate-400"}`}>
+                      {stationStatus === "online" ? "Online" : "Offline"}
+                    </span>
+                    <span className="material-symbols-outlined text-white/50" style={{ fontSize: "14px" }}>expand_more</span>
+                  </button>
+
+                  {showStatusMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
+                      <div className="absolute right-0 top-full mt-1.5 z-50 bg-[#0d2a5e] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[120px]">
+                        <button
+                          type="button"
+                          onClick={() => { setStationStatus("online"); setShowStatusMenu(false); }}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors"
+                        >
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">Online</span>
+                          {stationStatus === "online" && <span className="material-symbols-outlined text-emerald-400 ml-auto" style={{ fontSize: "14px" }}>check</span>}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setStationStatus("offline"); setShowStatusMenu(false); }}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors"
+                        >
+                          <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
+                          <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Offline</span>
+                          {stationStatus === "offline" && <span className="material-symbols-outlined text-slate-400 ml-auto" style={{ fontSize: "14px" }}>check</span>}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Inline stats row */}
+              <div className="flex justify-between pt-3 border-t border-white/10">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Total Capacity</p>
+                  <p className="font-black text-white text-base leading-tight mt-0.5">{totalCapacity.toLocaleString()} L</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Last Update</p>
+                  <p className="font-black text-white text-base leading-tight mt-0.5">{lastUpdateLabel}</p>
+                </div>
+              </div>
             </section>
+          </div>
 
-          {/* Fuel & Pricing button */}
+          {/* ── Summary stat cards (2×2) ── */}
+          <div className="px-4 grid grid-cols-2 gap-3">
+            {[
+              { label: "Transactions Today", value: recentTransactions.length, icon: "receipt_long",      color: "text-[#003366]", bg: "bg-blue-50",    border: "border-blue-200"   },
+              { label: "Liters Dispensed",   value: `${totalLitersToday.toLocaleString()} L`, icon: "local_gas_station", color: "text-green-700", bg: "bg-green-50",   border: "border-green-200"  },
+              { label: "Revenue Today",      value: `₱${totalRevenueToday.toLocaleString(undefined,{maximumFractionDigits:0})}`, icon: "payments", color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200" },
+              { label: "Fuel Types",         value: visibleFuels.length,       icon: "oil_barrel",        color: "text-orange-600", bg: "bg-orange-50",  border: "border-orange-200" },
+            ].map((c) => (
+              <div key={c.label} className={`${c.bg} border ${c.border} rounded-2xl p-4 flex items-center gap-3 shadow-sm`}>
+                <div className={`w-10 h-10 rounded-xl ${c.bg} border ${c.border} flex items-center justify-center shrink-0`}>
+                  <span className={`material-symbols-outlined icon-fill ${c.color} text-[20px]`}>{c.icon}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide leading-tight">{c.label}</p>
+                  <p className={`text-xl font-black font-headline ${c.color} leading-tight mt-0.5`}>{c.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
 
-
-          {/* Recent Transactions */}
-          <section className="px-4 space-y-3">
+          {/* ── Fuel Inventory ── */}
+          <section className="px-4 space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">
-                Recent Transactions
-              </h3>
-              <button type="button" className="text-xs font-bold text-primary-container hover:underline">
-                View All
+              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">Fuel Inventory</h3>
+              <button onClick={onEditFuels} type="button" className="flex items-center gap-1 text-xs font-bold text-[#003366] hover:underline">
+                <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>edit</span>
+                Edit Pricing
               </button>
             </div>
-            <div className="space-y-2">
-              {[...recentTransactions]
-                .sort((a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime())
-                .slice(0, MAX_DASHBOARD_TRANSACTIONS)
-                .map((tx) => {
-                const txTheme = fuelTypeTheme(tx.fuelType);
-                const totalPrice = Math.round(tx.liters * tx.pricePerLiter * 100) / 100;
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+              {visibleFuels.map((fuelType) => {
+                const theme       = fuelTypeTheme(fuelType);
+                const barColor    = fuelBarColor(fuelType);
+                const capacityL   = fuelCapacities[fuelType] ?? 0;
+                const inventoryL  = fuelInventory[fuelType]  ?? capacityL;
+                const price       = fuelPrices[fuelType]     ?? 0;
+                const pct         = capacityL > 0 ? Math.min(100, Math.round((inventoryL / capacityL) * 100)) : 0;
+
                 return (
-                  <div key={tx.id} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-[#003366]">
-                        <span className="text-white font-headline font-black text-sm tracking-tight">
-                          {nameInitials(tx.name)}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-800 truncate">{tx.plate} <span className="font-medium text-slate-400">({tx.vehicleType})</span></p>
-                        <p className="text-[10px] font-medium text-slate-400 truncate">
-                          {tx.name} · {tx.date} · {tx.time}
-                        </p>
-                        <span
-                          className="inline-block mt-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase max-w-full truncate"
-                          style={{ background: txTheme.soft, color: txTheme.text }}
-                          title={tx.fuelType}
-                        >
-                          {tx.fuelType}
-                        </span>
-                      </div>
+                  <div key={fuelType} className="px-4 py-3 flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: theme.soft }}
+                    >
+                      <span className="material-symbols-outlined" style={{ color: theme.text, fontSize: "18px", fontVariationSettings: "'FILL' 1" }}>
+                        local_gas_station
+                      </span>
                     </div>
 
-                    <div className="text-right shrink-0 max-w-[50%]">
-                      <p className="text-base font-black text-[#003366]">
-                        {tx.liters.toFixed(1)} L
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-xs font-bold text-slate-800 truncate">{fuelType}</p>
+                        <p className="text-xs font-black shrink-0" style={{ color: theme.text }}>₱{Number(price).toFixed(2)}/L</p>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div
+                          className={`${barColor} h-1.5 rounded-full transition-all`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <p className="text-[9px] text-slate-400 font-medium">{Number(inventoryL).toLocaleString()} L remaining</p>
+                        <p className="text-[9px] text-slate-400 font-medium">{pct}%</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* ── Recent Transactions ── */}
+          <section className="px-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">Recent Transactions</h3>
+              <button type="button" className="text-xs font-bold text-[#003366] hover:underline">View All</button>
+            </div>
+
+            <div className="space-y-2">
+              {sorted.slice(0, MAX_DASHBOARD_TRANSACTIONS).map((tx) => {
+                const txTheme  = fuelTypeTheme(tx.fuelType);
+                const total    = Math.round(tx.liters * tx.pricePerLiter * 100) / 100;
+                return (
+                  <div key={tx.id} className="bg-white rounded-2xl p-4 flex items-center gap-3 border border-slate-100 shadow-sm">
+                    <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
+                      <span className="text-white font-headline font-black text-sm">{nameInitials(tx.name)}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black text-slate-800 truncate">
+                        {tx.plate} <span className="font-medium text-slate-400">({tx.vehicleType})</span>
                       </p>
-                      <p className="text-[10px] font-bold text-slate-500 mt-0.5">
-                        ₱{tx.pricePerLiter.toFixed(2)}/L
-                      </p>
-                      <p className="text-sm font-black text-[#003366] mt-1">
-                        ₱{totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <p className="text-[10px] text-slate-400 truncate">{tx.name} · {tx.date} · {tx.time}</p>
+                      <span
+                        className="inline-block mt-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide"
+                        style={{ background: txTheme.soft, color: txTheme.text }}
+                      >
+                        {tx.fuelType}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-base font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter.toFixed(2)}/L</p>
+                      <p className="text-sm font-black text-[#003366] mt-0.5">
+                        ₱{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                   </div>
@@ -363,6 +356,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onT
               })}
             </div>
           </section>
+
         </div>
       </main>
 
