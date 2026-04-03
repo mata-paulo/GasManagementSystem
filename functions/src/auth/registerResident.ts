@@ -65,7 +65,8 @@ export const registerResident = onRequest(
     cors: [
       "https://agas-fuel-rationing-system.web.app",
       "http://localhost:5173",
-      "http://127.0.0.1:5173",
+      "http://127.0.0.1:5173", 
+      "https://agas.ph",
     ],
   },
   async (req: Request, res: Response) => {

@@ -1,16 +1,65 @@
-# React + Vite
+# Gas Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-stack fuel allocation application built with React, Vite, Firebase Auth, Firestore, Cloud Functions, and Firebase Hosting.
 
-Currently, two official plugins are available:
+The frontend is organized by feature so resident, station, admin, and account screens stay grouped with their own concerns. Shared UI, Firebase setup, and reusable helpers live outside feature folders to keep the app easier to scale.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Documentation
 
-## React Compiler
+- [Project Setup](./docs/SETUP.md)
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Environment Variables](./docs/ENVIRONMENT.md)
+- [Troubleshooting](./docs/TROUBLESHOOTING.md)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- Firebase Auth
+- Cloud Firestore
+- Firebase Cloud Functions
+- Firebase Hosting
+- Mapbox GL
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run typecheck
+npm run lint
+npm run test
+npm run functions:build
+npm run functions:test
+npm run seed:emulator
+npm run emulators
+```
+
+## Current Frontend Structure
+
+```text
+src/
+  app/
+  features/
+    account/
+    admin/
+    auth/
+    resident/
+    station/
+  lib/
+    auth/
+    firebase/
+    qr/
+  shared/
+    components/
+    guards/
+```
+
+## Notes
+
+- Local Vite development does not use Firebase Hosting rewrites automatically.
+- Resident registration uses the emulator URL when emulators are enabled, and otherwise calls the deployed Cloud Function directly during local dev.
+- Path aliases use `@/` and resolve from `src/`.

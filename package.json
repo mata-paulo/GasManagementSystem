@@ -6,31 +6,51 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "functions:build": "npm --prefix functions run build",
+    "functions:test": "npm --prefix functions run test",
+    "seed:emulator": "npm --prefix functions run seed",
+    "emulators": "firebase emulators:start",
     "preview": "vite preview"
   },
   "dependencies": {
     "firebase": "^12.11.0",
     "html2canvas": "^1.4.1",
+    "@hookform/resolvers": "^5.2.2",
     "jsqr": "^1.4.0",
     "mapbox-gl": "^3.20.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-hook-form": "^7.72.0",
+    "react-router-dom": "^7.13.2",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.2",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^15.12.0",
     "globals": "^17.4.0",
+    "jsdom": "^29.0.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
     "typescript": "^6.0.2",
-    "vite": "^8.0.1"
+    "typescript-eslint": "^8.58.0",
+    "vite": "^8.0.1",
+    "vitest": "^4.1.2"
   }
 }
