@@ -54,7 +54,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
     <div className="flex min-h-dvh bg-[#f5f5f5]">
 
       {/* ── Desktop Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 h-screen"
+      <aside className="hidden md:flex flex-col w-52 lg:w-60 shrink-0 sticky top-0 h-screen"
         style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
           <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center shrink-0">

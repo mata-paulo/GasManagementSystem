@@ -195,7 +195,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
     <div className="flex min-h-dvh bg-[#eef2f7]">
 
       {/* ── Desktop Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 h-screen"
+      <aside className="hidden md:flex flex-col w-52 lg:w-60 shrink-0 sticky top-0 h-screen"
         style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}>
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
@@ -268,7 +268,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
         <main className="flex-1 p-8 space-y-6 overflow-y-auto">
 
           {/* Stats row */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: "Total Capacity",    value: `${totalCapacity.toLocaleString()} L`, icon: "water_drop",      iconBg: "bg-blue-50",   iconColor: "text-blue-600",   valColor: "text-blue-700" },
               { label: "Total Transactions",value: `${recentTransactions.length}`,         icon: "receipt_long",    iconBg: "bg-amber-50",  iconColor: "text-amber-600",  valColor: "text-amber-700" },
@@ -289,10 +289,10 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
           </div>
 
           {/* Two columns */}
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Fuel Inventory — 2 cols */}
-            <div className="col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+            <div className="col-span-1 lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="font-headline font-black text-[#003366] text-base">Fuel Type Inventory</h2>
                 <button onClick={onEditFuels} type="button"

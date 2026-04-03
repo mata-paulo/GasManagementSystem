@@ -96,7 +96,7 @@ export default function ScanHistory({ officer, activeTab, onTabChange, onScan, o
     <div className="flex min-h-dvh bg-[#eef2f7]">
 
       {/* ── Desktop Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 h-screen"
+      <aside className="hidden md:flex flex-col w-52 lg:w-60 shrink-0 sticky top-0 h-screen"
         style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
           <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center shrink-0">
@@ -163,7 +163,7 @@ export default function ScanHistory({ officer, activeTab, onTabChange, onScan, o
         <main className="flex-1 p-8 space-y-6 overflow-y-auto">
 
           {/* Stats row */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { label: "Total Dispensed",  value: `${totalDispensed.toFixed(1)} L`, icon: "local_gas_station", iconBg: "bg-blue-50",   iconColor: "text-blue-600",   valColor: "text-blue-700" },
               { label: "Transactions",     value: `${filtered.length}`,             icon: "receipt_long",      iconBg: "bg-amber-50",  iconColor: "text-amber-600",  valColor: "text-amber-700" },
