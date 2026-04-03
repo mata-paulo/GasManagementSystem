@@ -3,24 +3,8 @@ import BottomNav from "../components/BottomNav";
 
 const APP_VERSION = "V 1.0.0";
 
-const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
-  Shell:      { bg: "#FBCE07", fg: "#DD1D21", abbr: "SH" },
-  Petron:     { bg: "#0059A7", fg: "#ffffff", abbr: "PE" },
-  Caltex:     { bg: "#C8102E", fg: "#ffffff", abbr: "CX" },
-  Phoenix:    { bg: "#F47920", fg: "#ffffff", abbr: "PX" },
-  Seaoil:     { bg: "#00677F", fg: "#ffffff", abbr: "SO" },
-  "Flying V": { bg: "#8B1A1A", fg: "#ffffff", abbr: "FV" },
-  Diatoms:    { bg: "#2E7D32", fg: "#ffffff", abbr: "DI" },
-  Default:    { bg: "#003366", fg: "#ffffff", abbr: "⛽" },
-};
-
-const DESKTOP_NAV = [
-  { id: "dashboard", label: "Dashboard",   icon: "dashboard" },
-  { id: "history",   label: "Transaction", icon: "receipt_long" },
-  { id: "settings",  label: "Account",     icon: "manage_accounts" },
-];
-
 const menuItems = [
+  { icon: "qr_code", label: "My QR Code", section: "main" },
   { icon: "settings", label: "Settings", section: "main" },
   { icon: "help_outline", label: "Help & Support", section: "support" },
   { icon: "info", label: "About the App", section: "support" },
@@ -141,11 +125,6 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
     gasType:     officer?.gasType     || "",
   });
 
-  const brand = officer?.brand as string | undefined;
-  const logo = brand ? (BRAND_LOGO[brand] ?? BRAND_LOGO.Default) : null;
-  const stationCode = officer?.stationCode || "N/A";
-  const officerName = officer?.officerFirstName || officer?.firstName || "Officer";
-
   const grouped = menuItems.reduce((acc, item) => {
     if (!acc[item.section]) acc[item.section] = [];
     acc[item.section].push(item);
@@ -186,64 +165,70 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
   /* ── Edit Profile fullscreen overlay ── */
   if (editing) {
     return (
-      <div className="flex flex-col min-h-dvh bg-[#f5f5f5]">
+      <div className="flex flex-col h-dvh bg-[#f5f5f5] overflow-hidden">
         {/* Header */}
-        <div
-          className="bg-[#003366] px-5 pb-5 shrink-0"
-          style={{ paddingTop: 'max(env(safe-area-inset-top), 1rem)' }}
-        >
-          <div className="flex items-center gap-3 mt-3 mb-1">
+        <div className="bg-[#003366] px-5 py-4 shrink-0">
+          <div className="flex items-center gap-3">
             <button type="button" onClick={() => setEditing(false)} className="text-white/70 active:text-white">
               <span className="material-symbols-outlined text-[24px]">arrow_back</span>
             </button>
-            <h1 className="text-white font-headline font-black text-lg">Edit Profile</h1>
+            <div>
+              <h1 className="text-white font-headline font-black text-lg leading-none">Edit Profile</h1>
+              <p className="text-white/50 text-xs mt-0.5">Update your personal information</p>
+            </div>
           </div>
-          <p className="text-white/50 text-xs ml-9">Update your personal information</p>
         </div>
 
-        {/* Form */}
-        <div className="flex-1 overflow-y-auto pb-10">
-          <div className="mx-4 mt-5 bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
-            <p className="text-xs font-bold text-[#003366] uppercase tracking-widest">Personal Info</p>
-            {field("First Name", "firstName", "Enter first name")}
-            {field("Last Name", "lastName", "Enter last name")}
-          </div>
+        {/* Form — no scroll, fits screen */}
+        <div className="flex-1 flex flex-col px-4 py-4 gap-3 overflow-hidden">
 
-          <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
-            <p className="text-xs font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
-            {field("Plate Number", "plate", "e.g. ABC 1234")}
-            {pickerTrigger("Vehicle Type", "vehicleType")}
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
-              <div className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                <span>{form.gasType || gasType}</span>
-                <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1 ml-1">Fuel type is set during registration and cannot be changed.</p>
+          {/* Personal Info */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
+            <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Personal Info</p>
+            <div className="grid grid-cols-2 gap-3">
+              {field("First Name", "firstName", "Enter first name")}
+              {field("Last Name", "lastName", "Enter last name")}
             </div>
           </div>
 
-          <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
-            <p className="text-xs font-bold text-[#003366] uppercase tracking-widest">Location</p>
+          {/* Vehicle & Fuel */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
+            <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
+            <div className="grid grid-cols-2 gap-3">
+              {field("Plate Number", "plate", "e.g. ABC 1234")}
+              {pickerTrigger("Vehicle Type", "vehicleType")}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
+              <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
+                <span>{form.gasType || gasType}</span>
+                <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Location */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
+            <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Location</p>
             {pickerTrigger("Barangay", "barangay")}
           </div>
 
-          {/* Save */}
-          <div className="mx-4 mt-5 space-y-3">
-            <button
-              type="button"
-              onClick={() => { onUpdateProfile?.(form); setEditing(false); }}
-              className="w-full bg-[#003366] text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              Save Changes
-            </button>
+          {/* Buttons — pushed to bottom */}
+          <div className="flex gap-3 mt-auto">
             <button
               type="button"
               onClick={() => { setForm({ firstName: officer?.firstName || "", lastName: officer?.lastName || "", plate: officer?.plate || "", vehicleType: officer?.vehicleType || "", barangay: officer?.barangay || "", gasType: officer?.gasType || "" }); setEditing(false); }}
-              className="w-full bg-white border border-slate-200 text-slate-500 font-bold py-3.5 rounded-2xl"
+              className="flex-1 bg-white border border-slate-200 text-slate-500 font-bold py-3 rounded-2xl"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { onUpdateProfile?.(form); setEditing(false); }}
+              className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">save</span>
+              Save Changes
             </button>
           </div>
         </div>
@@ -272,203 +257,35 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
   }
 
   return (
-    <div className="flex flex-col h-dvh bg-[#f5f5f5] overflow-hidden">
-      <main className="flex-1 pb-20 max-w-2xl mx-auto w-full flex flex-col justify-between overflow-hidden">
-  // Determine if this is the station officer view (has DESKTOP_NAV tabs)
-  const isOfficerView = tabs.some((t) => t.id === "history");
-
-  return (
-    <div className="flex min-h-dvh bg-[#f5f5f5]">
-
-      {/* ── Desktop Sidebar (officer only) ──────────────────────────────────── */}
-      {isOfficerView && (
-        <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 h-screen"
-          style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}>
-          <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-            <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[#0a1628] text-[20px]"
-                style={{ fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
-            </div>
-            <div>
-              <p className="font-headline font-black text-white text-sm leading-none">A.G.A.S</p>
-              <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider mt-0.5">Station Portal</p>
-            </div>
-          </div>
-          <nav className="flex-1 px-3 py-4 space-y-0.5">
-            {DESKTOP_NAV.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button key={item.id} onClick={() => onTabChange(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                    isActive ? "bg-white/15 text-white" : "text-white/50 hover:text-white hover:bg-white/10"
-                  }`}>
-                  <span className="material-symbols-outlined text-[20px]"
-                    style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>{item.icon}</span>
-                  {item.label}
-                  {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-yellow-400" />}
-                </button>
-              );
-            })}
-          </nav>
-          <div className="px-3 py-4 border-t border-white/10">
-            <button onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-400/10 transition-all">
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-              Sign Out
-            </button>
-          </div>
-        </aside>
-      )}
-
-      {/* ── Desktop Main Content (officer only) ─────────────────────────────── */}
-      {isOfficerView && (
-        <div className="hidden md:flex flex-col flex-1 overflow-hidden bg-[#f1f5f9]">
-
-          {/* Top bar */}
-          <header className="flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shrink-0">
-            <div>
-              <h1 className="font-headline font-black text-[#003366] text-xl leading-none">Account</h1>
-              <p className="text-xs text-slate-400 mt-1">{brand ?? "Profile & Settings"}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <p className="text-sm font-bold text-[#003366]">{officerName}</p>
-                <p className="text-[10px] text-slate-400">ID: {stationCode}</p>
-              </div>
-              {logo ? (
-                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2"
-                  style={{ background: logo.bg, borderColor: logo.fg + "40" }}>
-                  <span className="font-headline font-black text-sm" style={{ color: logo.fg }}>{logo.abbr}</span>
-                </div>
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-[#003366] flex items-center justify-center shrink-0">
-                  <span className="text-white font-black text-sm">{officerName[0]?.toUpperCase() ?? "O"}</span>
-                </div>
-              )}
-            </div>
-          </header>
-
-          {/* Content */}
-          <main className="flex-1 p-8 overflow-y-auto">
-            <div className="max-w-2xl mx-auto space-y-6">
-
-              {/* Profile card */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex items-center gap-5">
-                {logo ? (
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2"
-                    style={{ background: logo.bg, borderColor: logo.fg + "40" }}>
-                    <span className="font-headline font-black text-2xl" style={{ color: logo.fg }}>{logo.abbr}</span>
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-full border-2 border-[#2e7d32] flex items-center justify-center shrink-0 bg-white shadow-sm">
-                    <span className="material-symbols-outlined text-[#2e7d32] text-[32px]">manage_accounts</span>
-                  </div>
-                )}
-                <div>
-                  <p className="font-headline font-black text-[#003366] text-xl leading-tight">{name}</p>
-                  <p className="text-sm text-slate-400 font-medium mt-0.5">{brand ?? "View and edit profile"}</p>
-                  {stationCode !== "N/A" && (
-                    <p className="text-xs text-slate-300 mt-1">Station ID: {stationCode}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Menu groups */}
-              {Object.entries(grouped).map(([section, items]) => (
-                <div key={section}>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
-                    {sectionLabels[section]}
-                  </p>
-                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10">
-                    {items.map((item, i) => (
-                      <button
-                        key={item.label}
-                        onClick={item.label === "My QR Code" ? onShowQR : undefined}
-                        className={`w-full flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50 active:bg-slate-50 ${
-                          i < items.length - 1 ? "border-b border-slate-100" : ""
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[#003366] text-[22px] icon-outline">{item.icon}</span>
-                        <span className="flex-1 text-sm font-medium text-slate-800 text-left">{item.label}</span>
-                        <span className="material-symbols-outlined text-slate-300 text-[20px]">chevron_right</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {/* Actions */}
-              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10">
-                {onChangePassword && (
-                  <button
-                    onClick={onChangePassword}
-                    className="w-full flex items-center gap-4 px-5 py-4 border-b border-slate-100 hover:bg-slate-50 active:bg-slate-50 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[#003366] text-[22px]">lock_reset</span>
-                    <span className="flex-1 text-sm font-medium text-slate-800 text-left">Change Password</span>
-                    <span className="material-symbols-outlined text-slate-300 text-[20px]">chevron_right</span>
-                  </button>
-                )}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                  <div className="flex items-center gap-4">
-                    <span className="material-symbols-outlined text-[#003366] text-[22px]">smartphone</span>
-                    <span className="text-sm font-medium text-slate-800">Software Version</span>
-                  </div>
-                  <span className="text-sm font-bold text-slate-400">{APP_VERSION}</span>
-                </div>
-                <button
-                  onClick={onLogout}
-                  className="w-full flex items-center gap-4 px-5 py-4 hover:bg-red-50 active:bg-red-50 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-red-500 text-[22px]">logout</span>
-                  <span className="flex-1 text-sm font-medium text-red-500 text-left">Sign Out</span>
-                </button>
-              </div>
-
-              <p className="text-center text-slate-300 text-[10px] pb-2">
-                © 2024 Mata Technologies Inc. · A.G.A.S
-              </p>
-            </div>
-          </main>
-        </div>
-      )}
-
-      {/* ── Mobile Layout (always shown on mobile; also full layout for resident on desktop) ── */}
-      <main className={`${isOfficerView ? "md:hidden" : ""} flex flex-col flex-1 pb-36 max-w-2xl mx-auto w-full`}>
+    <div className="flex flex-col min-h-dvh bg-[#f5f5f5]">
+      <main className="flex flex-col flex-1 pb-36 max-w-2xl mx-auto w-full">
 
         {/* Profile card */}
-        <div className="bg-white mx-4 mt-5 mb-1 rounded-2xl px-5 py-4 shadow-sm border border-outline-variant/10">
-          <div className="flex items-center gap-4">
-            {logo ? (
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2"
-                style={{ background: logo.bg, borderColor: logo.fg + "40" }}
-              >
-                <span className="font-headline font-black text-xl" style={{ color: logo.fg }}>
-                  {logo.abbr}
-                </span>
-              </div>
-            ) : (
-              <div className="w-14 h-14 rounded-full border-2 border-[#2e7d32] flex items-center justify-center shrink-0 bg-white shadow-sm">
-                <span className="material-symbols-outlined text-[#2e7d32] text-[28px]">
-                  manage_accounts
-                </span>
-              </div>
-            )}
+        <div className="mx-4 mt-5 mb-1 rounded-2xl overflow-hidden shadow-sm"
+          style={{ background: "linear-gradient(135deg, #0a1628 0%, #0d3270 100%)" }}>
+          {/* Top row */}
+          <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+            <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white/60 text-[26px]">person</span>
+            </div>
             <div className="flex-1 min-w-0">
-              <p className="font-headline font-black text-[#003366] text-lg leading-tight truncate">
-                {name}
-              </p>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">
-                {brand ?? "View and edit profile"}
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 bg-emerald-500/20 border border-emerald-400/40 rounded-full px-2 py-0.5">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                  </span>
+                  <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">Active · Verified</span>
+                </span>
+              </div>
+              <p className="font-headline font-black text-white text-sm leading-tight truncate mt-1">{name}</p>
             </div>
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="shrink-0 w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center active:bg-white/20"
+              className="shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center active:bg-white/20"
             >
-              <span className="material-symbols-outlined text-white text-[18px]">edit</span>
+              <span className="material-symbols-outlined text-white/70 text-[18px]">edit</span>
             </button>
           </div>
           {/* Info grid */}
@@ -479,11 +296,10 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
               { icon: "location_on",       label: "Barangay",   value: barangay },
               { icon: "local_gas_station", label: "Fuel Type",  value: gasType },
             ].map((d, i, arr) => (
-              <div
-                key={d.label}
-                className={`flex items-center gap-3 px-5 py-3 ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}
-              >
-                <span className="material-symbols-outlined text-yellow-300 text-[18px] shrink-0">{d.icon}</span>
+              <div key={d.label}
+                className={`flex items-center gap-3 px-5 py-3 ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}>
+                <span className="material-symbols-outlined text-yellow-300 text-[18px] shrink-0"
+                  style={{ fontVariationSettings: "'FILL' 1" }}>{d.icon}</span>
                 <div className="min-w-0">
                   <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">{d.label}</p>
                   <p className="text-white text-xs font-bold truncate">{d.value}</p>
@@ -551,9 +367,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
         </p>
       </main>
 
-      <div className={`${isOfficerView ? "md:hidden" : ""}`}>
-        <BottomNav active={activeTab} onChange={onTabChange} tabs={tabs} />
-      </div>
+      <BottomNav active={activeTab} onChange={onTabChange} tabs={tabs} />
     </div>
   );
 }

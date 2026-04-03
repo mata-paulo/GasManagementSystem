@@ -13,6 +13,7 @@ import QRScanner from "./pages/QRScanner";
 import ValidationSuccess from "./pages/ValidationSuccess";
 import ScanHistory from "./pages/ScanHistory";
 import Settings from "./pages/Settings";
+import OfficerSettings from "./pages/OfficerSettings";
 import NearbyStations from "./pages/NearbyStations";
 import UserScanHistory from "./pages/UserScanHistory";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -279,17 +280,12 @@ export default function App() {
   if (screen === "settings") {
     return (
       <RoleGuard requiredRole="station" onDeny={() => setScreen("landing")}>
-        <Settings
+        <OfficerSettings
           officer={officer}
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onLogout={handleLogout}
           onChangePassword={() => setScreen("change-password")}
-          tabs={[
-            { id: "dashboard", icon: "dashboard", label: "Dashboard" },
-            { id: "history", icon: "receipt_long", label: "Transaction" },
-            { id: "settings", icon: "account_circle", label: "Account" },
-          ]}
         />
       </RoleGuard>
     );
