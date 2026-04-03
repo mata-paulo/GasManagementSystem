@@ -109,14 +109,10 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
     return () => clearInterval(interval);
   }, [lastUpdated]);
 
-  const stationCode = officer?.stationCode || "N/A";
-  const barangay    = officer?.barangay    || "Not set";
-  const brand       = officer?.brand       || "Station Name";
-  const officerName = officer?.officerFirstName || officer?.firstName || "Officer";
-
   const stationCode    = officer?.stationCode || "N/A";
   const barangay       = officer?.barangay    || "Not set";
   const brand          = officer?.brand       || "Station Name";
+  const officerName    = officer?.officerFirstName || officer?.firstName || "Officer";
   const fuelCapacities = officer?.fuelCapacities || {};
   const fuelPrices     = officer?.fuelPrices     || {};
   const fuelInventory  = officer?.fuelInventory  || {};
@@ -339,6 +335,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                   );
                 })}
               </div>
+            </div>
 
             {/* Recent Transactions — 1 col */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col">
