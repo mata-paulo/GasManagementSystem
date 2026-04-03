@@ -331,7 +331,7 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
         </div>
 
         <div className="mt-8 text-center text-outline text-xs space-y-1 pb-4">
-          <p>© 2024 Mata Technologies Inc.</p>
+          <p>© 2026 Mata Technologies Inc.</p>
           <p>Ref ID: VAL-9823-CEB-2024</p>
         </div>
       </main>
@@ -371,3 +371,4 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
     </div>
   );
 }
+

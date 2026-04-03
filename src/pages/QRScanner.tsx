@@ -314,3 +314,4 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
     </div>
   );
 }
+

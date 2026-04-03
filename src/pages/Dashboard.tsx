@@ -64,6 +64,16 @@ function fuelTypeTheme(fuelType: string): FuelTheme {
   return { soft: "#f1f5f9", text: "#475569", muted: "#64748b", gradient: "#64748b" };
 }
 
+function fuelBarColor(fuelType: string): string {
+  const n = fuelType.toLowerCase();
+  if (n.includes("premium diesel")) return "bg-green-500";
+  if (n.includes("diesel"))         return "bg-slate-500";
+  if (n.includes("regular") || n.includes("unleaded")) return "bg-amber-500";
+  if (n.includes("super premium"))  return "bg-blue-600";
+  if (n.includes("premium"))        return "bg-red-500";
+  return "bg-slate-400";
+}
+
 function nameInitials(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -104,6 +114,9 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
   const brand       = officer?.brand       || "Station Name";
   const officerName = officer?.officerFirstName || officer?.firstName || "Officer";
 
+  const stationCode    = officer?.stationCode || "N/A";
+  const barangay       = officer?.barangay    || "Not set";
+  const brand          = officer?.brand       || "Station Name";
   const fuelCapacities = officer?.fuelCapacities || {};
   const fuelPrices     = officer?.fuelPrices     || {};
   const fuelInventory  = officer?.fuelInventory  || {};
@@ -326,7 +339,6 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                   );
                 })}
               </div>
-            </div>
 
             {/* Recent Transactions — 1 col */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col">
@@ -528,3 +540,4 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
     </div>
   );
 }
+

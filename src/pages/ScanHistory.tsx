@@ -412,3 +412,4 @@ export default function ScanHistory({ officer, activeTab, onTabChange, onScan, o
     </div>
   );
 }
+

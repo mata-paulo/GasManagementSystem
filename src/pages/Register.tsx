@@ -502,3 +502,4 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
     </div>
   );
 }
+

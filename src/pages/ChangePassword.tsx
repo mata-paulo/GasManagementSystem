@@ -153,3 +153,4 @@ export default function ChangePassword({ onSuccess }: ChangePasswordProps) {
     </div>
   );
 }
+
