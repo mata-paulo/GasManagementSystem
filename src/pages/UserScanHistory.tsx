@@ -172,3 +172,4 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
     </div>
   );
 }
+

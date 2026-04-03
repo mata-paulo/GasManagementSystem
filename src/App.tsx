@@ -18,6 +18,7 @@ import UserScanHistory from "./pages/UserScanHistory";
 import AdminDashboard from "./pages/AdminDashboard";
 import PasswordReset from "./pages/PasswordReset";
 import ChangePassword from "./pages/ChangePassword";
+import ResidentWebPortal from "./pages/ResidentWebPortal";
 
 // ─── Splash shown while restoring session from localStorage ──────────────────
 function SplashScreen() {
@@ -78,7 +79,7 @@ export default function App() {
       setScreen("dashboard");
     } else if (auth.role === "resident") {
       setResident(auth.user);
-      setScreen("user-dashboard");
+      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
     } else if (auth.role === "admin") {
       setScreen("admin");
     } else {
@@ -115,7 +116,7 @@ export default function App() {
       setActiveTab("dashboard");
     } else if (role === "resident") {
       setResident(user);
-      setScreen("user-dashboard");
+      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
       setActiveTab("dashboard");
     } else if (role === "admin") {
       setScreen("admin");
@@ -125,8 +126,8 @@ export default function App() {
   // ─── Register handlers ─────────────────────────────────────────────────────
   const handleResidentRegisterSuccess = (residentData) => {
     setResident(residentData);
-    login(residentData, "resident");
-    setScreen("user-dashboard");
+    login(residentData, "resident", undefined);
+    setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
     setActiveTab("dashboard");
   };
 
@@ -184,6 +185,14 @@ export default function App() {
         onBack={() => setScreen("landing")}
         onSuccess={handleStationRegisterSuccess}
       />
+    );
+  }
+
+  if (screen === "resident-web") {
+    return (
+      <RoleGuard requiredRole="resident" onDeny={() => setScreen("landing")}>
+        <ResidentWebPortal resident={resident} onLogout={handleLogout} />
+      </RoleGuard>
     );
   }
 
@@ -261,6 +270,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onScan={handleScan}
+          onLogout={handleLogout}
         />
       </RoleGuard>
     );
@@ -302,6 +312,7 @@ export default function App() {
           onLogout={handleLogout}
           onShowQR={() => setScreen("qr-display")}
           onChangePassword={() => setScreen("change-password")}
+          onUpdateProfile={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Transactions" },
@@ -387,7 +398,9 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}
         lastUpdated={lastUpdated}
+        onLogout={handleLogout}
       />
     </RoleGuard>
   );
 }
+

@@ -156,3 +156,4 @@ export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps)
     </div>
   );
 }
+
