@@ -6,7 +6,7 @@ import { auth } from "../firebase";
 
 interface LoginProps {
   onBack: () => void;
-  onSuccess: (user: AuthUser, token: string, role: Role) => void;
+  onSuccess: (user: AuthUser, role: Role) => void;
 }
 
 export default function Login({ onBack, onSuccess }: LoginProps) {
@@ -37,11 +37,11 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
       setError(result.error ?? "Login failed.");
       return;
     }
-    if (!result.user || !result.token || !result.role) {
+    if (!result.user || !result.role) {
       setError("Login failed. Please try again.");
       return;
     }
-    onSuccess(result.user, result.token, result.role);
+    onSuccess(result.user, result.role);
   };
 
   const handleResetSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {

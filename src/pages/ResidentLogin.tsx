@@ -4,7 +4,7 @@ import type { AuthUser, Role } from "../services/authService";
 
 interface ResidentLoginProps {
   onBack: () => void;
-  onSuccess: (user: AuthUser, token: string | undefined, role: Role | undefined) => void;
+  onSuccess: (user: AuthUser, role: Role | undefined) => void;
 }
 
 export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps) {
@@ -31,7 +31,7 @@ export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps)
       setError(result.error ?? "Login failed.");
       return;
     }
-    onSuccess(result.user!, result.token, result.role);
+    onSuccess(result.user!, result.role);
   };
 
   return (
@@ -139,7 +139,7 @@ export default function ResidentLogin({ onBack, onSuccess }: ResidentLoginProps)
 
           <button
             type="button"
-            onClick={() => onSuccess({ email: "google-user", role: "resident", loginAt: new Date().toISOString() }, undefined, "resident")}
+            onClick={() => onSuccess({ email: "google-user", role: "resident", loginAt: new Date().toISOString() }, "resident")}
             className="w-full flex items-center justify-center gap-3 bg-white border border-outline-variant rounded-xl py-3.5 shadow-sm active:scale-95 transition-all"
           >
             <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">

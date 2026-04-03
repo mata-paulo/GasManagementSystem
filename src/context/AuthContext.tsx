@@ -12,14 +12,13 @@ interface AuthState {
 
 interface AuthContextValue {
   auth: AuthState;
-  login: (user: AuthUser, role: Role, token: string) => void;
+  login: (user: AuthUser, role: Role) => void;
   logout: () => void;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_KEY = "frs_auth_token";
 const SESSION_KEY = "frs_auth_session";
 
 interface AuthProviderProps {
@@ -37,19 +36,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Restore session on mount
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     const rawSession = localStorage.getItem(SESSION_KEY);
-    if (token && rawSession) {
+    if (rawSession) {
       const session = parseStoredSession(rawSession) as StoredSession | null;
-      if (session?.token === token) {
+      if (session) {
         setAuth({ user: session.user, role: session.role, isAuthenticated: true });
       } else {
-        localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(SESSION_KEY);
       }
-    } else if (token || rawSession) {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(SESSION_KEY);
     }
     setLoading(false);
   }, []);
@@ -58,11 +52,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Call after a successful login API response.
    * Persists the token and sets auth state.
    */
-  const login = (user: AuthUser, role: Role, token: string): void => {
-    localStorage.setItem(TOKEN_KEY, token);
+  const login = (user: AuthUser, role: Role): void => {
     localStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ user, role, token, loginAt: new Date().toISOString() })
+      JSON.stringify({ user, role, loginAt: new Date().toISOString() })
     );
     setAuth({ user, role, isAuthenticated: true });
   };
@@ -72,7 +65,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const logout = (): void => {
     void signOut(firebaseAuth).catch(() => undefined);
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(SESSION_KEY);
     setAuth({ user: null, role: null, isAuthenticated: false });
   };

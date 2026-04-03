@@ -249,7 +249,6 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
         password: form.password,
       });
       const cred = await signInWithEmailAndPassword(auth, email, form.password);
-      const token = await cred.user.getIdToken();
 
       const authUser: AuthUser = {
         email,
@@ -265,7 +264,7 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
         uid: data.uid ?? cred.user.uid,
       };
       setShowConfirm(false);
-      onSuccess({ ...authUser, token });
+      onSuccess({ ...authUser });
     } catch (err) {
       // Keep FirebaseError handling for the immediate sign-in step.
       if (err instanceof FirebaseError) {

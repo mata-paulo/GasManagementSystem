@@ -4,7 +4,7 @@ import type { AuthUser } from "../services/authService";
 
 interface AdminLoginProps {
   onBack: () => void;
-  onSuccess: (user: AuthUser, token: string | undefined) => void;
+  onSuccess: (user: AuthUser) => void;
 }
 
 export default function AdminLogin({ onBack, onSuccess }: AdminLoginProps) {
@@ -26,7 +26,7 @@ export default function AdminLogin({ onBack, onSuccess }: AdminLoginProps) {
       setError(result.error ?? "Login failed.");
       return;
     }
-    onSuccess(result.user!, result.token);
+    onSuccess(result.user!);
   };
 
   return (

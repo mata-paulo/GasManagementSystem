@@ -62,7 +62,6 @@ function sendHttpsError(res: Response, err: HttpsError): void {
 export const registerResident = onRequest(
   {
     region: "asia-southeast1",
-    invoker: "public",
     cors: [
       "https://agas-fuel-rationing-system.web.app",
       "http://localhost:5173",

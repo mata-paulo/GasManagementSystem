@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import NearbyStations from "./pages/NearbyStations";
 import UserScanHistory from "./pages/UserScanHistory";
 import AdminDashboard from "./pages/AdminDashboard";
+import PasswordReset from "./pages/PasswordReset";
 
 // ─── Splash shown while restoring session from localStorage ──────────────────
 function SplashScreen() {
@@ -43,6 +44,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [resident, setResident] = useState(null);
   const [scannedResident, setScannedResident] = useState(null);
+  const [oobCode, setOobCode] = useState<string | null>(null);
 
   // Once auth state is restored, route to the correct portal
   useEffect(() => {
@@ -52,6 +54,13 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("register") === "station") {
       setScreen("station-register");
+      return;
+    }
+
+    // Password reset deep link: ?mode=resetPassword&oobCode=...
+    if (params.get("mode") === "resetPassword" && params.get("oobCode")) {
+      setOobCode(params.get("oobCode"));
+      setScreen("password-reset");
       return;
     }
 
@@ -89,12 +98,12 @@ export default function App() {
   };
 
   // ─── Unified login — routes each role to its own portal ───────────────────
-  const handleLoginSuccess = (user, token, role) => {
-    if (!token || !role) {
+  const handleLoginSuccess = (user, role) => {
+    if (!role) {
       setScreen("login");
       return;
     }
-    login(user, role, token);
+    login(user, role);
     if (role === "station") {
       setOfficer(user);
       setScreen("dashboard");
@@ -111,7 +120,7 @@ export default function App() {
   // ─── Register handlers ─────────────────────────────────────────────────────
   const handleResidentRegisterSuccess = (residentData) => {
     setResident(residentData);
-    login(residentData, "resident", residentData.token);
+    login(residentData, "resident");
     setScreen("user-dashboard");
     setActiveTab("dashboard");
   };
@@ -178,6 +187,20 @@ export default function App() {
       <Register
         onBack={() => setScreen("landing")}
         onSuccess={handleResidentRegisterSuccess}
+      />
+    );
+  }
+
+  if (screen === "password-reset") {
+    return (
+      <PasswordReset
+        oobCode={oobCode}
+        onBack={() => {
+          // Clean up the URL query params so the reset screen doesn't reappear on refresh
+          window.history.replaceState({}, "", window.location.pathname);
+          setOobCode(null);
+          setScreen("login");
+        }}
       />
     );
   }

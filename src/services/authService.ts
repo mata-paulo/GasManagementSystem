@@ -24,7 +24,6 @@ export interface AuthResult {
   success: boolean;
   user?: AuthUser;
   role?: Role;
-  token?: string;
   error?: string;
 }
 
@@ -32,7 +31,6 @@ export interface AuthResult {
 export interface StoredSession {
   user: AuthUser;
   role: Role;
-  token: string;
   loginAt: string;
 }
 
@@ -40,7 +38,6 @@ export function parseStoredSession(raw: string): StoredSession | null {
   try {
     const parsed = JSON.parse(raw) as StoredSession;
     if (!parsed || typeof parsed !== "object") return null;
-    if (!parsed.token || typeof parsed.token !== "string") return null;
     if (!parsed.role) return null;
     if (!parsed.user) return null;
     return parsed;
@@ -63,7 +60,6 @@ export async function login({ email, password }: { email: string; password: stri
     const normalizedEmail = email.trim().toLowerCase();
     const cred = await signInWithEmailAndPassword(auth, normalizedEmail, password);
     const uid = cred.user.uid;
-    const token = await cred.user.getIdToken();
 
     const snap = await getDoc(doc(db, "accounts", uid));
     if (!snap.exists()) {
@@ -98,7 +94,7 @@ export async function login({ email, password }: { email: string; password: stri
       registeredAt,
     };
 
-    return { success: true, user, role, token };
+    return { success: true, user, role };
   } catch (err: unknown) {
     const msg =
       err && typeof err === "object" && "code" in err
