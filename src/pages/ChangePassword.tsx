@@ -66,8 +66,8 @@ export default function ChangePassword({ onSuccess }: ChangePasswordProps) {
       {/* Header */}
       <div className="flex items-center justify-center px-6 py-4 bg-white shadow-sm sticky top-0 z-40">
         <div className="text-center">
-          <h1 className="text-[#003366] font-headline font-bold text-lg leading-none">Change Password</h1>
-          <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-60 mt-0.5">AGAS</p>
+          <h1 className="text-[#003366] font-headline font-bold text-lg leading-none">Reset Password</h1>
+          <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-60 mt-0.5">ENTER NEW PASSWORD</p>
         </div>
       </div>
 
@@ -82,7 +82,7 @@ export default function ChangePassword({ onSuccess }: ChangePasswordProps) {
           </span>
         </div>
 
-        <h2 className="font-headline font-black text-[#003366] text-2xl mb-1">Change Password</h2>
+        <h2 className="font-headline font-black text-[#003366] text-2xl mb-1">Reset Password</h2>
         <p className="text-sm text-slate-500 text-center mb-8 leading-relaxed">
           Enter your new password below.
         </p>

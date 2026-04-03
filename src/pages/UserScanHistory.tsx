@@ -65,7 +65,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       {/* Header */}
-      <div className="flex items-center px-6 py-4 bg-primary-container shadow-sm sticky top-0 z-40">
+      <div className="flex items-center px-6 py-4 bg-primary-container sticky top-0 z-40">
         <div className="flex-1 flex flex-col items-center">
           <h1 className="text-white font-headline font-bold text-lg leading-none">
             Transactions History

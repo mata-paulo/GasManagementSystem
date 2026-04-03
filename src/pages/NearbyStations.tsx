@@ -5,6 +5,17 @@ import BottomNav from "../components/BottomNav";
 
 mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
+const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
+  Shell:      { bg: "#FBCE07", fg: "#DD1D21", abbr: "SH" },
+  Petron:     { bg: "#0059A7", fg: "#ffffff", abbr: "PE" },
+  Caltex:     { bg: "#C8102E", fg: "#ffffff", abbr: "CX" },
+  Phoenix:    { bg: "#F47920", fg: "#ffffff", abbr: "PX" },
+  Seaoil:     { bg: "#00677F", fg: "#ffffff", abbr: "SO" },
+  "Flying V": { bg: "#8B1A1A", fg: "#ffffff", abbr: "FV" },
+  Diatoms:    { bg: "#2E7D32", fg: "#ffffff", abbr: "DI" },
+  Other:      { bg: "#003366", fg: "#ffffff", abbr: "⛽" },
+};
+
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
   { id: "user-history", icon: "receipt_long", label: "Transactions" },
@@ -546,9 +557,17 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                       onClick={() => handleSelectStation(st)}
                       className="flex items-center gap-3 flex-1 min-w-0 text-left"
                     >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg ${idx === 0 ? "bg-amber-50" : "bg-blue-50"}`}>
-                        ⛽
-                      </div>
+                      {(() => {
+                        const bl = BRAND_LOGO[st.brand] ?? BRAND_LOGO.Other;
+                        return (
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-headline font-black text-sm"
+                            style={{ background: bl.bg, color: bl.fg }}
+                          >
+                            {bl.abbr}
+                          </div>
+                        );
+                      })()}
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm font-bold truncate ${isSelected ? "text-[#003366]" : "text-slate-800"}`}>{st.name}</p>
                         <p className="text-[10px] text-slate-400">

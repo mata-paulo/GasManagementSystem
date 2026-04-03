@@ -313,7 +313,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, activeTab, onT
               <h3 className="text-sm font-headline font-black text-[#003366] uppercase tracking-wider">
                 Recent Transactions
               </h3>
-              <button type="button" className="text-xs font-bold text-primary-container hover:underline">
+              <button type="button" onClick={() => onTabChange("history")} className="text-xs font-bold text-primary-container hover:underline">
                 View All
               </button>
             </div>
