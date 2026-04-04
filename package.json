@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "functions:build": "npm --prefix functions run build",
     "functions:test": "npm --prefix functions run test",
+    "seed:stations": "npm --prefix functions run seed:stations",
+    "seed:emulator": "node scripts/seedEmulator.mjs",
     "emulators": "firebase emulators:start",
     "preview": "vite preview"
   },

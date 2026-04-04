@@ -51,6 +51,13 @@
         }
       },
       {
+        "source": "/api/assignStationUser",
+        "run": {
+          "serviceId": "assignstationuser",
+          "region": "asia-southeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

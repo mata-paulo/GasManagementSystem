@@ -1,10 +1,53 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Registration writes go through Cloud Functions; clients read own doc when signed in
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserDoc() {
+      return get(/databases/$(database)/documents/accounts/$(request.auth.uid));
+    }
+
+    function isRole(role) {
+      return signedIn() && currentUserDoc().data.role == role;
+    }
+
+    function isAdmin() {
+      return isRole("admin");
+    }
+
+    function isStation() {
+      return isRole("station");
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
     match /accounts/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
+      allow read: if isOwner(uid) || isAdmin() || (isStation() && resource.data.role in ["resident", "station"]);
+      allow update: if isOwner(uid) && isStation();
+      allow create, delete: if false;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.residentUid == request.auth.uid)
+        || (signedIn() && resource.data.stationUid == request.auth.uid);
+      allow create: if isStation() && request.resource.data.stationUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /stationDirectory/{stationId} {
+      allow read: if signedIn();
       allow write: if false;
+    }
+
+    match /stationInvites/{inviteId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, delete: if false;
     }
 
     match /{document=**} {

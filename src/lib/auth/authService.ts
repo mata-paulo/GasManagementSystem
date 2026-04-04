@@ -51,6 +51,24 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function asNumberMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, raw]) => {
+        const parsed = typeof raw === "number" ? raw : Number(raw);
+        return Number.isFinite(parsed) ? [key, parsed] as const : null;
+      })
+      .filter((entry): entry is readonly [string, number] => entry != null)
+  );
+}
+
 export async function login({ email, password }: { email: string; password: string }): Promise<AuthResult> {
   if (!email?.trim() || !password?.trim()) {
     return { success: false, error: "All fields are required." };
@@ -79,6 +97,9 @@ export async function login({ email, password }: { email: string; password: stri
         : typeof registeredAtRaw === "string"
           ? registeredAtRaw
           : undefined;
+    const stationSourceIdRaw =
+      typeof data.stationSourceId === "number" ? data.stationSourceId : Number(data.stationSourceId ?? NaN);
+    const stationSourceId = Number.isFinite(stationSourceIdRaw) ? stationSourceIdRaw : undefined;
 
     const user: AuthUser = {
       uid,
@@ -92,16 +113,38 @@ export async function login({ email, password }: { email: string; password: stri
       vehicleType: data.vehicleType as string | undefined,
       gasType: data.gasType as string | undefined,
       registeredAt,
-      // Station profile (also stored on `accounts/{uid}` for officer portal)
+      brand: data.brand as string | undefined,
+      stationCode: data.stationCode as string | undefined,
+      stationName: data.stationName as string | undefined,
+      stationDirectoryId: data.stationDirectoryId as string | undefined,
+      stationSourceId,
       officerFirstName: data.officerFirstName as string | undefined,
       officerLastName: data.officerLastName as string | undefined,
-      stationCode: data.stationCode as string | undefined,
-      brand: data.brand as string | undefined,
-      fuelCapacities: data.fuelCapacities as Record<string, number> | undefined,
-      fuelPrices: data.fuelPrices as Record<string, number> | undefined,
-      fuelInventory: data.fuelInventory as Record<string, number> | undefined,
-      availableFuels: data.availableFuels as string[] | undefined,
-      capacity: data.capacity as string | number | undefined,
+      availableFuels: asStringArray(data.availableFuels),
+      fuelCapacities: asNumberMap(data.fuelCapacities),
+      fuelInventory: asNumberMap(data.fuelInventory),
+      fuelPrices: asNumberMap(data.fuelPrices),
+      assignmentStatus: data.assignmentStatus as string | undefined,
+      presenceStatus: data.presenceStatus as string | undefined,
+      lastSeenAt:
+        data.lastSeenAt instanceof Timestamp
+          ? data.lastSeenAt.toDate().toISOString()
+          : typeof data.lastSeenAt === "string"
+            ? data.lastSeenAt
+            : undefined,
+      assignedAt:
+        data.assignedAt instanceof Timestamp
+          ? data.assignedAt.toDate().toISOString()
+          : typeof data.assignedAt === "string"
+            ? data.assignedAt
+            : undefined,
+      inviteAcceptedAt:
+        data.inviteAcceptedAt instanceof Timestamp
+          ? data.inviteAcceptedAt.toDate().toISOString()
+          : typeof data.inviteAcceptedAt === "string"
+            ? data.inviteAcceptedAt
+            : undefined,
+      status: data.status as string | undefined,
     };
 
     return { success: true, user, role };
