@@ -198,6 +198,7 @@ export default function App() {
       <Login
         onBack={() => setScreen("landing")}
         onSuccess={handleLoginSuccess}
+        onRegister={() => setScreen("resident-register")}
       />
     );
   }
