@@ -24,6 +24,8 @@ type StationDirectoryRecord = {
   brandPrices?: BrandPrice[];
   capacity?: number;
   status?: string;
+  /** When false, station has real operational data — invite uses password-only activation (no fuel form). */
+  hasMockData?: boolean;
 };
 
 type StationInviteStatus = "pending" | "accepted";
@@ -363,6 +365,9 @@ export const assignStationUser = onRequest(
       }
 
       const station = stationSnap.data() as StationDirectoryRecord;
+      /** `hasMockData !== false` → template/mock row: full StationRegister invite. `false` → real station: password-only link. */
+      const stationHasMockTemplate = station.hasMockData !== false;
+      const inviteFlow = stationHasMockTemplate ? "full" : "password";
       const brandPrices = asBrandPrices(station.brandPrices);
       const fuelLabels = brandPrices.map((entry) => entry.label);
       const totalCapacity = Number.isFinite(station.capacity) ? Number(station.capacity) : 0;
@@ -425,8 +430,19 @@ export const assignStationUser = onRequest(
         existing?.assignmentStatus === "active"
           ? "active"
           : "pending";
+      const baseUrl = getAppBaseUrl().replace(/\/$/, "");
+      const inviteContinue = new URLSearchParams({
+        stationInvite: "1",
+        inviteFlow,
+        inviteEmail: normalizedEmail,
+        prefillBrand: brand,
+        prefillBarangay: barangay,
+        prefillFirst: firstName,
+        prefillLast: lastName,
+        prefillStationCode: stationCode,
+      });
       const acceptUrl = await admin.auth().generatePasswordResetLink(normalizedEmail, {
-        url: `${getAppBaseUrl()}/`,
+        url: `${baseUrl}/?${inviteContinue.toString()}`,
       });
       let inviteEmailStatus: InviteEmailStatus =
         assignmentStatus === "pending" ? "queued" : "not-applicable";

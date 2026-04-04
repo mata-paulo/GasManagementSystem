@@ -4,14 +4,17 @@ import {z} from "zod";
 export const PLATE_MAX_LENGTH = 10;
 
 export const NAME_MAX_LENGTH = 50;
-export const CORS=[
-      "https://agas-fuel-rationing-system.web.app",
-      "http://localhost:5173",
-      "localhost:5173",
-      "localhost",
-      "http://127.0.0.1:5173",
-      "https://agas.ph",
-    ];
+export const CORS = [
+  "https://agas-fuel-rationing-system.web.app",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "localhost:5173",
+  "localhost:5174",
+  "localhost",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "https://agas.ph",
+];
 /** Matches client-side Register.tsx (min 6). */
 export const PASSWORD_MIN_LENGTH = 6;
 export const PASSWORD_MAX_LENGTH = 128;
@@ -111,11 +114,15 @@ export const registerResidentSchema = z.strictObject({
 
 export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 
-export const assignStationUserSchema = z.strictObject({
+/**
+ * Non-strict object: strips unknown keys (avoids 400 when proxies/clients add fields).
+ * Coerces `stationDirectoryId` so numeric IDs from the UI still validate.
+ */
+export const assignStationUserSchema = z.object({
   stationDirectoryId: z
-    .string()
-    .trim()
-    .min(1, "Station is required."),
+    .union([z.string(), z.number()])
+    .transform((v) => String(v).trim())
+    .refine((s) => s.length > 0, "Station is required."),
   email: z
     .string()
     .trim()
