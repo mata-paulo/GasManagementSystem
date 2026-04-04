@@ -219,7 +219,7 @@ export default function Login({ onBack, onSuccess, onRegister }: LoginProps) {
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Email */}
               <div>
-                <label className="block text-xs font-semibold text-[#003366]/70 mb-1">Username</label>
+                <label className="block text-xs font-semibold text-[#003366]/70 mb-1">Email</label>
                 <input
                   type="email"
                   name="email"
