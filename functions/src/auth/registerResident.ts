@@ -4,6 +4,7 @@ import * as admin from "firebase-admin";
 import {FieldValue} from "firebase-admin/firestore";
 import type {Request, Response} from "express";
 import {
+  CORS,
   registerResidentSchema,
   type RegisterResidentInput,
 } from "../utils/validators";
@@ -62,12 +63,7 @@ function sendHttpsError(res: Response, err: HttpsError): void {
 export const registerResident = onRequest(
   {
     region: "asia-southeast1",
-    cors: [
-      "https://agas-fuel-rationing-system.web.app",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173", 
-      "https://agas.ph",
-    ],
+    cors: CORS,
   },
   async (req: Request, res: Response) => {
     if (req.method !== "POST") {

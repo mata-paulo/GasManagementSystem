@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
+import {
+  WEEKLY_FUEL_LIMIT,
+  assignStationUser,
+  fetchAdminDashboardData,
+  getAccountDisplayName,
+  getWeekKey,
+  isStationUserOnline,
+  type AdminDashboardData,
+} from "@/lib/data/agas";
 
 mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
 /* ─── Mock Data ─── */
-const STATIONS = [
+const STATIC_STATIONS = [
   // ── Shell (13) ──
   { id:  1, name: "Shell Robinsons Mobility Station",  brand: "Shell",    barangay: "Ermita",          officer: "Ricardo Santos",   capacity: 180000, dispensed: 5420, lat: 10.3025851, lng: 123.9110295, status: "Online"  },
   { id:  2, name: "Shell – Osmeña Blvd / Jones Ave",   brand: "Shell",    barangay: "Lorega",          officer: "Gemma Reyes",      capacity: 150000, dispensed: 4610, lat: 10.3039010, lng: 123.8950550, status: "Online"  },
@@ -69,7 +78,7 @@ const STATIONS = [
   { id: 54, name: "Oh My Gas Marketing",               brand: "Other",    barangay: "Talamban",        officer: "Len Po",           capacity:  60000, dispensed: 1060, lat: 10.3816738, lng: 123.9207148, status: "Online"  },
 ];
 
-const RESIDENTS = [
+const STATIC_RESIDENTS = [
   { id: 1,  name: "Rico Blanco",         plate: "GAE-1234", barangay: "Mabolo",      vehicle: "Car",        remaining: 5.0,  used: 15.0, status: "Active" },
   { id: 2,  name: "Maria Clara Santos",  plate: "YHM-8890", barangay: "Lahug",       vehicle: "Car",        remaining: 0.0,  used: 20.0, status: "Maxed"  },
   { id: 3,  name: "Juan Dela Cruz",      plate: "ABC-5678", barangay: "Banilad",     vehicle: "Motorcycle", remaining: 11.5, used: 8.5,  status: "Active" },
@@ -90,7 +99,7 @@ const RESIDENTS = [
   { id: 18, name: "Marites Gomez",       plate: "CDE-7744", barangay: "Ermita",      vehicle: "Motorcycle", remaining: 7.5,  used: 12.5, status: "Active" },
 ];
 
-const RECENT_TXN = [
+const STATIC_RECENT_TXN = [
   { id: 1, resident: "Rico Blanco",        station: "Shell – Fuente Osmeña", plate: "GAE-1234", liters: 15.0, type: "Regular", pricePerLiter: 63.15, time: "10:24 AM", date: "Today"     },
   { id: 2, resident: "Maria Clara Santos", station: "Petron – Jones Ave",    plate: "YHM-8890", liters: 20.0, type: "Diesel",  pricePerLiter: 56.85, time: "09:45 AM", date: "Today"     },
   { id: 3, resident: "Juan Dela Cruz",     station: "Caltex – Lahug",        plate: "ABC-5678", liters: 8.5,  type: "Premium", pricePerLiter: 67.25, time: "08:12 AM", date: "Today"     },
@@ -101,7 +110,7 @@ const RECENT_TXN = [
   { id: 8, resident: "Grace Tolentino",    station: "Sea Oil – Pardo",       plate: "VWX-6650", liters: 15.0, type: "Diesel",  pricePerLiter: 56.25, time: "11:40 AM", date: "Yesterday" },
 ];
 
-const BRAND_PRICES: Record<string, { label: string; price: number }[]> = {
+const DEFAULT_BRAND_PRICES: Record<string, { label: string; price: number }[]> = {
   Shell: [
     { label: "FuelSave Diesel",       price: 57.25 },
     { label: "FuelSave Unleaded (91)", price: 63.15 },
@@ -161,7 +170,12 @@ const NAV_ITEMS = [
   { id: "stations",      icon: "store",              label: "Stations"      },
   { id: "transactions",  icon: "receipt_long",       label: "Transactions"  },
   { id: "analytics",     icon: "bar_chart",          label: "Analytics"     },
+  { id: "users",         icon: "manage_accounts",    label: "Users"         },
 ];
+
+const ADMIN_BASE_PATH = "/admin";
+const DEFAULT_ADMIN_PAGE = "overview";
+const ADMIN_PAGE_IDS = new Set(NAV_ITEMS.map((item) => item.id));
 
 const TREND_DATA = [
   { label: "Mon", value: 2840 },
@@ -173,12 +187,26 @@ const TREND_DATA = [
   { label: "Sun", value: 4150 },
 ];
 
-const fuelBadgeClass = (type: string) =>
-  type === "Diesel" ? "badge-diesel" : type === "Premium" ? "badge-premium" : "badge-regular";
+const fuelBadgeClass = (type: string) => {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("diesel")) return "badge-diesel";
+  if (normalized.includes("premium") || normalized.includes("super")) return "badge-premium";
+  return "badge-regular";
+};
 
 const statusBadgeClass = (s: string) =>
   s === "Maxed" ? "badge-maxed" : s === "New" ? "badge-new"
   : s === "Online" ? "badge-online" : s === "Offline" ? "badge-offline" : "badge-active";
+
+const inviteEmailBadgeClass = (status?: string) =>
+  status === "sent"
+    ? "bg-green-100 text-green-700"
+    : status === "failed"
+      ? "bg-red-100 text-red-700"
+      : "bg-slate-100 text-slate-600";
+
+const inviteEmailStatusLabel = (status?: string) =>
+  status === "sent" ? "Email Sent" : status === "failed" ? "Email Failed" : "Email Queued";
 
 const brandBadgeClass = (brand: string) =>
   ({ Shell: "badge-brand-shell", Petron: "badge-brand-petron", Caltex: "badge-brand-caltex",
@@ -187,8 +215,310 @@ const brandBadgeClass = (brand: string) =>
 
 const brandKey = (brand: string) => brand.toLowerCase().replace(/\s/g, "");
 
+type AdminStationRow = {
+  id: number;
+  uid: string;
+  name: string;
+  brand: string;
+  barangay: string;
+  officer: string;
+  capacity: number;
+  dispensed: number;
+  lat: number;
+  lng: number;
+  status: "Online" | "Offline";
+  userCount: number;
+};
+
+type StationUserRow = {
+  uid: string;
+  name: string;
+  email: string;
+  barangay: string;
+  stationName: string;
+  stationDirectoryId?: string;
+  stationSourceId?: number;
+  status: string;
+  assignmentStatus?: string;
+  invitedAt?: string;
+  acceptedAt?: string;
+  todayTxns?: number;
+  todayLiters?: number;
+  weekTxns?: number;
+  weekLiters?: number;
+  monthTxns?: number;
+  monthLiters?: number;
+};
+
+type StationAssignmentForm = {
+  firstName: string;
+  lastName: string;
+  email: string;
+};
+
+type AdminResidentRow = {
+  id: number;
+  uid: string;
+  name: string;
+  plate: string;
+  barangay: string;
+  vehicle: string;
+  remaining: number;
+  used: number;
+  status: "Active" | "Maxed" | "New";
+};
+
+type AdminTransactionRow = {
+  id: string;
+  resident: string;
+  residentUid: string;
+  station: string;
+  stationUid: string;
+  brand: string;
+  plate: string;
+  liters: number;
+  type: string;
+  pricePerLiter: number;
+  time: string;
+  date: string;
+  createdAt: Date | null;
+};
+
+const DEFAULT_LAT = 10.3157;
+const DEFAULT_LNG = 123.8854;
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeBrand(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (!normalized) return "Other";
+  if (normalized.includes("shell")) return "Shell";
+  if (normalized.includes("petron")) return "Petron";
+  if (normalized.includes("caltex")) return "Caltex";
+  if (normalized.includes("phoenix")) return "Phoenix";
+  if (normalized.includes("seaoil")) return "Sea Oil";
+  if (normalized.includes("flyingv")) return "Flying V";
+  if (normalized.includes("diatoms")) return "Diatoms";
+  return "Other";
+}
+
+function formatVehicleLabel(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (normalized === "motorcycle") return "Motorcycle";
+  if (normalized === "truck") return "Truck";
+  if (normalized === "car") return "Car";
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown";
+}
+
+function formatTransactionType(value: string | null | undefined): string {
+  if (!value) return "Regular";
+  const normalized = value.toLowerCase();
+  if (normalized.includes("diesel")) return "Diesel";
+  if (normalized.includes("premium") || normalized.includes("super")) return "Premium";
+  return "Regular";
+}
+
+function formatTransactionDateLabel(date: Date | null): string {
+  if (!date) return "Pending";
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((startOfToday.getTime() - startOfDate.getTime()) / 86400000);
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
+function matchesPeriod(date: Date | null, filter: string): boolean {
+  if (!date || filter === "All") return true;
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const diffDays = (startOfToday.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) / 86400000;
+
+  if (filter === "Today") return diffDays === 0;
+  if (filter === "Week") return diffDays >= 0 && diffDays < 7;
+  if (filter === "Month") return date >= startOfMonth;
+  return true;
+}
+
+function getStationSummaryKey(station: Pick<AdminStationRow, "uid" | "id">): string {
+  return `${station.uid}:${station.id}`;
+}
+
+function normalizeAdminPage(page: string | null | undefined): string {
+  return page && ADMIN_PAGE_IDS.has(page) ? page : DEFAULT_ADMIN_PAGE;
+}
+
+function getAdminPageFromPath(pathname: string): string {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  if (normalizedPath === ADMIN_BASE_PATH) {
+    return DEFAULT_ADMIN_PAGE;
+  }
+  if (!normalizedPath.startsWith(`${ADMIN_BASE_PATH}/`)) {
+    return DEFAULT_ADMIN_PAGE;
+  }
+
+  const page = normalizedPath.slice(`${ADMIN_BASE_PATH}/`.length).split("/")[0];
+  return normalizeAdminPage(page);
+}
+
+function getAdminPath(page: string): string {
+  return `${ADMIN_BASE_PATH}/${normalizeAdminPage(page)}`;
+}
+
+function buildBrandPrices(stations: AdminDashboardData["stations"]) {
+  const grouped = new Map<string, Map<string, { total: number; count: number }>>();
+
+  for (const station of stations) {
+    const brand = normalizeBrand(station.brand);
+    const prices = station.fuelPrices ?? {};
+    if (!grouped.has(brand)) grouped.set(brand, new Map());
+
+    for (const [label, rawPrice] of Object.entries(prices)) {
+      const price = Number(rawPrice);
+      if (!Number.isFinite(price) || price <= 0) continue;
+
+      const brandGroup = grouped.get(brand)!;
+      const next = brandGroup.get(label) ?? { total: 0, count: 0 };
+      brandGroup.set(label, { total: next.total + price, count: next.count + 1 });
+    }
+  }
+
+  const output: Record<string, { label: string; price: number }[]> = {};
+  for (const [brand, prices] of grouped.entries()) {
+    output[brand] = [...prices.entries()]
+      .map(([label, stats]) => ({
+        label,
+        price: stats.count > 0 ? stats.total / stats.count : 0,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return { ...DEFAULT_BRAND_PRICES, ...output };
+}
+
+function mergeBrandPriceGroups(
+  grouped: Map<string, Map<string, { total: number; count: number }>>,
+  brand: string,
+  prices: Array<{ label: string; price: number }>,
+) {
+  if (!grouped.has(brand)) grouped.set(brand, new Map());
+  const brandGroup = grouped.get(brand)!;
+
+  for (const entry of prices) {
+    const price = Number(entry.price);
+    if (!entry.label || !Number.isFinite(price) || price <= 0) continue;
+
+    const next = brandGroup.get(entry.label) ?? { total: 0, count: 0 };
+    brandGroup.set(entry.label, { total: next.total + price, count: next.count + 1 });
+  }
+}
+
+function buildMergedBrandPrices(
+  stations: AdminDashboardData["stations"],
+  stationDirectory: AdminDashboardData["stationDirectory"],
+) {
+  const grouped = new Map<string, Map<string, { total: number; count: number }>>();
+
+  for (const station of stationDirectory) {
+    mergeBrandPriceGroups(grouped, normalizeBrand(station.brand), station.brandPrices ?? []);
+  }
+
+  for (const station of stations) {
+    const prices = Object.entries(station.fuelPrices ?? {})
+      .map(([label, rawPrice]) => ({ label, price: Number(rawPrice) }))
+      .filter((entry) => Number.isFinite(entry.price) && entry.price > 0);
+    mergeBrandPriceGroups(grouped, normalizeBrand(station.brand), prices);
+  }
+
+  const output: Record<string, { label: string; price: number }[]> = {};
+  for (const [brand, prices] of grouped.entries()) {
+    output[brand] = [...prices.entries()]
+      .map(([label, stats]) => ({
+        label,
+        price: stats.count > 0 ? stats.total / stats.count : 0,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return { ...DEFAULT_BRAND_PRICES, ...output };
+}
+
+function findStaticStation(stationName: string, brand: string, barangay: string) {
+  const nameKey = normalizeText(stationName);
+  const brandKeyValue = normalizeBrand(brand);
+  const barangayKey = normalizeText(barangay);
+
+  return (
+    STATIC_STATIONS.find((item) => normalizeText(item.name) === nameKey) ??
+    STATIC_STATIONS.find(
+      (item) =>
+        normalizeBrand(item.brand) === brandKeyValue &&
+        normalizeText(item.barangay) === barangayKey,
+    ) ??
+    STATIC_STATIONS.find((item) => normalizeBrand(item.brand) === brandKeyValue) ??
+    null
+  );
+}
+
+function findDirectoryStation(
+  stationDirectory: AdminDashboardData["stationDirectory"],
+  stationName: string,
+  brand: string,
+  barangay: string,
+) {
+  const nameKey = normalizeText(stationName);
+  const brandKeyValue = normalizeBrand(brand);
+  const barangayKey = normalizeText(barangay);
+
+  return (
+    stationDirectory.find((item) => normalizeText(item.name) === nameKey) ??
+    stationDirectory.find(
+      (item) =>
+        normalizeBrand(item.brand) === brandKeyValue &&
+        normalizeText(item.barangay) === barangayKey,
+    ) ??
+    stationDirectory.find((item) => normalizeBrand(item.brand) === brandKeyValue) ??
+    null
+  );
+}
+
+function stationAccountMatchesStationRow(
+  station: AdminDashboardData["stations"][number],
+  row: Pick<AdminStationRow, "id" | "name" | "brand" | "barangay">,
+  stationDirectory: AdminDashboardData["stationDirectory"],
+) {
+  const directoryMatch = findDirectoryStation(
+    stationDirectory,
+    getAccountDisplayName(station),
+    normalizeBrand(station.brand),
+    station.barangay ?? "Unknown",
+  );
+
+  if (directoryMatch) {
+    return directoryMatch.sourceId === row.id;
+  }
+
+  return (
+    normalizeText(getAccountDisplayName(station)) === normalizeText(row.name) &&
+    normalizeBrand(station.brand) === normalizeBrand(row.brand) &&
+    normalizeText(station.barangay ?? "Unknown") === normalizeText(row.barangay)
+  );
+}
+
 export default function AdminDashboard({ onLogout }) {
-  const [activePage, setActivePage] = useState("overview");
+  const [activePage, setActivePage] = useState(() => getAdminPageFromPath(window.location.pathname));
   const [stationFilter, setStationFilter] = useState("All");
   const [heatmapFilter, setHeatmapFilter] = useState("All");
   const [residentSearch, setResidentSearch] = useState("");
@@ -210,12 +540,549 @@ export default function AdminDashboard({ onLogout }) {
   const [txFilter, setTxFilter] = useState("All");
   const [txViewBy, setTxViewBy] = useState("All");
   const [txStationBrand, setTxStationBrand] = useState("All");
-  const [txDrawerStation, setTxDrawerStation] = useState<{ name: string; brand: string; txns: typeof RECENT_TXN } | null>(null);
+  const [txDrawerStation, setTxDrawerStation] = useState<{ name: string; brand: string; txns: AdminTransactionRow[] } | null>(null);
   const [txDrawerFilter, setTxDrawerFilter] = useState("All");
   const [allocDrawerStationId, setAllocDrawerStationId] = useState<number | null>(null);
+  const [userDrawerStationId, setUserDrawerStationId] = useState<number | null>(null);
+  const [usersSearch, setUsersSearch] = useState("");
+  const [usersPage, setUsersPage] = useState(1);
+  const USERS_PER_PAGE = 10;
+  const [userForm, setUserForm] = useState<StationAssignmentForm>({
+    firstName: "",
+    lastName: "",
+    email: "",
+  });
+  const [userFormError, setUserFormError] = useState("");
+  const [userFormSuccess, setUserFormSuccess] = useState("");
+  const [assigningUser, setAssigningUser] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
+    residents: [],
+    stations: [],
+    admins: [],
+    transactions: [],
+    stationDirectory: [],
+    stationInvites: [],
+  });
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const mapRef   = useRef(null);
   const mapInst  = useRef(null);
+
+  const navigateToPage = (page: string, options?: { replace?: boolean }) => {
+    const nextPage = normalizeAdminPage(page);
+    const nextPath = getAdminPath(nextPage);
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+
+    setActivePage(nextPage);
+
+    if (currentPath === nextPath) {
+      return;
+    }
+
+    if (options?.replace) {
+      window.history.replaceState({}, "", nextPath);
+      return;
+    }
+
+    window.history.pushState({}, "", nextPath);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboardData() {
+      setLoadingData(true);
+      setLoadError("");
+
+      try {
+        const next = await fetchAdminDashboardData();
+        if (!cancelled) {
+          setDashboardData(next);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Failed to load admin dashboard data.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingData(false);
+        }
+      }
+    }
+
+    void loadDashboardData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextPage = getAdminPageFromPath(window.location.pathname);
+    setActivePage(nextPage);
+
+    if (!window.location.pathname.startsWith(ADMIN_BASE_PATH)) {
+      window.history.replaceState({}, "", getAdminPath(nextPage));
+    }
+
+    const handlePopState = () => {
+      setActivePage(getAdminPageFromPath(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  const currentWeekKey = getWeekKey();
+
+  const BRAND_PRICES = useMemo(
+    () => buildMergedBrandPrices(dashboardData.stations, dashboardData.stationDirectory),
+    [dashboardData.stations, dashboardData.stationDirectory],
+  );
+
+  const stationDispensedByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
+      acc.set(tx.stationUid, (acc.get(tx.stationUid) ?? 0) + tx.liters);
+      return acc;
+    }, new Map());
+  }, [dashboardData.transactions]);
+
+  const residentUsageByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
+      if (tx.weekKey !== currentWeekKey) return acc;
+      acc.set(tx.residentUid, (acc.get(tx.residentUid) ?? 0) + tx.liters);
+      return acc;
+    }, new Map());
+  }, [currentWeekKey, dashboardData.transactions]);
+
+  const ACCOUNT_STATIONS = useMemo<AdminStationRow[]>(() => {
+    return dashboardData.stations
+      .map((station, index) => {
+        const name = getAccountDisplayName(station);
+        const brand = normalizeBrand(station.brand);
+        const barangay = station.barangay ?? "Unknown";
+        const staticMatch = findStaticStation(name, brand, barangay);
+        const officer =
+          [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+          [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+          "—";
+        const status: AdminStationRow["status"] = isStationUserOnline(station) ? "Online" : "Offline";
+
+        return {
+          id: index + 1,
+          uid: station.uid,
+          name,
+          brand,
+          barangay,
+          officer,
+          capacity: Object.values(station.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0),
+          dispensed: Math.round((stationDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
+          lat: staticMatch?.lat ?? DEFAULT_LAT,
+          lng: staticMatch?.lng ?? DEFAULT_LNG,
+          status,
+          userCount: 0,
+        };
+      })
+      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
+  }, [dashboardData.stations, stationDispensedByUid]);
+
+  const STATIONS = useMemo<AdminStationRow[]>(() => {
+    const matchedDirectoryIds = new Set<string>();
+    const stationUserSummaryByRowKey = new Map<string, { userCount: number; onlineCount: number }>();
+
+    for (const row of ACCOUNT_STATIONS) {
+      const matchedUsers = dashboardData.stations.filter((account) =>
+        stationAccountMatchesStationRow(account, row, dashboardData.stationDirectory)
+      );
+      stationUserSummaryByRowKey.set(getStationSummaryKey(row), {
+        userCount: matchedUsers.length,
+        onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
+      });
+    }
+
+    for (const directoryStation of dashboardData.stationDirectory) {
+      const key = `directory:${directoryStation.id}:${directoryStation.sourceId}`;
+      if (!stationUserSummaryByRowKey.has(key)) {
+        const pseudoRow = {
+          id: directoryStation.sourceId,
+          uid: `directory:${directoryStation.id}`,
+          name: directoryStation.name,
+          brand: normalizeBrand(directoryStation.brand),
+          barangay: directoryStation.barangay ?? "Unknown",
+          officer: directoryStation.officer ?? "—",
+          capacity: directoryStation.capacity ?? 0,
+          dispensed: directoryStation.dispensed ?? 0,
+          lat: directoryStation.lat,
+          lng: directoryStation.lon,
+          status: "Offline" as const,
+          userCount: 0,
+        };
+        const matchedUsers = dashboardData.stations.filter((account) =>
+          stationAccountMatchesStationRow(account, pseudoRow, dashboardData.stationDirectory)
+        );
+        stationUserSummaryByRowKey.set(key, {
+          userCount: matchedUsers.length,
+          onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
+        });
+      }
+    }
+
+    const mergedAccountRows = ACCOUNT_STATIONS.map((station) => {
+      const directoryMatch = findDirectoryStation(
+        dashboardData.stationDirectory,
+        station.name,
+        station.brand,
+        station.barangay,
+      );
+
+      if (directoryMatch) {
+        matchedDirectoryIds.add(directoryMatch.id);
+      }
+
+      const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(station));
+      const hasOnlineAssignedUser = (summary?.onlineCount ?? 0) > 0;
+      const status: AdminStationRow["status"] = hasOnlineAssignedUser ? "Online" : "Offline";
+
+      return {
+        ...station,
+        id: directoryMatch?.sourceId ?? station.id,
+        barangay: directoryMatch?.barangay ?? station.barangay,
+        officer: directoryMatch?.officer ?? station.officer,
+        capacity: station.capacity || directoryMatch?.capacity || 0,
+        dispensed: station.dispensed || directoryMatch?.dispensed || 0,
+        lat: directoryMatch?.lat ?? station.lat,
+        lng: directoryMatch?.lon ?? station.lng,
+        status,
+        userCount: summary?.userCount ?? 0,
+      };
+    });
+
+    const directoryRows = dashboardData.stationDirectory
+      .filter((station) => !matchedDirectoryIds.has(station.id))
+      .map((station) => {
+        const summary = stationUserSummaryByRowKey.get(`directory:${station.id}:${station.sourceId}`);
+        const status: AdminStationRow["status"] = (summary?.onlineCount ?? 0) > 0 ? "Online" : "Offline";
+
+        return ({
+        id: station.sourceId,
+        uid: `directory:${station.id}`,
+        name: station.name,
+        brand: normalizeBrand(station.brand),
+        barangay: station.barangay ?? "Unknown",
+        officer: station.officer ?? "—",
+        capacity: station.capacity ?? 0,
+        dispensed: station.dispensed ?? 0,
+        lat: station.lat,
+        lng: station.lon,
+        status,
+        userCount: summary?.userCount ?? 0,
+      });
+      });
+
+    return [...mergedAccountRows, ...directoryRows]
+      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name))
+      .map((row) => {
+        const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(row));
+        return {
+          ...row,
+          status: (summary?.onlineCount ?? 0) > 0 ? "Online" : "Offline",
+          userCount: summary?.userCount ?? row.userCount,
+        };
+      });
+  }, [ACCOUNT_STATIONS, dashboardData.stationDirectory, dashboardData.stations]);
+
+  const selectedUserDrawerStation = useMemo(
+    () => STATIONS.find((station) => station.id === userDrawerStationId) ?? null,
+    [STATIONS, userDrawerStationId],
+  );
+
+  const selectedUserDrawerDirectory = useMemo(() => {
+    if (!selectedUserDrawerStation) return null;
+    return findDirectoryStation(
+      dashboardData.stationDirectory,
+      selectedUserDrawerStation.name,
+      selectedUserDrawerStation.brand,
+      selectedUserDrawerStation.barangay,
+    );
+  }, [dashboardData.stationDirectory, selectedUserDrawerStation]);
+
+  const selectedStationUsers = useMemo<StationUserRow[]>(() => {
+    if (!selectedUserDrawerStation) return [];
+
+    return dashboardData.stations
+      .filter((station) =>
+        stationAccountMatchesStationRow(
+          station,
+          selectedUserDrawerStation,
+          dashboardData.stationDirectory,
+        )
+      )
+      .map((station) => ({
+        uid: station.uid,
+        name: [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+          [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+          station.email ||
+          "Station User",
+        email: station.email ?? "—",
+        barangay: station.barangay ?? "Unknown",
+        stationName: getAccountDisplayName(station),
+        stationDirectoryId: station.stationDirectoryId,
+        stationSourceId: station.stationSourceId,
+        status: isStationUserOnline(station) ? "online" : "offline",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboardData.stationDirectory, dashboardData.stations, selectedUserDrawerStation]);
+
+  const selectedPendingInvites = useMemo(() => {
+    if (!selectedUserDrawerDirectory) return [];
+
+    return dashboardData.stationInvites
+      .filter((invite) =>
+        invite.stationDirectoryId === selectedUserDrawerDirectory.id &&
+        invite.status === "pending"
+      )
+      .sort((a, b) => (b.invitedAt ?? "").localeCompare(a.invitedAt ?? ""));
+  }, [dashboardData.stationInvites, selectedUserDrawerDirectory]);
+
+  const STATION_USERS = useMemo<StationUserRow[]>(() => {
+    const inviteByUid = new Map(
+      dashboardData.stationInvites.map((invite) => [invite.uid, invite]),
+    );
+
+    return dashboardData.stations
+      .map((station) => {
+        const invite = inviteByUid.get(station.uid);
+        const assignedStation =
+          STATIONS.find((row) => stationAccountMatchesStationRow(station, row, dashboardData.stationDirectory)) ??
+          null;
+        const txns = dashboardData.transactions.filter((tx) => tx.stationUid === station.uid);
+        const todayTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Today"));
+        const weekTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Week"));
+        const monthTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Month"));
+
+        return {
+          uid: station.uid,
+          name: [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
+            [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
+            station.email ||
+            "Station User",
+          email: station.email ?? "—",
+          barangay: station.barangay ?? assignedStation?.barangay ?? "Unknown",
+          stationName: assignedStation?.name ?? getAccountDisplayName(station),
+          stationDirectoryId: station.stationDirectoryId,
+          stationSourceId: station.stationSourceId ?? assignedStation?.id,
+          status: isStationUserOnline(station) ? "online" : "offline",
+          assignmentStatus: station.assignmentStatus ?? invite?.status ?? "active",
+          invitedAt: invite?.invitedAt,
+          acceptedAt: invite?.acceptedAt ?? station.inviteAcceptedAt,
+          todayTxns: todayTxns.length,
+          todayLiters: todayTxns.reduce((sum, tx) => sum + tx.liters, 0),
+          weekTxns: weekTxns.length,
+          weekLiters: weekTxns.reduce((sum, tx) => sum + tx.liters, 0),
+          monthTxns: monthTxns.length,
+          monthLiters: monthTxns.reduce((sum, tx) => sum + tx.liters, 0),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [STATIONS, dashboardData.stationDirectory, dashboardData.stationInvites, dashboardData.stations, dashboardData.transactions]);
+
+  const PENDING_INVITES = useMemo(
+    () => dashboardData.stationInvites.filter((invite) => invite.status === "pending"),
+    [dashboardData.stationInvites],
+  );
+
+  useEffect(() => {
+    setUserFormError("");
+    setUserFormSuccess("");
+    setUserForm({
+      firstName: "",
+      lastName: "",
+      email: "",
+    });
+  }, [userDrawerStationId]);
+
+  async function handleAssignUserToStation() {
+    if (!selectedUserDrawerStation || !selectedUserDrawerDirectory) return;
+
+    const firstName = userForm.firstName.trim();
+    const lastName = userForm.lastName.trim();
+    const email = userForm.email.trim().toLowerCase();
+
+    if (!firstName || !lastName || !email) {
+      setUserFormError("Complete the user details before assigning the station role.");
+      return;
+    }
+
+    setAssigningUser(true);
+    setUserFormError("");
+    setUserFormSuccess("");
+
+    try {
+      const result = await assignStationUser({
+        stationDirectoryId: selectedUserDrawerDirectory.id,
+        firstName,
+        lastName,
+        email,
+      });
+
+      setUserForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+      });
+
+      const optimisticInvite = result.pendingInvite ?? {
+        id: result.uid,
+        uid: result.uid,
+        email,
+        firstName,
+        lastName,
+        stationDirectoryId: selectedUserDrawerDirectory.id,
+        stationSourceId: result.stationSourceId,
+        stationName: result.stationName,
+        brand: selectedUserDrawerStation.brand,
+        barangay: selectedUserDrawerStation.barangay,
+        status: "pending" as const,
+        deliveryMethod: result.inviteDeliveryMethod,
+        emailStatus: result.inviteEmailStatus,
+        invitedAt: new Date().toISOString(),
+        inviteSentAt: result.inviteEmailStatus === "sent" ? new Date().toISOString() : undefined,
+        emailError: result.inviteEmailError ?? undefined,
+      };
+
+      try {
+        const refreshedData = await fetchAdminDashboardData();
+        if (
+          result.assignmentStatus === "pending" &&
+          !refreshedData.stationInvites.some((invite) => invite.id === result.uid)
+        ) {
+          setDashboardData({
+            ...refreshedData,
+            stationInvites: [optimisticInvite, ...refreshedData.stationInvites],
+          });
+        } else {
+          setDashboardData(refreshedData);
+        }
+      } catch {
+        if (result.assignmentStatus === "pending") {
+          setDashboardData((prev) => ({
+            ...prev,
+            stationInvites: [
+              optimisticInvite,
+              ...prev.stationInvites.filter((invite) => invite.id !== result.uid),
+            ],
+          }));
+        }
+      }
+
+      if (result.assignmentStatus !== "pending") {
+        setUserFormSuccess(`User assigned to ${selectedUserDrawerStation.name}.`);
+        return;
+      }
+
+      if (result.inviteEmailStatus === "sent") {
+        setUserFormSuccess(`Invite created and email sent to ${email} for ${selectedUserDrawerStation.name}.`);
+        return;
+      }
+
+      setUserFormSuccess("");
+      setUserFormError(
+        result.inviteEmailError?.trim()
+          ? `The invite was saved as pending for ${email}, but the email could not be sent automatically. ${result.inviteEmailError}`
+          : `The invite was saved as pending for ${email}, but the email could not be sent automatically.`
+      );
+    } catch (err) {
+      setUserFormError(err instanceof Error ? err.message : "Failed to assign station user.");
+    } finally {
+      setAssigningUser(false);
+    }
+  }
+
+  const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
+    const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    return dashboardData.residents
+      .map((resident, index) => {
+        const used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
+        const remaining = Math.max(WEEKLY_FUEL_LIMIT - used, 0);
+        const registeredAt = resident.registeredAt ? new Date(resident.registeredAt) : null;
+        const isNew = used === 0 && registeredAt != null && !Number.isNaN(registeredAt.getTime()) && registeredAt.getTime() >= newCutoff;
+        const status: AdminResidentRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
+
+        return {
+          id: index + 1,
+          uid: resident.uid,
+          name: getAccountDisplayName(resident),
+          plate: resident.plate ?? "—",
+          barangay: resident.barangay ?? "—",
+          vehicle: formatVehicleLabel(resident.vehicleType),
+          remaining,
+          used,
+          status,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboardData.residents, residentUsageByUid]);
+
+  const RECENT_TXN = useMemo<AdminTransactionRow[]>(() => {
+    const stationsByUid = new Map(STATIONS.map((station) => [station.uid, station]));
+
+    return dashboardData.transactions.map((tx) => {
+      const station = stationsByUid.get(tx.stationUid);
+      return {
+        id: tx.id,
+        resident: tx.residentName || "Unknown Resident",
+        residentUid: tx.residentUid,
+        station: tx.stationName || station?.name || "Unknown Station",
+        stationUid: tx.stationUid,
+        brand: station?.brand ?? normalizeBrand(tx.stationBrand),
+        plate: tx.plate || "—",
+        liters: tx.liters,
+        type: formatTransactionType(tx.fuelType),
+        pricePerLiter: tx.pricePerLiter,
+        time: tx.createdAt
+          ? tx.createdAt.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
+          : "Pending",
+        date: formatTransactionDateLabel(tx.createdAt),
+        createdAt: tx.createdAt,
+      };
+    });
+  }, [STATIONS, dashboardData.transactions]);
+
+  const TREND_DATA = useMemo(() => {
+    const today = new Date();
+    const buckets = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setHours(0, 0, 0, 0);
+      date.setDate(today.getDate() - (6 - index));
+      return {
+        key: date.toISOString().slice(0, 10),
+        label: date.toLocaleDateString("en-PH", { weekday: "short" }),
+        value: 0,
+      };
+    });
+
+    const bucketIndex = new Map(buckets.map((bucket, index) => [bucket.key, index]));
+    for (const tx of dashboardData.transactions) {
+      if (!tx.createdAt) continue;
+      const dateKey = new Date(
+        tx.createdAt.getFullYear(),
+        tx.createdAt.getMonth(),
+        tx.createdAt.getDate(),
+      ).toISOString().slice(0, 10);
+      const index = bucketIndex.get(dateKey);
+      if (index == null) continue;
+      buckets[index].value += tx.liters;
+    }
+
+    return buckets.map(({ label, value }) => ({
+      label,
+      value: Math.round(value * 10) / 10,
+    }));
+  }, [dashboardData.transactions]);
 
   // Reusable pagination bar
   const PaginationBar = ({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) => {
@@ -259,9 +1126,14 @@ export default function AdminDashboard({ onLogout }) {
   const totalDispensed  = STATIONS.reduce((s, st) => s + st.dispensed,  0);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
   const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
-  const weeklyQuota     = RESIDENTS.length * 20;
+  const weeklyQuota     = RESIDENTS.length * WEEKLY_FUEL_LIMIT;
   const totalUsed       = RESIDENTS.reduce((s, r) => s + r.used, 0);
-  const utilizationPct  = Math.min(100, Math.round((totalUsed / weeklyQuota) * 100));
+  const utilizationPct  = weeklyQuota > 0 ? Math.min(100, Math.round((totalUsed / weeklyQuota) * 100)) : 0;
+  const headerDate = new Date().toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
   /* ── Mapbox init (heatmap page or overview) ── */
   useEffect(() => {
@@ -370,8 +1242,7 @@ export default function AdminDashboard({ onLogout }) {
     });
 
     return () => { map.remove(); mapInst.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage]);
+  }, [BRAND_PRICES, STATIONS, activePage]);
 
   /* ── Sync heatmap brand filter → Mapbox layer filter ── */
   useEffect(() => {
@@ -388,7 +1259,7 @@ export default function AdminDashboard({ onLogout }) {
   /* ── Sidebar nav item ── */
   const NavItem = ({ item }) => (
     <button
-      onClick={() => setActivePage(item.id)}
+      onClick={() => navigateToPage(item.id)}
       className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
         activePage === item.id
           ? "bg-[#003366] text-white"
@@ -471,7 +1342,7 @@ export default function AdminDashboard({ onLogout }) {
             <h1 className="text-base font-black text-[#003366]">
               {activePage === "overview" ? "A.G.A.S Admin Overview" : NAV_ITEMS.find(n => n.id === activePage)?.label || "Overview"}
             </h1>
-            <p className="text-xs text-slate-400">Cebu City A.G.A.S · March 30, 2026</p>
+            <p className="text-xs text-slate-400">Cebu City A.G.A.S · {headerDate}</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 bg-green-50 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full border border-green-200">
@@ -486,6 +1357,16 @@ export default function AdminDashboard({ onLogout }) {
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto p-6">
+          {loadingData && (
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-500 shadow-sm">
+              Loading live admin data…
+            </div>
+          )}
+          {loadError && (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 shadow-sm">
+              {loadError}
+            </div>
+          )}
 
           {/* ══ OVERVIEW ══ */}
           {activePage === "overview" && (() => {
@@ -541,7 +1422,7 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-sm font-black text-[#003366]">Real-time Transactions</p>
                         <p className="text-xs text-slate-400">Latest fuel dispensing activity</p>
                       </div>
-                      <button onClick={() => setActivePage("transactions")} className="text-xs font-bold text-[#003366] hover:underline flex items-center gap-1">
+                      <button onClick={() => navigateToPage("transactions")} className="text-xs font-bold text-[#003366] hover:underline flex items-center gap-1">
                         View All <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                       </button>
                     </div>
@@ -603,7 +1484,7 @@ export default function AdminDashboard({ onLogout }) {
                           return tot > 0;
                         }).map(([brand]) => {
                           const tot = STATIONS.filter(s => s.brand === brand).reduce((a, s) => a + s.dispensed, 0);
-                          const pct = Math.round((tot / totalDispensed) * 100);
+                          const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
                           const bk  = brandKey(brand);
                           return (
                             <div key={brand}>
@@ -776,7 +1657,7 @@ export default function AdminDashboard({ onLogout }) {
                   const bk            = brandKey(brand);
                   const brandStations = STATIONS.filter(s => s.brand === brand);
                   const brandTotal    = brandStations.reduce((a, s) => a + s.dispensed, 0);
-                  const pct           = Math.round((brandTotal / totalDispensed) * 100);
+                  const pct           = totalDispensed > 0 ? Math.round((brandTotal / totalDispensed) * 100) : 0;
                   const isActive      = heatmapFilter === brand;
                   return (
                     <button
@@ -919,7 +1800,7 @@ export default function AdminDashboard({ onLogout }) {
                     </thead>
                     <tbody>
                       {RESIDENTS.slice((allocResidentPage - 1) * ALLOC_PER_PAGE, allocResidentPage * ALLOC_PER_PAGE).map((r, i) => {
-                        const pct     = Math.round((r.used / 20) * 100);
+                        const pct     = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
                         const barFill = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                         return (
                           <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
@@ -1045,7 +1926,7 @@ export default function AdminDashboard({ onLogout }) {
                     {pageSlice.length === 0 ? (
                       <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No residents found.</td></tr>
                     ) : pageSlice.map((r, i) => {
-                      const pct        = Math.round((r.used / 20) * 100);
+                      const pct        = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
                       const barFill    = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                       const rTxns      = RECENT_TXN.filter(t => t.resident === r.name);
                       const totalSpent = rTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
@@ -1194,33 +2075,40 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      <th className="text-left px-5 py-3">Station Name</th>
-                      <th className="text-left px-5 py-3">Brand</th>
-                      <th className="text-left px-5 py-3">Gas Prices</th>
-                      <th className="text-left px-5 py-3">Barangay</th>
-                      <th className="text-left px-5 py-3">Status</th>
-                      <th className="text-right px-5 py-3">Capacity</th>
-                      <th className="text-right px-5 py-3">Dispensed</th>
-                      <th className="text-left px-5 py-3 w-28">Usage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stSlice.length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400 text-sm">No stations found.</td></tr>
-                    ) : stSlice.map((s, i) => {
-                      const pct    = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
-                      const bk     = brandKey(s.brand);
-                      const prices = BRAND_PRICES[s.brand] ?? [];
+                      <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="text-left px-5 py-3">Station Name</th>
+                        <th className="text-left px-5 py-3">Brand</th>
+                        <th className="text-center px-5 py-3">Users</th>
+                        <th className="text-left px-5 py-3">Gas Prices</th>
+                        <th className="text-left px-5 py-3">Barangay</th>
+                        <th className="text-left px-5 py-3">Status</th>
+                        <th className="text-right px-5 py-3">Capacity</th>
+                        <th className="text-right px-5 py-3">Dispensed</th>
+                        <th className="text-left px-5 py-3 w-28">Usage</th>
+                        <th className="text-right px-5 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stSlice.length === 0 ? (
+                        <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No stations found.</td></tr>
+                      ) : stSlice.map((s, i) => {
+                        const pct    = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
+                        const bk     = brandKey(s.brand);
+                        const prices = BRAND_PRICES[s.brand] ?? [];
                       return (
                         <tr key={s.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
                           <td className="px-5 py-3 font-bold text-slate-800 text-xs">{s.name}</td>
-                          <td className="px-5 py-3">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <div className="flex flex-col gap-0.5">
-                              {prices.map((p, pi) => (
+                            <td className="px-5 py-3">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              <div className="inline-flex items-center justify-center min-w-10 px-2 py-1 rounded-full bg-slate-100 text-[#003366] text-[11px] font-black">
+                                {s.userCount}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex flex-col gap-0.5">
+                                {prices.map((p, pi) => (
                                 <div key={pi} className="flex items-center gap-1.5">
                                   <span className="text-[9px] text-slate-500 truncate max-w-[110px]">{p.label}</span>
                                   <span className="text-[9px] font-black text-[#003366] shrink-0">₱{p.price.toFixed(2)}</span>
@@ -1235,17 +2123,26 @@ export default function AdminDashboard({ onLogout }) {
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400">{(s.capacity / 1000).toFixed(0)}k L</td>
                           <td className="px-5 py-3 text-right font-black text-[#003366]">{s.dispensed.toLocaleString()} L</td>
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                               </div>
-                              <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button
+                                onClick={() => setUserDrawerStationId(s.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[#003366] text-[11px] font-black hover:bg-slate-50 transition-all"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">group_add</span>
+                                Manage
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
                 <PaginationBar page={stSafePage} totalPages={stTotalPages} onPage={setStationPage} />
@@ -1256,18 +2153,14 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ TRANSACTIONS ══ */}
           {activePage === "transactions" && (() => {
-            const filteredTxn = RECENT_TXN.filter(t => {
-              if (txFilter === "Today") return t.date === "Today";
-              if (txFilter === "Week")  return t.date === "Today" || t.date === "Yesterday";
-              return true;
-            });
+            const filteredTxn = RECENT_TXN.filter((t) => matchesPeriod(t.createdAt, txFilter));
             const totalLiters  = filteredTxn.reduce((a, t) => a + t.liters, 0);
             const totalRevenue = filteredTxn.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
             const avgFill      = filteredTxn.length ? totalLiters / filteredTxn.length : 0;
 
             // Group by resident
             const byResident = Object.values(
-              filteredTxn.reduce<Record<string, { name: string; plate: string; txns: typeof RECENT_TXN }>>((acc, t) => {
+              filteredTxn.reduce<Record<string, { name: string; plate: string; txns: AdminTransactionRow[] }>>((acc, t) => {
                 if (!acc[t.resident]) acc[t.resident] = { name: t.resident, plate: t.plate, txns: [] };
                 acc[t.resident].txns.push(t);
                 return acc;
@@ -1276,10 +2169,9 @@ export default function AdminDashboard({ onLogout }) {
 
             // Group by station (all, before brand filter)
             const allByStation = Object.values(
-              filteredTxn.reduce<Record<string, { name: string; brand: string; txns: typeof RECENT_TXN }>>((acc, t) => {
+              filteredTxn.reduce<Record<string, { name: string; brand: string; txns: AdminTransactionRow[] }>>((acc, t) => {
                 if (!acc[t.station]) {
-                  const st = STATIONS.find(s => t.station.toLowerCase().includes(s.name.split("–")[0].trim().toLowerCase()));
-                  acc[t.station] = { name: t.station, brand: st?.brand ?? "", txns: [] };
+                  acc[t.station] = { name: t.station, brand: t.brand, txns: [] };
                 }
                 acc[t.station].txns.push(t);
                 return acc;
@@ -1297,10 +2189,7 @@ export default function AdminDashboard({ onLogout }) {
             // Apply brand filter to individual transactions (for All view)
             const filteredTxnAll = txStationBrand === "All"
               ? filteredTxn
-              : filteredTxn.filter(t => {
-                  const st = STATIONS.find(s => t.station.toLowerCase().includes(s.name.split("–")[0].trim().toLowerCase()));
-                  return st?.brand === txStationBrand;
-                });
+              : filteredTxn.filter((t) => t.brand === txStationBrand);
 
             // Totals for filtered station rows
             const stationTotalLiters  = byStation.reduce((a, s) => a + s.txns.reduce((b, t) => b + t.liters, 0), 0);
@@ -1855,7 +2744,7 @@ export default function AdminDashboard({ onLogout }) {
                     {Object.entries(BRAND_COLORS).map(([brand]) => {
                       const tot = STATIONS.filter(s => s.brand === brand).reduce((a, s) => a + s.dispensed, 0);
                       if (tot === 0) return null;
-                      const pct = Math.round((tot / totalDispensed) * 100);
+                      const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
                       const bk  = brandKey(brand);
                       return (
                         <div key={brand}>
@@ -1885,7 +2774,7 @@ export default function AdminDashboard({ onLogout }) {
                       { label: "Truck",      icon: "local_shipping", color: "text-orange-600", bg: "bg-orange-50", bar: "bg-orange-500" },
                     ].map(v => {
                       const cnt = RESIDENTS.filter(r => r.vehicle === v.label).length;
-                      const pct = Math.round((cnt / RESIDENTS.length) * 100);
+                      const pct = RESIDENTS.length > 0 ? Math.round((cnt / RESIDENTS.length) * 100) : 0;
                       return (
                         <div key={v.label} className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg ${v.bg} flex items-center justify-center shrink-0`}>
@@ -1934,8 +2823,326 @@ export default function AdminDashboard({ onLogout }) {
             );
           })()}
 
+          {/* ══ USERS ══ */}
+          {activePage === "users" && (() => {
+            const query = usersSearch.trim().toLowerCase();
+            const filteredUsers = query
+              ? STATION_USERS.filter((user) =>
+                  user.name.toLowerCase().includes(query) ||
+                  user.email.toLowerCase().includes(query) ||
+                  user.stationName.toLowerCase().includes(query) ||
+                  user.barangay.toLowerCase().includes(query)
+                )
+              : STATION_USERS;
+            const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
+            const safePage = Math.min(usersPage, totalPages || 1);
+            const pageSlice = filteredUsers.slice((safePage - 1) * USERS_PER_PAGE, safePage * USERS_PER_PAGE);
+            const todayActiveUsers = STATION_USERS.filter((user) => (user.todayTxns ?? 0) > 0).length;
+            const weekActiveUsers = STATION_USERS.filter((user) => (user.weekTxns ?? 0) > 0).length;
+            const monthActiveUsers = STATION_USERS.filter((user) => (user.monthTxns ?? 0) > 0).length;
+
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-5 gap-3">
+                  {[
+                    { label: "Assigned Users", value: STATION_USERS.length, colorClass: "text-[#003366]" },
+                    { label: "Pending Invites", value: PENDING_INVITES.length, colorClass: "text-[#c62828]" },
+                    { label: "Active Today", value: todayActiveUsers, colorClass: "text-[#1565c0]" },
+                    { label: "Active This Week", value: weekActiveUsers, colorClass: "text-[#2e7d32]" },
+                    { label: "Active This Month", value: monthActiveUsers, colorClass: "text-[#7b1fa2]" },
+                  ].map((card) => (
+                    <div key={card.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
+                      <p className={`text-3xl font-black font-headline ${card.colorClass}`}>{card.value}</p>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{card.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100">
+                    <p className="text-sm font-black text-[#003366]">Pending Invites</p>
+                    <p className="text-xs text-slate-400">Users who have been invited by email but have not accepted their station assignment yet.</p>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {PENDING_INVITES.length === 0 ? (
+                      <div className="px-5 py-10 text-center text-slate-400 text-sm">No pending invites.</div>
+                    ) : PENDING_INVITES.map((invite) => (
+                      <div key={invite.id} className="px-5 py-4 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate">
+                            {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
+                          </p>
+                          <p className="text-xs text-slate-400 truncate">{invite.email}</p>
+                          <p className="text-[11px] text-slate-500 mt-1 truncate">{invite.stationName}</p>
+                          {invite.emailError && (
+                            <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
+                              {inviteEmailStatusLabel(invite.emailStatus)}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "Just now"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-black text-[#003366]">Station Users</p>
+                      <p className="text-xs text-slate-400">
+                        {query ? `${filteredUsers.length} result${filteredUsers.length !== 1 ? "s" : ""} for "${usersSearch}"` : `${STATION_USERS.length} station-role users`}
+                      </p>
+                    </div>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
+                      <input
+                        type="text"
+                        placeholder="Search user, email, station..."
+                        value={usersSearch}
+                        onChange={(e) => { setUsersSearch(e.target.value); setUsersPage(1); }}
+                        className="pl-8 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20 w-64"
+                      />
+                      {usersSearch && (
+                        <button
+                          onClick={() => { setUsersSearch(""); setUsersPage(1); }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">close</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="text-left px-5 py-3">User</th>
+                        <th className="text-left px-5 py-3">Assigned Station</th>
+                        <th className="text-left px-5 py-3">Status</th>
+                        <th className="text-right px-5 py-3">Today</th>
+                        <th className="text-right px-5 py-3">Week</th>
+                        <th className="text-right px-5 py-3">Month</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageSlice.length === 0 ? (
+                        <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No station users found.</td></tr>
+                      ) : pageSlice.map((user, index) => (
+                        <tr key={user.uid} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
+                          <td className="px-5 py-3">
+                            <div>
+                              <p className="font-bold text-slate-800">{user.name}</p>
+                              <p className="text-xs text-slate-400">{user.email}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div>
+                              <p className="text-xs font-bold text-[#003366]">{user.stationName}</p>
+                              <p className="text-[11px] text-slate-400">{user.barangay}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(user.status.toLowerCase() === "offline" ? "Offline" : "Online")}`}>
+                                {user.status}
+                              </span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${user.assignmentStatus === "pending" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                                {user.assignmentStatus === "pending" ? "Invite Pending" : "Assigned"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#003366]">{user.todayTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.todayLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#1565c0]">{user.weekTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.weekLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <p className="font-black text-[#2e7d32]">{user.monthTxns ?? 0}</p>
+                            <p className="text-[10px] text-slate-400">{(user.monthLiters ?? 0).toFixed(1)} L</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <PaginationBar page={safePage} totalPages={totalPages} onPage={setUsersPage} />
+                </div>
+              </div>
+            );
+          })()}
+
         </main>
       </div>
+
+      {activePage === "stations" && selectedUserDrawerStation !== null && (
+        <>
+          <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setUserDrawerStationId(null)} />
+          <div className="fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl border-l border-slate-100 z-50 flex flex-col">
+            <div className="bg-[#003366] p-5 shrink-0">
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-yellow-400 text-[22px]">groups</span>
+                </div>
+                <button onClick={() => setUserDrawerStationId(null)} className="text-white/50 hover:text-white transition-colors mt-0.5">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+              <p className="text-white font-black text-sm leading-tight mb-1">{selectedUserDrawerStation.name}</p>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(selectedUserDrawerStation.brand)}`}>{selectedUserDrawerStation.brand}</span>
+                <span className="text-[10px] font-bold bg-white/10 text-white/70 px-2 py-0.5 rounded-md">
+                  {selectedUserDrawerStation.userCount} assigned users
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Barangay</p>
+                  <p className="text-white font-black text-sm mt-1">{selectedUserDrawerStation.barangay}</p>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Status</p>
+                  <p className="text-white font-black text-sm mt-1">{selectedUserDrawerStation.status}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50">
+              <div className="p-4 border-b border-slate-100 bg-white">
+                <p className="text-sm font-black text-[#003366]">User Management</p>
+                <p className="text-xs text-slate-400 mb-3">Assign an existing user email or invite a new station user.</p>
+
+                {!selectedUserDrawerDirectory && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    This station row is not linked to a seeded station directory record yet.
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="First name"
+                      value={userForm.firstName}
+                      onChange={(e) => setUserForm((prev) => ({...prev, firstName: e.target.value}))}
+                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Last name"
+                      value={userForm.lastName}
+                      onChange={(e) => setUserForm((prev) => ({...prev, lastName: e.target.value}))}
+                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                    />
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((prev) => ({...prev, email: e.target.value}))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    An invite email will be sent to this user. Existing accounts keep their current login, while new users receive a secure setup link to activate station access.
+                  </p>
+                  {userFormError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{userFormError}</div>
+                  )}
+                  {userFormSuccess && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{userFormSuccess}</div>
+                  )}
+                  <button
+                    onClick={() => void handleAssignUserToStation()}
+                    disabled={assigningUser || !selectedUserDrawerDirectory}
+                    className="w-full rounded-xl bg-[#003366] text-white font-black py-3 text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {assigningUser ? "Sending Invite..." : "Invite User"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-black text-[#003366]">Pending Invites</p>
+                      <p className="text-xs text-slate-400">{selectedPendingInvites.length} invite{selectedPendingInvites.length !== 1 ? "s" : ""} waiting for acceptance</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedPendingInvites.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">
+                        No pending invites for this station.
+                      </div>
+                    ) : selectedPendingInvites.map((invite) => (
+                      <div key={invite.id} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-slate-800 truncate">
+                              {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate">{invite.email}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Invited {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "just now"}
+                            </p>
+                            {invite.emailError && (
+                              <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                              Pending
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
+                              {inviteEmailStatusLabel(invite.emailStatus)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-black text-[#003366]">Assigned Users</p>
+                    <p className="text-xs text-slate-400">{selectedStationUsers.length} user{selectedStationUsers.length !== 1 ? "s" : ""} linked to this station</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {selectedStationUsers.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                      No users assigned yet.
+                    </div>
+                  ) : selectedStationUsers.map((user) => (
+                    <div key={user.uid} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate">{user.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                          <p className="text-[11px] text-slate-500 mt-1">{user.stationName}</p>
+                        </div>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(user.status.toLowerCase() === "offline" ? "Offline" : "Online")}`}>
+                          {user.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ═══ TRANSACTION STATION BREAKDOWN DRAWER ═══ */}
       {activePage === "transactions" && txViewBy === "Stations" && txDrawerStation !== null && (() => {
@@ -1943,12 +3150,7 @@ export default function AdminDashboard({ onLogout }) {
         const prices = BRAND_PRICES[s.brand] ?? [];
 
         // Apply drawer date filter
-        const drawerTxns = s.txns.filter(t => {
-          if (txDrawerFilter === "Today") return t.date === "Today";
-          if (txDrawerFilter === "Week")  return t.date === "Today" || t.date === "Yesterday";
-          if (txDrawerFilter === "Month") return true;
-          return true;
-        });
+        const drawerTxns = s.txns.filter((t) => matchesPeriod(t.createdAt, txDrawerFilter));
         const liters  = drawerTxns.reduce((a, t) => a + t.liters, 0);
         const revenue = drawerTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
 

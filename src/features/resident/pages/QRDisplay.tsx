@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
-import { encodeQR } from "../utils/qrCodec";
+import { encodeQR } from "@/lib/qr/qrCodec";
 
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
