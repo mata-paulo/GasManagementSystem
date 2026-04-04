@@ -90,6 +90,40 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * When the admin only provides an email, derive officer first/last for Auth + Firestore.
+ * e.g. john.doe@mata.ph → John / Doe; single segment → Title / Officer
+ */
+function deriveStationOfficerNamesFromEmail(
+  normalizedEmail: string,
+  explicitFirst?: string,
+  explicitLast?: string,
+): {firstName: string; lastName: string} {
+  const f = explicitFirst?.trim() ?? "";
+  const l = explicitLast?.trim() ?? "";
+  if (f && l) {
+    return {firstName: f, lastName: l};
+  }
+  if (f) {
+    return {firstName: f, lastName: "Officer"};
+  }
+
+  const local = normalizedEmail.split("@")[0] ?? "user";
+  const segments = local.split(/[._-]+/).filter(Boolean);
+  const cap = (s: string) =>
+    s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+  if (segments.length === 0) {
+    return {firstName: "Station", lastName: "Officer"};
+  }
+  if (segments.length === 1) {
+    return {firstName: cap(segments[0]), lastName: "Officer"};
+  }
+  return {
+    firstName: cap(segments[0]),
+    lastName: segments.slice(1).map(cap).join(" "),
+  };
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -315,7 +349,12 @@ export const assignStationUser = onRequest(
 
       const data: AssignStationUserInput = parsed.data;
       const normalizedEmail = normalizeEmail(data.email);
-      const displayName = `${data.firstName} ${data.lastName}`.trim();
+      const {firstName, lastName} = deriveStationOfficerNamesFromEmail(
+        normalizedEmail,
+        data.firstName,
+        data.lastName,
+      );
+      const displayName = `${firstName} ${lastName}`.trim();
       const db = admin.firestore();
 
       const stationSnap = await db.collection("stationDirectory").doc(data.stationDirectoryId).get();
@@ -397,10 +436,10 @@ export const assignStationUser = onRequest(
       const batch = db.batch();
       batch.set(accountRef, {
         email: normalizedEmail,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        officerFirstName: data.firstName,
-        officerLastName: data.lastName,
+        firstName,
+        lastName,
+        officerFirstName: firstName,
+        officerLastName: lastName,
         role: "station",
         stationDirectoryId: data.stationDirectoryId,
         stationSourceId,
@@ -431,8 +470,8 @@ export const assignStationUser = onRequest(
         batch.set(inviteRef, {
           uid: userRecord.uid,
           email: normalizedEmail,
-          firstName: data.firstName,
-          lastName: data.lastName,
+          firstName,
+          lastName,
           stationDirectoryId: data.stationDirectoryId,
           stationSourceId,
           stationName,
@@ -454,8 +493,8 @@ export const assignStationUser = onRequest(
           id: userRecord.uid,
           uid: userRecord.uid,
           email: normalizedEmail,
-          firstName: data.firstName,
-          lastName: data.lastName,
+          firstName,
+          lastName,
           stationDirectoryId: data.stationDirectoryId,
           stationSourceId,
           stationName,
@@ -475,7 +514,7 @@ export const assignStationUser = onRequest(
         try {
           await sendStationInviteEmail({
             email: normalizedEmail,
-            firstName: data.firstName,
+            firstName,
             stationName,
             brand,
             barangay,
@@ -526,8 +565,8 @@ export const assignStationUser = onRequest(
       res.status(200).json({
         uid: userRecord.uid,
         email: normalizedEmail,
-        firstName: data.firstName,
-        lastName: data.lastName,
+        firstName,
+        lastName,
         stationDirectoryId: data.stationDirectoryId,
         stationSourceId,
         stationName,

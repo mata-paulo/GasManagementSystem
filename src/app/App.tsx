@@ -198,6 +198,7 @@ export default function App() {
       <Login
         onBack={() => setScreen("landing")}
         onSuccess={handleLoginSuccess}
+        onRegister={() => setScreen("resident-register")}
       />
     );
   }
@@ -214,7 +215,7 @@ export default function App() {
   if (screen === "resident-web") {
     return (
       <RoleGuard requiredRole="resident" onDeny={() => setScreen("landing")}>
-        <ResidentWebPortal resident={resident} onLogout={handleLogout} />
+        <ResidentWebPortal resident={resident} onLogout={handleLogout} onChangePassword={() => setScreen("change-password")} />
       </RoleGuard>
     );
   }
@@ -317,7 +318,7 @@ export default function App() {
     const returnScreen =
       auth.role === "resident" ? "user-settings" : auth.role === "admin" ? "admin" : "settings";
     return (
-      <ChangePassword onSuccess={() => setScreen(returnScreen)} />
+      <ChangePassword onSuccess={() => setScreen(returnScreen)} onBack={() => setScreen(returnScreen)} />
     );
   }
 

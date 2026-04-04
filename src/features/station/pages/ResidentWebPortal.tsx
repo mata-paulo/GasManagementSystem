@@ -108,7 +108,7 @@ const FUEL_BADGE: Record<string, string> = {
   Premium: "bg-green-100 text-green-700",
 };
 
-export default function ResidentWebPortal({ resident, onLogout }) {
+export default function ResidentWebPortal({ resident, onLogout, onChangePassword }) {
   const [activePage, setActivePage]     = useState("overview");
   const [collapsed, setCollapsed]       = useState(false);
   const [txFilter, setTxFilter]         = useState("All");
@@ -325,8 +325,10 @@ export default function ResidentWebPortal({ resident, onLogout }) {
         {/* Collapse + Sign out */}
         <div className="border-t border-white/10 px-2 py-3 space-y-1">
           <button
+            type="button"
+            title={collapsed ? "Expand menu" : "Collapse menu"}
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sky-200/90 hover:bg-white/10 hover:text-white transition-all"
           >
             <span className="material-symbols-outlined text-[20px] shrink-0">
               {collapsed ? "chevron_right" : "chevron_left"}
@@ -782,9 +784,10 @@ export default function ResidentWebPortal({ resident, onLogout }) {
               {/* Actions */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 {[
-                  { icon: "qr_code",      label: "View My QR Code",  action: () => setActivePage("qr-code"), color: "text-[#003366]" },
+                  { icon: "qr_code",      label: "View My QR Code",    action: () => setActivePage("qr-code"), color: "text-[#003366]" },
                   { icon: "receipt_long", label: "Transaction History", action: () => setActivePage("transactions"), color: "text-[#003366]" },
-                  { icon: "smartphone",   label: "Software Version",  action: null, note: "V 1.0.0", color: "text-[#003366]" },
+                  { icon: "lock_reset",   label: "Change Password",     action: onChangePassword, color: "text-[#003366]" },
+                  { icon: "smartphone",   label: "Software Version",    action: null, note: "V 1.0.0", color: "text-[#003366]" },
                 ].map((item, i, arr) => (
                   <button
                     key={item.label}
