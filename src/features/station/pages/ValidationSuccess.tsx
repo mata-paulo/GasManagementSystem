@@ -498,7 +498,9 @@ export default function ValidationSuccess({
                   <>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-outline">Conversion</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="relative min-w-0">
+                      <div
+                        className={`relative min-w-0 ${inputMode === "cash" ? "order-1" : "order-2"}`}
+                      >
                         <span
                           className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg font-black ${
                             inputMode === "liters" ? "text-slate-400" : "text-[#003366]"
@@ -522,7 +524,9 @@ export default function ValidationSuccess({
                           }`}
                         />
                       </div>
-                      <div className="relative min-w-0">
+                      <div
+                        className={`relative min-w-0 ${inputMode === "cash" ? "order-2" : "order-1"}`}
+                      >
                         <input
                           type="number"
                           min="0"
