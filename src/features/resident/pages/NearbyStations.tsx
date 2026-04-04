@@ -162,7 +162,8 @@ function normalizeStationBrand(brand) {
 
 function mapDirectoryStation(station) {
   return {
-    id: station.sourceId,
+    id: station.id,
+    sourceId: station.sourceId,
     name: station.name,
     brand: normalizeStationBrand(station.brand),
     address: station.address,
@@ -225,10 +226,10 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
   const drawerOpen = drawerHeight > PEEK_HEIGHT + 20;
   const drawerRef = useRef<HTMLDivElement>(null);
-  const stationRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const stationRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const stationListRef = useRef<HTMLDivElement>(null);
   const handleBarRef = useRef<HTMLDivElement>(null);
-  const markerElsRef = useRef<Record<number, HTMLElement>>({});
+  const markerElsRef = useRef<Record<string, HTMLElement>>({});
 
   useEffect(() => {
     const el = drawerRef.current;

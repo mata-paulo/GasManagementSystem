@@ -3,7 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import {
-  fetchResidentAllocationSummary,
+  subscribeResidentAllocationSummary,
   type DispenseTransaction,
   type ResidentAccount,
   WEEKLY_FUEL_LIMIT,
@@ -67,6 +67,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
   const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
+  const [liveFuelAllocation, setLiveFuelAllocation] = useState(WEEKLY_FUEL_LIMIT);
   const [usedLiters, setUsedLiters] = useState(0);
   const [loadingSummary, setLoadingSummary] = useState(false);
 
@@ -78,7 +79,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const barangay = resident?.barangay || "Not set";
   const vehicleType = resident?.vehicleType || "car";
   const residentStatus = resident?.status || "Active";
-  const fuelAllocation = resident?.fuelAllocation ?? WEEKLY_FUEL_LIMIT;
+  const fuelAllocation = liveFuelAllocation;
   const remainingLiters = Math.max(fuelAllocation - usedLiters, 0);
   const usagePercent = Math.min((usedLiters / fuelAllocation) * 100, 100);
   const pctLeft = Math.round((remainingLiters / fuelAllocation) * 100);
@@ -91,34 +92,34 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   useEffect(() => {
     if (!resident?.uid) {
       setTransactions([]);
+      setLiveFuelAllocation(WEEKLY_FUEL_LIMIT);
       setUsedLiters(0);
       return;
     }
 
-    let cancelled = false;
     setLoadingSummary(true);
+    setLiveFuelAllocation(resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
 
-    void fetchResidentAllocationSummary(resident.uid)
-      .then((summary) => {
-        if (cancelled) return;
+    const unsubscribe = subscribeResidentAllocationSummary(
+      resident.uid,
+      (summary) => {
         setTransactions(summary.transactions);
+        setLiveFuelAllocation(summary.fuelAllocation);
         setUsedLiters(summary.usedLiters);
-      })
-      .catch(() => {
-        if (cancelled) return;
+        setLoadingSummary(false);
+      },
+      () => {
         setTransactions([]);
+        setLiveFuelAllocation(resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
         setUsedLiters(0);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingSummary(false);
-        }
-      });
+        setLoadingSummary(false);
+      },
+    );
 
     return () => {
-      cancelled = true;
+      unsubscribe();
     };
-  }, [resident?.uid]);
+  }, [resident?.fuelAllocation, resident?.uid]);
 
   const statusConfig =
     pctLeft > 50

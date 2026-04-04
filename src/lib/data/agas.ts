@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
@@ -194,6 +195,7 @@ export interface AssignedStationUserResult {
 
 export interface ResidentAllocationSummary {
   transactions: DispenseTransaction[];
+  fuelAllocation: number;
   usedLiters: number;
   remainingLiters: number;
 }
@@ -535,6 +537,28 @@ export function getWeekKey(date = new Date()): string {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
+const RESIDENT_FUEL_CYCLE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getResidentFuelCycleKey(
+  account: ResidentAccount | null | undefined,
+  date = new Date(),
+): string {
+  const registeredAt = toDate(account?.registeredAt);
+  if (!registeredAt) {
+    return getWeekKey(date);
+  }
+
+  const targetTime = date.getTime();
+  const anchorTime = registeredAt.getTime();
+  if (!Number.isFinite(targetTime) || !Number.isFinite(anchorTime)) {
+    return getWeekKey(date);
+  }
+
+  const elapsed = Math.max(targetTime - anchorTime, 0);
+  const cycleIndex = Math.floor(elapsed / RESIDENT_FUEL_CYCLE_MS);
+  return `${account?.uid ?? "resident"}:${cycleIndex}`;
+}
+
 export function getAccountDisplayName(
   account: AccountDisplayRecord,
 ): string {
@@ -607,25 +631,36 @@ function getResidentFuelWeekKey(account: ResidentAccount | null | undefined): st
 
 function getResidentFuelUsed(
   account: ResidentAccount | null | undefined,
-  weekKey = getWeekKey(),
+  cycleKey = getResidentFuelCycleKey(account),
 ): number {
   const storedFuelUsed = asNumber(account?.fuelUsed) ?? 0;
   const storedWeekKey = getResidentFuelWeekKey(account);
-  return storedWeekKey === weekKey ? storedFuelUsed : 0;
+  return storedWeekKey === cycleKey ? storedFuelUsed : 0;
 }
 
-function getTransactionWeekKey(transaction: DispenseTransaction): string {
-  if (transaction.weekKey) return transaction.weekKey;
-  return transaction.occurredAt ? getWeekKey(transaction.occurredAt) : "";
+function getResidentTransactionCycleKey(
+  resident: ResidentAccount | null | undefined,
+  transaction: DispenseTransaction,
+): string {
+  if (transaction.occurredAt) {
+    return getResidentFuelCycleKey(resident, transaction.occurredAt);
+  }
+
+  if (transaction.createdAt) {
+    return getResidentFuelCycleKey(resident, transaction.createdAt);
+  }
+
+  return "";
 }
 
-function getWeeklyTransactionLiters(
+function getResidentCycleTransactionLiters(
+  resident: ResidentAccount | null | undefined,
   transactions: DispenseTransaction[],
-  weekKey = getWeekKey(),
+  cycleKey = getResidentFuelCycleKey(resident),
 ): number {
   return Math.round(
     transactions
-      .filter((transaction) => getTransactionWeekKey(transaction) === weekKey)
+      .filter((transaction) => getResidentTransactionCycleKey(resident, transaction) === cycleKey)
       .reduce((sum, transaction) => sum + transaction.liters, 0) * 100,
   ) / 100;
 }
@@ -634,14 +669,15 @@ function buildResidentAllocationSummary(
   resident: ResidentAccount | null | undefined,
   transactions: DispenseTransaction[],
 ): ResidentAllocationSummary {
-  const currentWeekKey = getWeekKey();
+  const currentCycleKey = getResidentFuelCycleKey(resident);
   const usedLiters = Math.max(
-    getResidentFuelUsed(resident, currentWeekKey),
-    getWeeklyTransactionLiters(transactions, currentWeekKey),
+    getResidentFuelUsed(resident, currentCycleKey),
+    getResidentCycleTransactionLiters(resident, transactions, currentCycleKey),
   );
   const fuelAllocation = getResidentFuelAllocation(resident);
   return {
     transactions,
+    fuelAllocation,
     usedLiters,
     remainingLiters: Math.max(fuelAllocation - usedLiters, 0),
   };
@@ -834,6 +870,68 @@ export async function fetchResidentAllocationSummary(uid: string): Promise<Resid
   return buildResidentAllocationSummary(resident, transactions);
 }
 
+export function subscribeResidentAllocationSummary(
+  uid: string,
+  onNext: (summary: ResidentAllocationSummary) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  if (!uid) {
+    onNext(buildResidentAllocationSummary(null, []));
+    return () => undefined;
+  }
+
+  let resident: ResidentAccount | null = null;
+  let transactions: DispenseTransaction[] = [];
+  let residentReady = false;
+  let transactionsReady = false;
+
+  const emitSummary = () => {
+    if (!residentReady && !transactionsReady) return;
+    onNext(buildResidentAllocationSummary(resident, transactions));
+  };
+
+  const unsubscribeResident = onSnapshot(
+    doc(db, "accounts", uid),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        resident = null;
+      } else {
+        const account = mapAccount(snapshot.id, snapshot.data() as Record<string, unknown>);
+        resident = account?.role === "resident" ? account : null;
+      }
+
+      residentReady = true;
+      emitSummary();
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
+
+  const unsubscribeTransactions = onSnapshot(
+    query(
+      collection(db, "transactions"),
+      where("residentUid", "==", uid),
+      limit(500),
+    ),
+    (snapshot) => {
+      transactions = sortTransactions(
+        snapshot.docs.map((item) => mapTransaction(item.id, item.data() as Record<string, unknown>)),
+      );
+      transactionsReady = true;
+      emitSummary();
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
+
+  return () => {
+    unsubscribeResident();
+    unsubscribeTransactions();
+  };
+}
+
 export async function resolveResidentFromQR(decoded: DecodedQR): Promise<ResolvedResidentScan | null> {
   if (decoded.uid) {
     const resident = await fetchResidentAccount(decoded.uid);
@@ -842,6 +940,7 @@ export async function resolveResidentFromQR(decoded: DecodedQR): Promise<Resolve
       return {
         resident,
         transactions: allocation.transactions,
+        fuelAllocation: allocation.fuelAllocation,
         usedLiters: allocation.usedLiters,
         remainingLiters: allocation.remainingLiters,
       };
@@ -883,6 +982,7 @@ export async function resolveResidentFromQR(decoded: DecodedQR): Promise<Resolve
   return {
     resident,
     transactions: allocation.transactions,
+    fuelAllocation: allocation.fuelAllocation,
     usedLiters: allocation.usedLiters,
     remainingLiters: allocation.remainingLiters,
   };
@@ -946,9 +1046,9 @@ export async function recordDispenseTransaction(
   }
 
   const createdAt = new Date();
-  const currentWeekKey = getWeekKey(createdAt);
+  const currentCycleKey = getResidentFuelCycleKey(resident, createdAt);
   const fuelAllocation = getResidentFuelAllocation(resident);
-  const usedLitersBefore = getResidentFuelUsed(resident, currentWeekKey);
+  const usedLitersBefore = getResidentFuelUsed(resident, currentCycleKey);
   const remainingBefore = Math.max(fuelAllocation - usedLitersBefore, 0);
   if (liters > remainingBefore) {
     throw new Error("This fuel request exceeds the resident's weekly allocation.");
@@ -984,7 +1084,7 @@ export async function recordDispenseTransaction(
     totalPaid: amount,
     occurredAt: serverTimestamp(),
     createdAt: serverTimestamp(),
-    weekKey: currentWeekKey,
+    weekKey: getWeekKey(createdAt),
     status: "dispensed",
   });
 
@@ -995,7 +1095,7 @@ export async function recordDispenseTransaction(
 
   batch.update(residentRef, {
     fuelUsed: nextFuelUsed,
-    fuelWeekKey: currentWeekKey,
+    fuelWeekKey: currentCycleKey,
     updatedAt: serverTimestamp(),
   });
 
@@ -1021,14 +1121,14 @@ export async function recordDispenseTransaction(
       totalPaid: amount,
       occurredAt: createdAt,
       createdAt,
-      weekKey: currentWeekKey,
+      weekKey: getWeekKey(createdAt),
       status: "dispensed",
     },
     resident: {
       ...resident,
       fuelAllocation,
       fuelUsed: nextFuelUsed,
-      fuelWeekKey: currentWeekKey,
+      fuelWeekKey: currentCycleKey,
       updatedAt: createdAt.toISOString(),
     },
     station: {

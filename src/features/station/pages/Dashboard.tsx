@@ -16,7 +16,7 @@ function timeAgo(date: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-type FuelTheme = { soft: string; text: string; muted: string; gradient: string };
+type FuelTheme = { soft: string; text: string; muted?: string; gradient: string };
 
 type DashboardOfficer = {
   officerFirstName?: string;
@@ -106,6 +106,10 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
   const [lastUpdateLabel, setLastUpdateLabel] = useState("Never");
   const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [stationStatus, setStationStatus] = useState<"online" | "offline">(
+    officer?.presenceStatus?.toLowerCase() === "online" ? "online" : "offline",
+  );
 
   useEffect(() => {
     if (!lastUpdated) {
@@ -117,6 +121,12 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
     const interval = setInterval(() => setLastUpdateLabel(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
+
+  useEffect(() => {
+    setStationStatus(
+      officer?.presenceStatus?.toLowerCase() === "online" ? "online" : "offline",
+    );
+  }, [officer?.presenceStatus]);
 
   const stationCode    = officer?.stationCode || "N/A";
   const barangay       = officer?.barangay    || "Not set";
