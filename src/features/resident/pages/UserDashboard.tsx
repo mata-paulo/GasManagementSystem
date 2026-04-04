@@ -259,17 +259,17 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           </section>
 
           {/* Map preview */}
-          <section className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px]">
+          <section className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate">
             <div ref={mapPreviewRef} className="w-full h-full" />
             <button
               onClick={() => onTabChange("map")}
               aria-label="View full map"
-              className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-all"
+              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-all"
             >
               <span className="material-symbols-outlined text-[14px]">open_in_full</span>
               View Full Map
             </button>
-            <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] font-bold text-[#003366] shadow">
+            <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] font-bold text-[#003366] shadow">
               Nearby Stations
             </div>
           </section>
