@@ -318,7 +318,7 @@ export default function App() {
     const returnScreen =
       auth.role === "resident" ? "user-settings" : auth.role === "admin" ? "admin" : "settings";
     return (
-      <ChangePassword onSuccess={() => setScreen(returnScreen)} />
+      <ChangePassword onSuccess={() => setScreen(returnScreen)} onBack={() => setScreen(returnScreen)} />
     );
   }
 
