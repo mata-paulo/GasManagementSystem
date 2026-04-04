@@ -116,27 +116,27 @@ export const assignStationUserSchema = z.strictObject({
     .string()
     .trim()
     .min(1, "Station is required."),
-  firstName: z
-    .string()
-    .trim()
-    .min(1, "First name is required.")
-    .max(
-      NAME_MAX_LENGTH,
-      `First name must be at most ${NAME_MAX_LENGTH} characters.`
-    ),
-  lastName: z
-    .string()
-    .trim()
-    .min(1, "Last name is required.")
-    .max(
-      NAME_MAX_LENGTH,
-      `Last name must be at most ${NAME_MAX_LENGTH} characters.`
-    ),
   email: z
     .string()
     .trim()
     .min(1, "Email is required.")
     .refine((v) => EMAIL_REGEX.test(v), "Invalid email address."),
+  firstName: z
+    .string()
+    .trim()
+    .max(
+      NAME_MAX_LENGTH,
+      `First name must be at most ${NAME_MAX_LENGTH} characters.`
+    )
+    .optional(),
+  lastName: z
+    .string()
+    .trim()
+    .max(
+      NAME_MAX_LENGTH,
+      `Last name must be at most ${NAME_MAX_LENGTH} characters.`
+    )
+    .optional(),
 });
 
 export type AssignStationUserInput = z.infer<typeof assignStationUserSchema>;

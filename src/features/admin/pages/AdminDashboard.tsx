@@ -251,8 +251,6 @@ type StationUserRow = {
 };
 
 type StationAssignmentForm = {
-  firstName: string;
-  lastName: string;
   email: string;
 };
 
@@ -547,11 +545,7 @@ export default function AdminDashboard({ onLogout }) {
   const [usersSearch, setUsersSearch] = useState("");
   const [usersPage, setUsersPage] = useState(1);
   const USERS_PER_PAGE = 10;
-  const [userForm, setUserForm] = useState<StationAssignmentForm>({
-    firstName: "",
-    lastName: "",
-    email: "",
-  });
+  const [userForm, setUserForm] = useState<StationAssignmentForm>({ email: "" });
   const [userFormError, setUserFormError] = useState("");
   const [userFormSuccess, setUserFormSuccess] = useState("");
   const [assigningUser, setAssigningUser] = useState(false);
@@ -897,22 +891,16 @@ export default function AdminDashboard({ onLogout }) {
   useEffect(() => {
     setUserFormError("");
     setUserFormSuccess("");
-    setUserForm({
-      firstName: "",
-      lastName: "",
-      email: "",
-    });
+    setUserForm({ email: "" });
   }, [userDrawerStationId]);
 
   async function handleAssignUserToStation() {
     if (!selectedUserDrawerStation || !selectedUserDrawerDirectory) return;
 
-    const firstName = userForm.firstName.trim();
-    const lastName = userForm.lastName.trim();
     const email = userForm.email.trim().toLowerCase();
 
-    if (!firstName || !lastName || !email) {
-      setUserFormError("Complete the user details before assigning the station role.");
+    if (!email) {
+      setUserFormError("Enter the user’s email before sending the invite.");
       return;
     }
 
@@ -923,23 +911,17 @@ export default function AdminDashboard({ onLogout }) {
     try {
       const result = await assignStationUser({
         stationDirectoryId: selectedUserDrawerDirectory.id,
-        firstName,
-        lastName,
         email,
       });
 
-      setUserForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-      });
+      setUserForm({ email: "" });
 
       const optimisticInvite = result.pendingInvite ?? {
         id: result.uid,
         uid: result.uid,
         email,
-        firstName,
-        lastName,
+        firstName: result.firstName,
+        lastName: result.lastName,
         stationDirectoryId: selectedUserDrawerDirectory.id,
         stationSourceId: result.stationSourceId,
         stationName: result.stationName,
@@ -3019,7 +3001,10 @@ export default function AdminDashboard({ onLogout }) {
             <div className="flex-1 overflow-y-auto bg-slate-50">
               <div className="p-4 border-b border-slate-100 bg-white">
                 <p className="text-sm font-black text-[#003366]">User Management</p>
-                <p className="text-xs text-slate-400 mb-3">Assign an existing user email or invite a new station user.</p>
+                <p className="text-xs text-slate-400 mb-3">
+                  Assign an existing user email or invite a new station user. Display name is derived from the email local
+                  part (e.g. <span className="font-mono">john.doe@mata.ph</span> → John Doe).
+                </p>
 
                 {!selectedUserDrawerDirectory && (
                   <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -3028,27 +3013,11 @@ export default function AdminDashboard({ onLogout }) {
                 )}
 
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="First name"
-                      value={userForm.firstName}
-                      onChange={(e) => setUserForm((prev) => ({...prev, firstName: e.target.value}))}
-                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Last name"
-                      value={userForm.lastName}
-                      onChange={(e) => setUserForm((prev) => ({...prev, lastName: e.target.value}))}
-                      className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
-                    />
-                  </div>
                   <input
                     type="email"
                     placeholder="user@example.com"
                     value={userForm.email}
-                    onChange={(e) => setUserForm((prev) => ({...prev, email: e.target.value}))}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
                   />
                   <p className="text-[11px] text-slate-400">
