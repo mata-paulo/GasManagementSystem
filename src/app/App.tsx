@@ -54,6 +54,9 @@ function SplashScreen() {
   );
 }
 
+const DESKTOP_BREAKPOINT = 1024;
+const isDesktop = () => window.innerWidth >= DESKTOP_BREAKPOINT;
+
 export default function App() {
   const { auth, login, logout, loading } = useAuth();
 
@@ -101,6 +104,23 @@ export default function App() {
     syncStationLocation(tab, replace);
   }, [syncStationLocation]);
 
+  // Switch resident between web and mobile portal on resize without refresh
+  useEffect(() => {
+    if (auth.role !== "resident" || !auth.isAuthenticated) return;
+
+    const RESIDENT_SCREENS = new Set(["resident-web", "user-dashboard", "user-history", "map", "user-settings", "qr-display"]);
+
+    const handleResize = () => {
+      setScreen((prev) => {
+        if (!RESIDENT_SCREENS.has(prev)) return prev;
+        return isDesktop() ? "resident-web" : "user-dashboard";
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [auth.role, auth.isAuthenticated]);
+
   // Once auth state is restored, route to the correct portal
   useEffect(() => {
     if (loading) return;
@@ -134,7 +154,7 @@ export default function App() {
       navigateStation(stationTab, true);
     } else if (auth.role === "resident") {
       setResident(auth.user);
-      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
+      setScreen(isDesktop() ? "resident-web" : "user-dashboard");
     } else if (auth.role === "admin") {
       setScreen("admin");
     } else {
@@ -212,7 +232,7 @@ export default function App() {
       navigateStation("dashboard", true);
     } else if (role === "resident") {
       setResident(user);
-      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
+      setScreen(isDesktop() ? "resident-web" : "user-dashboard");
       setActiveTab("dashboard");
     } else if (role === "admin") {
       setScreen("admin");
