@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { formatDecodedDate } from "@/lib/qr/qrCodec";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 
@@ -99,7 +99,37 @@ export default function ValidationSuccess({
 
   const maxCashForAllocation = Math.round(remainingLiters * pricePerLiter * 100) / 100;
 
-  /** Cash mode: exact amount charged (presets 50/100/500/1000 stay exact; no ₱100.33 from L×price round-trip). */
+  useEffect(() => {
+    if (inputMode !== "cash") return;
+    const c = parseFloat(cashInput);
+    if (cashInput.trim() === "" || isNaN(c) || c <= 0 || pricePerLiter <= 0) {
+      setLiterInput("");
+      return;
+    }
+    const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
+    if (eff !== c) {
+      setCashInput(pesoInputString(eff));
+    }
+    const L = Math.min(remainingLiters, eff / pricePerLiter);
+    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+  }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
+
+  useEffect(() => {
+    if (inputMode !== "liters") return;
+    const L = parseFloat(literInput);
+    if (literInput.trim() === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
+      setCashInput("");
+      return;
+    }
+    const Lc = Math.min(L, remainingLiters);
+    let cash = Math.round(Lc * pricePerLiter * 100) / 100;
+    cash = Math.min(cash, maxCashForAllocation);
+    setCashInput(pesoInputString(cash));
+    const L2 = Math.min(remainingLiters, cash / pricePerLiter);
+    setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+  }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
+
+  /** Cash mode: exact amount charged (no ₱ drift from L×price round-trip; cash field is source of truth). */
   const effectiveCash =
     inputMode === "cash" &&
     !isNaN(cashFromCashField) &&
@@ -154,7 +184,17 @@ export default function ValidationSuccess({
     if (mode === "cash") {
       const L = parseFloat(literInput);
       if (!isNaN(L) && L > 0 && pricePerLiter > 0) {
-        setCashInput(pesoInputString(Math.round(L * pricePerLiter * 100) / 100));
+        const cash = Math.min(Math.round(L * pricePerLiter * 100) / 100, maxCashForAllocation);
+        setCashInput(pesoInputString(cash));
+        const L2 = Math.min(remainingLiters, cash / pricePerLiter);
+        setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+      } else {
+        const c = parseFloat(cashInput);
+        if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
+          const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
+          const L2 = Math.min(remainingLiters, eff / pricePerLiter);
+          setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+        }
       }
     } else {
       const c = parseFloat(cashInput);
@@ -184,6 +224,69 @@ export default function ValidationSuccess({
   const textMutedColor = isLow ? "#991b1b" : "#166534";
   const barColor       = isLow ? "#ef4444" : "#16a34a";
 
+  const onConversionPesoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const val = parseFloat(raw);
+    let next = raw;
+    if (!isNaN(val) && val > maxCashForAllocation) {
+      next = pesoInputString(maxCashForAllocation);
+    }
+    setCashInput(next);
+    const c = parseFloat(next);
+    if (raw === "" || isNaN(c) || c <= 0 || pricePerLiter <= 0) {
+      setLiterInput("");
+      setActionError("");
+      return;
+    }
+    const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
+    const L = Math.min(remainingLiters, eff / pricePerLiter);
+    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+    setActionError("");
+  };
+
+  const onConversionLiterChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (inputMode === "cash") {
+      setLiterInput(raw);
+      const L = parseFloat(raw);
+      if (raw === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
+        setCashInput("");
+        setActionError("");
+        return;
+      }
+      const Lcapped = Math.min(L, remainingLiters);
+      let cash = Math.round(Lcapped * pricePerLiter * 100) / 100;
+      cash = Math.min(cash, maxCashForAllocation);
+      setCashInput(pesoInputString(cash));
+      const LfromCash = Math.min(remainingLiters, cash / pricePerLiter);
+      setLiterInput(LfromCash > 0 ? formatLitersFromExactCash(LfromCash) : "");
+      setActionError("");
+      return;
+    }
+    const val = parseFloat(raw);
+    let nextL = raw;
+    if (!isNaN(val) && val > remainingLiters) {
+      nextL = String(remainingLiters);
+    }
+    setLiterInput(nextL);
+    const L = parseFloat(nextL);
+    if (raw === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
+      setCashInput("");
+      setActionError("");
+      return;
+    }
+    const Lc = Math.min(L, remainingLiters);
+    let cash = Math.round(Lc * pricePerLiter * 100) / 100;
+    if (cash > maxCashForAllocation) {
+      cash = maxCashForAllocation;
+      setCashInput(pesoInputString(cash));
+      const L2 = Math.min(remainingLiters, cash / pricePerLiter);
+      setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+    } else {
+      setCashInput(pesoInputString(cash));
+    }
+    setActionError("");
+  };
 
   return (
     <div className="flex flex-col min-h-dvh bg-surface relative">
@@ -328,29 +431,29 @@ export default function ValidationSuccess({
               <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-outline text-[12px] font-bold uppercase tracking-wider">Dispense amount</span>
-                  <div className="relative grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 w-[min(100%,220px)] shrink-0">
+                  <div className="relative flex w-[min(100%,220px)] gap-1 rounded-xl bg-slate-200/70 p-1 shrink-0">
                     <div
-                      className={`absolute top-1 bottom-1 w-[calc(50%-0.25rem)] rounded-lg bg-[#003366] shadow-sm transition-transform duration-300 ease-out ${
-                        inputMode === "liters" ? "translate-x-0" : "translate-x-[calc(100%+0.25rem)]"
+                      className={`absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-lg bg-[#003366] shadow-sm transition-transform duration-300 ease-out ${
+                        inputMode === "cash" ? "translate-x-0" : "translate-x-[calc(100%+0.25rem)]"
                       }`}
                     />
                     <button
                       type="button"
-                      onClick={() => switchInputMode("liters")}
-                      className={`relative z-10 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
-                        inputMode === "liters" ? "text-white" : "text-slate-600"
-                      }`}
-                    >
-                      Liters
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => switchInputMode("cash")}
-                      className={`relative z-10 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
+                      className={`relative z-10 flex-1 min-w-0 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
                         inputMode === "cash" ? "text-white" : "text-slate-600"
                       }`}
                     >
                       Cash (₱)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchInputMode("liters")}
+                      className={`relative z-10 flex-1 min-w-0 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
+                        inputMode === "liters" ? "text-white" : "text-slate-600"
+                      }`}
+                    >
+                      Liters
                     </button>
                   </div>
                 </div>
@@ -391,108 +494,140 @@ export default function ValidationSuccess({
                   <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold px-4 py-3 text-center">
                     No allocation remaining — this resident has used their full weekly limit.
                   </div>
-                ) : inputMode === "liters" ? (
-                  <>
-                    <input
-                      type="number"
-                      min="0"
-                      max={remainingLiters}
-                      step="0.1"
-                      value={literInput}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (!isNaN(val) && val > remainingLiters) {
-                          setLiterInput(String(remainingLiters));
-                        } else {
-                          setLiterInput(e.target.value);
-                        }
-                        setActionError("");
-                      }}
-                      placeholder={`Max ${remainingLiters.toFixed(1)} L`}
-                      className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
-                    />
-                    <div className="grid grid-cols-5 gap-2">
-                      {[2, 5, 10, 15, 20].map((amount) => {
-                        const exceeds = amount > remainingLiters;
-                        return (
-                          <button
-                            key={amount}
-                            type="button"
-                            disabled={exceeds}
-                            onClick={() => {
-                              setLiterInput(String(amount));
-                              setActionError("");
-                            }}
-                            className={`rounded-lg border py-2.5 text-sm font-bold transition-all ${
-                              exceeds
-                                ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
-                                : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
-                            }`}
-                          >
-                            {amount} L
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
                 ) : (
                   <>
-                    <input
-                      type="number"
-                      min="0"
-                      max={maxCashForAllocation}
-                      step="0.01"
-                      value={cashInput}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (!isNaN(val) && val > maxCashForAllocation) {
-                          setCashInput(pesoInputString(maxCashForAllocation));
-                        } else {
-                          setCashInput(e.target.value);
-                        }
-                        setActionError("");
-                      }}
-                      placeholder={`Max ₱${formatPeso(maxCashForAllocation)}`}
-                      className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
-                    />
-                    <div className="grid grid-cols-4 gap-2">
-                      {[50, 100, 500, 1000].map((peso) => {
-                        const exceeds = peso > maxCashForAllocation;
-                        const approxL = pricePerLiter > 0 ? peso / pricePerLiter : 0;
-                        return (
-                          <button
-                            key={peso}
-                            type="button"
-                            disabled={exceeds}
-                            onClick={() => {
-                              setCashInput(pesoInputString(peso));
-                              setActionError("");
-                            }}
-                            className={`rounded-lg border py-2.5 px-1 text-xs sm:text-sm font-bold transition-all leading-tight ${
-                              exceeds
-                                ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
-                                : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
-                            }`}
-                          >
-                            <span className="block">₱{formatPeso(peso)}</span>
-                            {!exceeds && approxL > 0 && (
-                              <span className="block font-medium text-[9px] text-slate-500 mt-0.5">
-                                ≈ {formatLitersFromExactCash(approxL)} L
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-outline">Conversion</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div
+                        className={`relative min-w-0 ${inputMode === "cash" ? "order-1" : "order-2"}`}
+                      >
+                        <span
+                          className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg font-black ${
+                            inputMode === "liters" ? "text-slate-400" : "text-[#003366]"
+                          }`}
+                        >
+                          ₱
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={maxCashForAllocation}
+                          step="0.01"
+                          value={cashInput}
+                          onChange={onConversionPesoChange}
+                          placeholder={formatPeso(0)}
+                          disabled={inputMode === "liters"}
+                          className={`w-full rounded-lg border py-3 pl-9 pr-3 outline-none disabled:opacity-100 ${
+                            inputMode === "liters"
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-800"
+                              : "border-outline-variant/30 bg-white text-on-surface focus:border-[#003366]"
+                          }`}
+                        />
+                      </div>
+                      <div
+                        className={`relative min-w-0 ${inputMode === "cash" ? "order-2" : "order-1"}`}
+                      >
+                        <input
+                          type="number"
+                          min="0"
+                          max={remainingLiters}
+                          step={inputMode === "liters" ? "0.1" : "any"}
+                          value={literInput}
+                          onChange={onConversionLiterChange}
+                          placeholder="0"
+                          disabled={inputMode === "cash"}
+                          className={`w-full rounded-lg border py-3 pl-3 pr-10 outline-none disabled:opacity-100 ${
+                            inputMode === "cash"
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-800"
+                              : "border-outline-variant/30 bg-white text-on-surface focus:border-[#003366]"
+                          }`}
+                        />
+                        <span
+                          className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg font-black ${
+                            inputMode === "cash" ? "text-slate-400" : "text-[#003366]"
+                          }`}
+                        >
+                          L
+                        </span>
+                      </div>
                     </div>
-                  </>
-                )}
+                    <p className="text-[10px] text-slate-500 -mt-1">
+                      Max ₱{formatPeso(maxCashForAllocation)} · {remainingLiters.toFixed(1)} L allocation
+                    </p>
 
-                {litersToDispense > 0 && remainingLiters > 0 && (
-                  <div className="rounded-lg bg-white/80 border border-outline-variant/20 px-3 py-2 text-center text-xs text-slate-700">
-                    <span className="font-black text-[#003366]">{litersLabelForUi} L</span>
-                    {" · "}
-                    <span className="font-black text-[#003366]">₱{formatPeso(cashTotalForDispense)}</span>
-                  </div>
+                    {inputMode === "liters" ? (
+                      <div className="grid grid-cols-5 gap-2">
+                        {[2, 5, 10, 15, 20].map((amount) => {
+                          const exceeds = amount > remainingLiters;
+                          return (
+                            <button
+                              key={amount}
+                              type="button"
+                              disabled={exceeds}
+                              onClick={() => {
+                                if (exceeds) return;
+                                const Lc = Math.min(amount, remainingLiters);
+                                let cash = Math.round(Lc * pricePerLiter * 100) / 100;
+                                if (cash > maxCashForAllocation) {
+                                  cash = maxCashForAllocation;
+                                  setCashInput(pesoInputString(cash));
+                                  const L2 = Math.min(remainingLiters, cash / pricePerLiter);
+                                  setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+                                } else {
+                                  setLiterInput(String(Lc));
+                                  setCashInput(pesoInputString(cash));
+                                }
+                                setActionError("");
+                              }}
+                              className={`rounded-lg border py-2.5 text-sm font-bold transition-all ${
+                                exceeds
+                                  ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
+                                  : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
+                              }`}
+                            >
+                              {amount} L
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-2">
+                        {[50, 100, 500, 1000].map((peso) => {
+                          const exceeds = peso > maxCashForAllocation;
+                          const approxL = pricePerLiter > 0 ? peso / pricePerLiter : 0;
+                          return (
+                            <button
+                              key={peso}
+                              type="button"
+                              disabled={exceeds}
+                              onClick={() => {
+                                if (exceeds) return;
+                                setCashInput(pesoInputString(peso));
+                                const L =
+                                  pricePerLiter > 0
+                                    ? Math.min(remainingLiters, peso / pricePerLiter)
+                                    : 0;
+                                setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+                                setActionError("");
+                              }}
+                              className={`rounded-lg border py-2.5 px-1 text-xs sm:text-sm font-bold transition-all leading-tight ${
+                                exceeds
+                                  ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
+                                  : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span className="block">₱{formatPeso(peso)}</span>
+                              {!exceeds && approxL > 0 && (
+                                <span className="block font-medium text-[9px] text-slate-500 mt-0.5">
+                                  ≈ {formatLitersFromExactCash(approxL)} L
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

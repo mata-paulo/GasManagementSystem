@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import { fetchStationDirectory, type StationDirectoryRecord } from "@/lib/data/agas";
 
-mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
 const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
   Shell:      { bg: "#FBCE07", fg: "#DD1D21", abbr: "SH" },
@@ -204,6 +203,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
   const dragStartY = useRef(null);
   const dragStartHeight = useRef(null);
 
@@ -263,19 +263,28 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   useEffect(() => {
     if (!location || mapRef.current) return;
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [location.lon, location.lat],
-      zoom: 14,
-    });
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: false,
+      preferCanvas: true,
+      fadeAnimation: true,
+      zoomAnimation: true,
+      markerZoomAnimation: false,
+    }).setView([location.lat, location.lon], 14);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      keepBuffer: 4,
+    }).addTo(map);
 
     const el = document.createElement("div");
     el.style.cssText =
       "width:18px;height:18px;border-radius:50%;background:#003366;border:3px solid #fff;box-shadow:0 0 0 4px rgba(0,51,102,0.25)";
-    new mapboxgl.Marker({ element: el })
-      .setLngLat([location.lon, location.lat])
-      .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
+    const userIcon = L.divIcon({ html: el.outerHTML, className: "", iconSize: [18, 18], iconAnchor: [9, 9] });
+    L.marker([location.lat, location.lon], { icon: userIcon })
+      .bindPopup("You are here")
       .addTo(map);
 
     mapRef.current = map;
@@ -338,6 +347,8 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     markersRef.current = [];
     markerElsRef.current = {};
 
+    const layerGroup = L.layerGroup();
+
     filteredStations.forEach((st) => {
       const el = document.createElement("div");
       el.style.cssText = `
@@ -352,18 +363,28 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
       markerElsRef.current[st.id] = el;
 
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([st.lon, st.lat])
-        .addTo(map);
+      const icon = L.divIcon({ html: el.outerHTML, className: "", iconSize: [32, 32], iconAnchor: [16, 16] });
+      const marker = L.marker([st.lat, st.lon], { icon });
+      layerGroup.addLayer(marker);
 
       markersRef.current.push(marker);
+    });
+
+    layerGroup.addTo(map);
+
+    // attach click via the underlying DOM element after markers are in the DOM
+    markersRef.current.forEach((marker, idx) => {
+      const st = filteredStations[idx];
+      marker.getElement()?.addEventListener("click", () => handleSelectStation(st));
     });
   }, [filteredStations]);
 
   // ── Sync marker highlight with selectedStation ───────────────────────────────
   useEffect(() => {
-    filteredStations.forEach((st) => {
-      const el = markerElsRef.current[st.id];
+    markersRef.current.forEach((m, idx) => {
+      const st = filteredStations[idx];
+      if (!st) return;
+      const el = m.getElement()?.querySelector("div") as HTMLElement | null;
       if (!el) return;
       const isActive = selectedStation?.id === st.id;
       el.style.background = isActive ? "#c9a227" : "#003366";
@@ -381,42 +402,30 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     setRouteInfo(null);
 
     try {
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${location.lon},${location.lat};${st.lon},${st.lat}?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${location.lon},${location.lat};${st.lon},${st.lat}?overview=full&geometries=geojson`;
       const data = await fetch(url).then((r) => r.json());
       const route = data.routes?.[0];
       if (!route) return;
 
       setRouteInfo({ distance: route.distance, duration: route.duration });
 
-      if (map.getLayer("route-outline")) map.removeLayer("route-outline");
-      if (map.getLayer("route-line")) map.removeLayer("route-line");
-      if (map.getSource("route")) map.removeSource("route");
+      // Remove existing route polyline
+      if (routePolylineRef.current) {
+        routePolylineRef.current.remove();
+        routePolylineRef.current = null;
+      }
 
-      map.addSource("route", {
-        type: "geojson",
-        data: { type: "Feature", geometry: route.geometry },
-      });
-      map.addLayer({
-        id: "route-outline",
-        type: "line",
-        source: "route",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "#fff", "line-width": 8, "line-opacity": 0.8 },
-      });
-      map.addLayer({
-        id: "route-line",
-        type: "line",
-        source: "route",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "#003366", "line-width": 5, "line-opacity": 0.95 },
-      });
+      // GeoJSON coords are [lng, lat] — flip to Leaflet [lat, lng]
+      const latLngs: L.LatLngExpression[] = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
-      const coords = route.geometry.coordinates;
-      const bounds = coords.reduce(
-        (b, c) => b.extend(c),
-        new mapboxgl.LngLatBounds(coords[0], coords[0])
-      );
-      map.fitBounds(bounds, { padding: { top: 80, bottom: OPEN_HEIGHT + 24, left: 40, right: 40 }, duration: 900 });
+      // Outline (white, wider)
+      L.polyline(latLngs, { color: "#fff", weight: 8, opacity: 0.8 }).addTo(map);
+      // Main line (navy)
+      const routeLine = L.polyline(latLngs, { color: "#003366", weight: 5, opacity: 0.95 }).addTo(map);
+      routePolylineRef.current = routeLine;
+
+      const bounds = L.latLngBounds(latLngs);
+      map.fitBounds(bounds, { paddingTopLeft: [40, 80], paddingBottomRight: [40, OPEN_HEIGHT + 24], animate: true });
     } catch {
       // silently fail
     } finally {
@@ -425,11 +434,10 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   };
 
   const clearRoute = () => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (map.getLayer("route-outline")) map.removeLayer("route-outline");
-    if (map.getLayer("route-line")) map.removeLayer("route-line");
-    if (map.getSource("route")) map.removeSource("route");
+    if (routePolylineRef.current) {
+      routePolylineRef.current.remove();
+      routePolylineRef.current = null;
+    }
     setRouteInfo(null);
   };
 
@@ -438,7 +446,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     setExpandedId(st.id);
     setDrawerHeight(OPEN_HEIGHT);
     drawRoute(st);
-    mapRef.current?.flyTo({ center: [st.lon, st.lat], zoom: 15, duration: 800 });
+    mapRef.current?.flyTo([st.lat, st.lon], 15);
     setTimeout(() => {
       const listEl = stationListRef.current;
       const stationEl = stationRefs.current[st.id];
@@ -543,7 +551,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
             <span className="material-symbols-outlined text-[20px]">remove</span>
           </button>
           <button
-            onClick={() => location && mapRef.current?.flyTo({ center: [location.lon, location.lat], zoom: 14, duration: 800 })}
+            onClick={() => location && mapRef.current?.flyTo([location.lat, location.lon], 14)}
             className="w-9 h-9 bg-[#003366] rounded-xl shadow-md flex items-center justify-center text-white active:scale-95 transition-all"
           >
             <span className="material-symbols-outlined icon-filled text-[20px]">my_location</span>
