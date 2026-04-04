@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
 import {
   fetchStationTransactions,
   type DispenseTransaction,

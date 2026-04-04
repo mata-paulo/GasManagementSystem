@@ -228,6 +228,8 @@ type AdminStationRow = {
   lng: number;
   status: "Online" | "Offline";
   userCount: number;
+  fuelCapacities: Record<string, number>;
+  priceEntries: Array<{ label: string; price: number }>;
 };
 
 type StationUserRow = {
@@ -453,6 +455,47 @@ function buildMergedBrandPrices(
   return { ...DEFAULT_BRAND_PRICES, ...output };
 }
 
+function normalizePriceEntries(entries: Array<{ label: string; price: number }>) {
+  const grouped = new Map<string, { label: string; total: number; count: number }>();
+
+  for (const entry of entries) {
+    const label = entry.label?.trim();
+    const price = Number(entry.price);
+    const key = normalizeText(label);
+    if (!key || !Number.isFinite(price) || price <= 0) continue;
+
+    const current = grouped.get(key) ?? { label, total: 0, count: 0 };
+    current.total += price;
+    current.count += 1;
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()]
+    .map((entry) => ({
+      label: entry.label,
+      price: entry.total / entry.count,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function getStationRowPriceEntries(
+  station: Pick<AdminDashboardData["stations"][number], "fuelPrices"> | null | undefined,
+  directoryStation: Pick<AdminDashboardData["stationDirectory"][number], "brandPrices"> | null | undefined,
+) {
+  const accountPrices = normalizePriceEntries(
+    Object.entries(station?.fuelPrices ?? {}).map(([label, price]) => ({
+      label,
+      price: Number(price),
+    })),
+  );
+
+  if (accountPrices.length > 0) {
+    return accountPrices;
+  }
+
+  return normalizePriceEntries(directoryStation?.brandPrices ?? []);
+}
+
 function findStaticStation(stationName: string, brand: string, barangay: string) {
   const nameKey = normalizeText(stationName);
   const brandKeyValue = normalizeBrand(brand);
@@ -645,6 +688,23 @@ export default function AdminDashboard({ onLogout }) {
     }, new Map());
   }, [dashboardData.transactions]);
 
+  const stationWeeklyDispensedByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
+      if (tx.weekKey !== currentWeekKey) return acc;
+      acc.set(tx.stationUid, (acc.get(tx.stationUid) ?? 0) + tx.liters);
+      return acc;
+    }, new Map());
+  }, [currentWeekKey, dashboardData.transactions]);
+
+  const stationTransactionsByUid = useMemo(() => {
+    return dashboardData.transactions.reduce<Map<string, AdminDashboardData["transactions"]>>((acc, tx) => {
+      const current = acc.get(tx.stationUid) ?? [];
+      current.push(tx);
+      acc.set(tx.stationUid, current);
+      return acc;
+    }, new Map());
+  }, [dashboardData.transactions]);
+
   const residentUsageByUid = useMemo(() => {
     return dashboardData.transactions.reduce<Map<string, number>>((acc, tx) => {
       if (tx.weekKey !== currentWeekKey) return acc;
@@ -659,7 +719,12 @@ export default function AdminDashboard({ onLogout }) {
         const name = getAccountDisplayName(station);
         const brand = normalizeBrand(station.brand);
         const barangay = station.barangay ?? "Unknown";
-        const staticMatch = findStaticStation(name, brand, barangay);
+        const directoryMatch = findDirectoryStation(
+          dashboardData.stationDirectory,
+          name,
+          brand,
+          barangay,
+        );
         const officer =
           [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
           [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
@@ -667,7 +732,7 @@ export default function AdminDashboard({ onLogout }) {
         const status: AdminStationRow["status"] = isStationUserOnline(station) ? "Online" : "Offline";
 
         return {
-          id: index + 1,
+          id: station.stationSourceId ?? directoryMatch?.sourceId ?? index + 1,
           uid: station.uid,
           name,
           brand,
@@ -675,14 +740,16 @@ export default function AdminDashboard({ onLogout }) {
           officer,
           capacity: Object.values(station.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0),
           dispensed: Math.round((stationDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
-          lat: staticMatch?.lat ?? DEFAULT_LAT,
-          lng: staticMatch?.lng ?? DEFAULT_LNG,
+          lat: directoryMatch?.lat ?? DEFAULT_LAT,
+          lng: directoryMatch?.lon ?? DEFAULT_LNG,
           status,
           userCount: 0,
+          fuelCapacities: station.fuelCapacities ?? {},
+          priceEntries: getStationRowPriceEntries(station, directoryMatch),
         };
       })
       .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
-  }, [dashboardData.stations, stationDispensedByUid]);
+  }, [dashboardData.stationDirectory, dashboardData.stations, stationDispensedByUid]);
 
   const STATIONS = useMemo<AdminStationRow[]>(() => {
     const matchedDirectoryIds = new Set<string>();
@@ -752,6 +819,10 @@ export default function AdminDashboard({ onLogout }) {
         lng: directoryMatch?.lon ?? station.lng,
         status,
         userCount: summary?.userCount ?? 0,
+        fuelCapacities: station.fuelCapacities,
+        priceEntries: station.priceEntries.length > 0
+          ? station.priceEntries
+          : getStationRowPriceEntries(null, directoryMatch),
       };
     });
 
@@ -774,6 +845,8 @@ export default function AdminDashboard({ onLogout }) {
         lng: station.lon,
         status,
         userCount: summary?.userCount ?? 0,
+        fuelCapacities: {},
+        priceEntries: getStationRowPriceEntries(null, station),
       });
       });
 
@@ -788,6 +861,14 @@ export default function AdminDashboard({ onLogout }) {
         };
       });
   }, [ACCOUNT_STATIONS, dashboardData.stationDirectory, dashboardData.stations]);
+
+  const ALLOCATION_STATIONS = useMemo(
+    () => STATIONS.map((station) => ({
+      ...station,
+      dispensed: Math.round((stationWeeklyDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
+    })),
+    [STATIONS, stationWeeklyDispensedByUid],
+  );
 
   const selectedUserDrawerStation = useMemo(
     () => STATIONS.find((station) => station.id === userDrawerStationId) ?? null,
@@ -1144,7 +1225,7 @@ export default function AdminDashboard({ onLogout }) {
     // Add circle markers for each station (simulating heatmap dots)
     const layerGroup = L.layerGroup();
     const markers: L.CircleMarker[] = STATIONS.map((s) => {
-      const prices: { label: string; price: number }[] = BRAND_PRICES[s.brand] ?? BRAND_PRICES.Other ?? [];
+      const prices = s.priceEntries;
       const statusColor = s.status === "Online" ? "#2e7d32" : "#c62828";
       const statusBg    = s.status === "Online" ? "#e8f5e9"  : "#ffebee";
       const priceRows   = prices.map(p =>
@@ -1166,7 +1247,7 @@ export default function AdminDashboard({ onLogout }) {
           </div>
           <div style="border-top:2px solid #003366;padding-top:6px;margin-top:2px">
             <div style="font-size:10px;font-weight:700;color:#003366;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fuel Prices</div>
-            ${priceRows}
+            ${priceRows || '<div style="color:#94a3b8;font-size:11px">No live price data available.</div>'}
           </div>
         </div>`;
 
@@ -1655,7 +1736,7 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ ALLOCATION ══ */}
           {activePage === "allocation" && (() => {
-            const drawerStation = STATIONS.find(s => s.id === allocDrawerStationId) ?? null;
+            const drawerStation = ALLOCATION_STATIONS.find(s => s.id === allocDrawerStationId) ?? null;
             return (
             <div className="space-y-6">
 
@@ -1696,8 +1777,8 @@ export default function AdminDashboard({ onLogout }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {STATIONS.slice((allocStationPage - 1) * ALLOC_PER_PAGE, allocStationPage * ALLOC_PER_PAGE).map((s, i) => {
-                        const pct        = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
+                      {ALLOCATION_STATIONS.slice((allocStationPage - 1) * ALLOC_PER_PAGE, allocStationPage * ALLOC_PER_PAGE).map((s, i) => {
+                        const pct        = s.capacity > 0 ? Math.min(Math.round((s.dispensed / s.capacity) * 100), 100) : 0;
                         const bk         = brandKey(s.brand);
                         const isSelected = allocDrawerStationId === s.id;
                         return (
@@ -1730,7 +1811,7 @@ export default function AdminDashboard({ onLogout }) {
                       })}
                     </tbody>
                   </table>
-                  <PaginationBar page={allocStationPage} totalPages={Math.ceil(STATIONS.length / ALLOC_PER_PAGE)} onPage={setAllocStationPage} />
+                  <PaginationBar page={allocStationPage} totalPages={Math.ceil(ALLOCATION_STATIONS.length / ALLOC_PER_PAGE)} onPage={setAllocStationPage} />
                 </div>
 
                 {/* Resident allocation table */}
@@ -2045,9 +2126,9 @@ export default function AdminDashboard({ onLogout }) {
                       {stSlice.length === 0 ? (
                         <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No stations found.</td></tr>
                       ) : stSlice.map((s, i) => {
-                        const pct    = Math.min(Math.round((s.dispensed / (s.capacity * 0.1)) * 100), 100);
+                        const pct    = s.capacity > 0 ? Math.min(Math.round((s.dispensed / s.capacity) * 100), 100) : 0;
                         const bk     = brandKey(s.brand);
-                        const prices = BRAND_PRICES[s.brand] ?? [];
+                        const prices = s.priceEntries;
                       return (
                         <tr key={s.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
                           <td className="px-5 py-3 font-bold text-slate-800 text-xs">{s.name}</td>
@@ -3248,23 +3329,42 @@ export default function AdminDashboard({ onLogout }) {
 
       {/* ═══ ALLOCATION FUEL BREAKDOWN DRAWER ═══ */}
       {activePage === "allocation" && allocDrawerStationId !== null && (() => {
-        const drawerStation = STATIONS.find(s => s.id === allocDrawerStationId) ?? null;
+        const drawerStation = ALLOCATION_STATIONS.find(s => s.id === allocDrawerStationId) ?? null;
         if (!drawerStation) return null;
-        const fuelSplits: Record<string, number[]> = {
-          Shell:   [0.30, 0.42, 0.18, 0.10],
-          Petron:  [0.35, 0.40, 0.25],
-          Caltex:  [0.32, 0.38, 0.18, 0.12],
-          Phoenix: [0.38, 0.40, 0.22],
-          SeaOil:  [0.40, 0.38, 0.22],
-        };
-        const drawerFuels = (BRAND_PRICES[drawerStation.brand] ?? []).map((f, idx) => {
-          const splits   = fuelSplits[drawerStation.brand] ?? [];
-          const ratio    = splits[idx] ?? (1 / (BRAND_PRICES[drawerStation.brand]?.length ?? 1));
-          const capAlloc = Math.round(drawerStation.capacity * ratio);
-          const disAlloc = Math.round(drawerStation.dispensed * ratio);
-          const pct      = Math.min(Math.round((disAlloc / capAlloc) * 100), 100);
-          return { label: f.label, price: f.price, capacity: capAlloc, dispensed: disAlloc, pct };
-        });
+        const weeklyTransactions = (stationTransactionsByUid.get(drawerStation.uid) ?? [])
+          .filter((tx) => tx.weekKey === currentWeekKey);
+        const transactionFuelMap = weeklyTransactions.reduce<
+          Map<string, { label: string; dispensed: number; priceTotal: number; priceCount: number }>
+        >((acc, tx) => {
+          const label = tx.fuelType || "Unknown Fuel";
+          const current = acc.get(label) ?? { label, dispensed: 0, priceTotal: 0, priceCount: 0 };
+          current.dispensed += tx.liters;
+          current.priceTotal += tx.pricePerLiter;
+          current.priceCount += 1;
+          acc.set(label, current);
+          return acc;
+        }, new Map());
+        const fuelLabels = new Set([
+          ...Object.keys(drawerStation.fuelCapacities),
+          ...drawerStation.priceEntries.map((entry) => entry.label),
+          ...transactionFuelMap.keys(),
+        ]);
+        const drawerFuels = [...fuelLabels]
+          .map((label) => {
+            const txStats = transactionFuelMap.get(label);
+            const priceEntry = drawerStation.priceEntries.find((entry) => entry.label === label);
+            const capacity = Math.round(Number(drawerStation.fuelCapacities[label] ?? 0));
+            const dispensed = Math.round((txStats?.dispensed ?? 0) * 10) / 10;
+            const price =
+              txStats && txStats.priceCount > 0
+                ? txStats.priceTotal / txStats.priceCount
+                : Number(priceEntry?.price ?? 0);
+            const pct = capacity > 0 ? Math.min(Math.round((dispensed / capacity) * 100), 100) : 0;
+
+            return { label, price, capacity, dispensed, pct };
+          })
+          .filter((fuel) => fuel.capacity > 0 || fuel.dispensed > 0 || fuel.price > 0)
+          .sort((a, b) => b.dispensed - a.dispensed || a.label.localeCompare(b.label));
         return (
           <>
             <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setAllocDrawerStationId(null)} />
@@ -3298,12 +3398,19 @@ export default function AdminDashboard({ onLogout }) {
                   <p className="text-[10px] font-black text-[#003366] uppercase tracking-wider">Fuel Type Breakdown</p>
                 </div>
                 <div className="divide-y divide-slate-100">
+                  {drawerFuels.length === 0 && (
+                    <div className="px-4 py-8 text-center text-sm text-slate-400">
+                      No live weekly fuel breakdown available for this station yet.
+                    </div>
+                  )}
                   {drawerFuels.map((f, idx) => (
                     <div key={idx} className="px-4 py-4">
                       <div className="flex items-center justify-between mb-2">
                         <div>
                           <p className="text-xs font-black text-slate-800">{f.label}</p>
-                          <p className="text-[10px] text-slate-400">₱{f.price.toFixed(2)}/L</p>
+                          <p className="text-[10px] text-slate-400">
+                            {f.price > 0 ? `₱${f.price.toFixed(2)}/L` : "No live price set"}
+                          </p>
                         </div>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                           f.pct >= 80 ? "bg-red-100 text-red-700" : f.pct >= 50 ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
@@ -3315,7 +3422,7 @@ export default function AdminDashboard({ onLogout }) {
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-400 font-bold">
                         <span>{f.dispensed.toLocaleString()} L dispensed</span>
-                        <span>{f.capacity.toLocaleString()} L cap</span>
+                        <span>{f.capacity > 0 ? `${f.capacity.toLocaleString()} L cap` : "No cap set"}</span>
                       </div>
                     </div>
                   ))}
