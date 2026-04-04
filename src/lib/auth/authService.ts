@@ -69,6 +69,77 @@ function asNumberMap(value: unknown): Record<string, number> {
   );
 }
 
+/** Build session user from `accounts/{uid}` (e.g. after sign-in or invite completion). */
+export function buildAuthUserFromAccountData(
+  uid: string,
+  normalizedEmail: string,
+  data: Record<string, unknown>,
+): { user: AuthUser; role: Role } | null {
+  const role = data.role as Role | undefined;
+  if (role !== "resident" && role !== "station" && role !== "admin") {
+    return null;
+  }
+
+  const registeredAtRaw = data.registeredAt as unknown;
+  const registeredAt =
+    registeredAtRaw instanceof Timestamp
+      ? registeredAtRaw.toDate().toISOString()
+      : typeof registeredAtRaw === "string"
+        ? registeredAtRaw
+        : undefined;
+  const stationSourceIdRaw =
+    typeof data.stationSourceId === "number" ? data.stationSourceId : Number(data.stationSourceId ?? NaN);
+  const stationSourceId = Number.isFinite(stationSourceIdRaw) ? stationSourceIdRaw : undefined;
+
+  const user: AuthUser = {
+    uid,
+    email: (data.email as string | undefined) ?? normalizedEmail,
+    role,
+    loginAt: new Date().toISOString(),
+    firstName: data.firstName as string | undefined,
+    lastName: data.lastName as string | undefined,
+    plate: data.plate as string | undefined,
+    barangay: data.barangay as string | undefined,
+    vehicleType: data.vehicleType as string | undefined,
+    gasType: data.gasType as string | undefined,
+    registeredAt,
+    brand: data.brand as string | undefined,
+    stationCode: data.stationCode as string | undefined,
+    stationName: data.stationName as string | undefined,
+    stationDirectoryId: data.stationDirectoryId as string | undefined,
+    stationSourceId,
+    officerFirstName: data.officerFirstName as string | undefined,
+    officerLastName: data.officerLastName as string | undefined,
+    availableFuels: asStringArray(data.availableFuels),
+    fuelCapacities: asNumberMap(data.fuelCapacities),
+    fuelInventory: asNumberMap(data.fuelInventory),
+    fuelPrices: asNumberMap(data.fuelPrices),
+    assignmentStatus: data.assignmentStatus as string | undefined,
+    presenceStatus: data.presenceStatus as string | undefined,
+    lastSeenAt:
+      data.lastSeenAt instanceof Timestamp
+        ? data.lastSeenAt.toDate().toISOString()
+        : typeof data.lastSeenAt === "string"
+          ? data.lastSeenAt
+          : undefined,
+    assignedAt:
+      data.assignedAt instanceof Timestamp
+        ? data.assignedAt.toDate().toISOString()
+        : typeof data.assignedAt === "string"
+          ? data.assignedAt
+          : undefined,
+    inviteAcceptedAt:
+      data.inviteAcceptedAt instanceof Timestamp
+        ? data.inviteAcceptedAt.toDate().toISOString()
+        : typeof data.inviteAcceptedAt === "string"
+          ? data.inviteAcceptedAt
+          : undefined,
+    status: data.status as string | undefined,
+  };
+
+  return { user, role };
+}
+
 export async function login({ email, password }: { email: string; password: string }): Promise<AuthResult> {
   if (!email?.trim() || !password?.trim()) {
     return { success: false, error: "All fields are required." };
@@ -85,72 +156,21 @@ export async function login({ email, password }: { email: string; password: stri
     }
 
     const data = snap.data() as Record<string, unknown>;
-    const role = data.role as Role | undefined;
-    if (role !== "resident" && role !== "station" && role !== "admin") {
+    const built = buildAuthUserFromAccountData(uid, normalizedEmail, data);
+    if (!built) {
       return { success: false, error: "Account role is invalid. Please contact support." };
     }
 
-    const registeredAtRaw = data.registeredAt as unknown;
-    const registeredAt =
-      registeredAtRaw instanceof Timestamp
-        ? registeredAtRaw.toDate().toISOString()
-        : typeof registeredAtRaw === "string"
-          ? registeredAtRaw
-          : undefined;
-    const stationSourceIdRaw =
-      typeof data.stationSourceId === "number" ? data.stationSourceId : Number(data.stationSourceId ?? NaN);
-    const stationSourceId = Number.isFinite(stationSourceIdRaw) ? stationSourceIdRaw : undefined;
-
+    const { user: baseUser, role } = built;
     const user: AuthUser = {
-      uid,
-      email: (data.email as string | undefined) ?? normalizedEmail,
-      role,
+      ...baseUser,
       loginAt: new Date().toISOString(),
-      firstName: data.firstName as string | undefined,
-      lastName: data.lastName as string | undefined,
-      plate: data.plate as string | undefined,
-      barangay: data.barangay as string | undefined,
-      vehicleType: data.vehicleType as string | undefined,
-      gasType: data.gasType as string | undefined,
       fuelAllocation:
         typeof data.fuelAllocation === "number" ? data.fuelAllocation : Number(data.fuelAllocation ?? 20),
       fuelUsed:
         typeof data.fuelUsed === "number" ? data.fuelUsed : Number(data.fuelUsed ?? 0),
       fuelWeekKey:
         typeof data.fuelWeekKey === "string" ? data.fuelWeekKey : undefined,
-      registeredAt,
-      brand: data.brand as string | undefined,
-      stationCode: data.stationCode as string | undefined,
-      stationName: data.stationName as string | undefined,
-      stationDirectoryId: data.stationDirectoryId as string | undefined,
-      stationSourceId,
-      officerFirstName: data.officerFirstName as string | undefined,
-      officerLastName: data.officerLastName as string | undefined,
-      availableFuels: asStringArray(data.availableFuels),
-      fuelCapacities: asNumberMap(data.fuelCapacities),
-      fuelInventory: asNumberMap(data.fuelInventory),
-      fuelPrices: asNumberMap(data.fuelPrices),
-      assignmentStatus: data.assignmentStatus as string | undefined,
-      presenceStatus: data.presenceStatus as string | undefined,
-      lastSeenAt:
-        data.lastSeenAt instanceof Timestamp
-          ? data.lastSeenAt.toDate().toISOString()
-          : typeof data.lastSeenAt === "string"
-            ? data.lastSeenAt
-            : undefined,
-      assignedAt:
-        data.assignedAt instanceof Timestamp
-          ? data.assignedAt.toDate().toISOString()
-          : typeof data.assignedAt === "string"
-            ? data.assignedAt
-            : undefined,
-      inviteAcceptedAt:
-        data.inviteAcceptedAt instanceof Timestamp
-          ? data.inviteAcceptedAt.toDate().toISOString()
-          : typeof data.inviteAcceptedAt === "string"
-            ? data.inviteAcceptedAt
-            : undefined,
-      status: data.status as string | undefined,
     };
 
     return { success: true, user, role };

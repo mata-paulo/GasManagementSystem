@@ -82,20 +82,22 @@ function nameInitials(fullName: string): string {
 }
 
 
-const recentTransactions: Transaction[] = [
-  { id: 12, name: "Teresita Magbanua", plate: "KLM-8877", vehicleType: "Motorcycle", date: "Apr 1, 2026", time: "05:35 AM", liters: 11.0, fuelType: "Premium (95)", pricePerLiter: 75.9 },
-  { id: 11, name: "Rommel Aquino",     plate: "HIJ-5566", vehicleType: "Truck",      date: "Apr 1, 2026", time: "05:50 AM", liters: 14.5, fuelType: "Premium Diesel", pricePerLiter: 70.1 },
-  { id: 10, name: "Felisa Bautista",   plate: "EFG-2244", vehicleType: "Car",        date: "Apr 1, 2026", time: "06:05 AM", liters: 20.0, fuelType: "Super Premium (97)", pricePerLiter: 78.4 },
-  { id: 9,  name: "Eduardo Mendoza",   plate: "BCD-1133", vehicleType: "Truck",      date: "Apr 1, 2026", time: "06:20 AM", liters: 9.0,  fuelType: "Regular/Unleaded (91)", pricePerLiter: 72.5 },
-  { id: 8,  name: "Grace Tolentino",   plate: "VWX-6650", vehicleType: "Car",        date: "Apr 1, 2026", time: "06:40 AM", liters: 15.0, fuelType: "Diesel", pricePerLiter: 68.25 },
-  { id: 7,  name: "Ramon Castillo",    plate: "STU-7721", vehicleType: "Car",        date: "Apr 1, 2026", time: "06:58 AM", liters: 18.0, fuelType: "Premium (95)", pricePerLiter: 75.9 },
-  { id: 6,  name: "Lorna Villanueva",  plate: "PQR-3310", vehicleType: "Motorcycle", date: "Apr 1, 2026", time: "07:10 AM", liters: 10.5, fuelType: "Regular/Unleaded (91)", pricePerLiter: 72.5 },
-  { id: 5,  name: "Carlos Fernandez",  plate: "LMN-4412", vehicleType: "Truck",      date: "Apr 1, 2026", time: "07:30 AM", liters: 20.0, fuelType: "Premium Diesel", pricePerLiter: 70.1 },
-  { id: 4,  name: "Ana Reyes",         plate: "XYZ-9900", vehicleType: "Car",        date: "Apr 1, 2026", time: "07:55 AM", liters: 12.0, fuelType: "Super Premium (97)", pricePerLiter: 78.4 },
-  { id: 3,  name: "Juan Dela Cruz",    plate: "ABC-5678", vehicleType: "Motorcycle", date: "Apr 1, 2026", time: "08:12 AM", liters: 8.5,  fuelType: "Premium (95)", pricePerLiter: 75.9 },
-  { id: 2,  name: "Maria Clara Santos",plate: "YHM-8890", vehicleType: "Car",        date: "Apr 1, 2026", time: "09:45 AM", liters: 20.0, fuelType: "Diesel", pricePerLiter: 68.25 },
-  { id: 1,  name: "Rico Blanco",       plate: "GAE-1234", vehicleType: "Car",        date: "Apr 1, 2026", time: "10:24 AM", liters: 15.0, fuelType: "Regular/Unleaded (91)", pricePerLiter: 72.5 },
-];
+function mapDispenseToTransaction(tx: DispenseTransaction, idx: number): Transaction {
+  const d = tx.occurredAt ?? tx.createdAt;
+  const dateStr = d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  const timeStr = d ? d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "";
+  return {
+    id: idx,
+    name: tx.residentName || "Unknown",
+    plate: tx.plate || "---",
+    vehicleType: tx.vehicleType || "---",
+    date: dateStr,
+    time: timeStr,
+    liters: tx.liters,
+    fuelType: tx.fuelType,
+    pricePerLiter: tx.pricePerLiter,
+  };
+}
 
 export default function Dashboard({ officer, onScan, onEditFuels, onLogout, activeTab, onTabChange, lastUpdated }: DashboardProps) {
   const [lastUpdateLabel, setLastUpdateLabel] = useState("Never");
@@ -122,6 +124,23 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
       officer?.presenceStatus?.toLowerCase() === "online" ? "online" : "offline",
     );
   }, [officer?.presenceStatus]);
+
+  useEffect(() => {
+    const stationUid = officer?.uid;
+    if (!stationUid) return;
+    let cancelled = false;
+    setLoadingTransactions(true);
+    fetchStationTransactions(stationUid)
+      .then((data) => { if (!cancelled) setTransactions(data); })
+      .catch((err) => console.error("[Dashboard] Failed to fetch transactions:", err))
+      .finally(() => { if (!cancelled) setLoadingTransactions(false); });
+    return () => { cancelled = true; };
+  }, [officer?.uid, lastUpdated]);
+
+  const recentTransactions = useMemo(
+    () => transactions.map(mapDispenseToTransaction),
+    [transactions],
+  );
 
   const stationCode    = officer?.stationCode || "N/A";
   const barangay       = officer?.barangay    || "Not set";

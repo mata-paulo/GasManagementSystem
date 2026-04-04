@@ -67,6 +67,17 @@ export default function App() {
   const [resident, setResident] = useState(null);
   const [scannedResident, setScannedResident] = useState(null);
   const [oobCode, setOobCode] = useState<string | null>(null);
+  const [inviteLinkState, setInviteLinkState] = useState<{
+    email: string;
+    inviteFlow: "full" | "password";
+    prefill: {
+      brand: string;
+      barangay: string;
+      firstName: string;
+      lastName: string;
+      stationCode: string;
+    };
+  } | null>(null);
 
   const refreshPortalUser = useCallback(async () => {
     const uid = typeof auth.user?.uid === "string" ? auth.user.uid : "";
@@ -138,10 +149,35 @@ export default function App() {
     }
 
     // Password reset deep link: ?mode=resetPassword&oobCode=...
-    if (params.get("mode") === "resetPassword" && params.get("oobCode")) {
-      setOobCode(params.get("oobCode"));
-      setScreen("password-reset");
-      return;
+    const resetMode = params.get("mode") === "resetPassword";
+    const oobParam = params.get("oobCode");
+    if (resetMode && oobParam) {
+      if (auth.isAuthenticated) {
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (params.get("stationInvite") === "1") {
+        setOobCode(oobParam);
+        const inviteFlow =
+          params.get("inviteFlow") === "password" ? "password" : "full";
+        setInviteLinkState({
+          email: params.get("inviteEmail")?.trim().toLowerCase() ?? "",
+          inviteFlow,
+          prefill: {
+            brand: params.get("prefillBrand") ?? "",
+            barangay: params.get("prefillBarangay") ?? "",
+            firstName: params.get("prefillFirst") ?? "",
+            lastName: params.get("prefillLast") ?? "",
+            stationCode: params.get("prefillStationCode") ?? "",
+          },
+        });
+        setScreen(
+          inviteFlow === "password" ? "station-invite-password" : "station-invite-setup",
+        );
+        return;
+      } else {
+        setOobCode(oobParam);
+        setScreen("password-reset");
+        return;
+      }
     }
 
     if (!auth.isAuthenticated) {
@@ -150,8 +186,15 @@ export default function App() {
     }
     if (auth.role === "station") {
       setOfficer(auth.user);
-      const stationTab = getStationTabFromPath(window.location.pathname) ?? "dashboard";
-      navigateStation(stationTab, true);
+      const pending =
+        typeof auth.user?.assignmentStatus === "string" &&
+        auth.user.assignmentStatus === "pending";
+      if (pending) {
+        setScreen("station-onboarding");
+      } else {
+        const stationTab = getStationTabFromPath(window.location.pathname) ?? "dashboard";
+        navigateStation(stationTab, true);
+      }
     } else if (auth.role === "resident") {
       setResident(auth.user);
       setScreen(isDesktop() ? "resident-web" : "user-dashboard");
@@ -229,7 +272,14 @@ export default function App() {
     login(user, role);
     if (role === "station") {
       setOfficer(user);
-      navigateStation("dashboard", true);
+      const pending =
+        typeof user?.assignmentStatus === "string" && user.assignmentStatus === "pending";
+      if (pending) {
+        setScreen("station-onboarding");
+        setActiveTab("dashboard");
+      } else {
+        navigateStation("dashboard", true);
+      }
     } else if (role === "resident") {
       setResident(user);
       setScreen(isDesktop() ? "resident-web" : "user-dashboard");
@@ -243,7 +293,7 @@ export default function App() {
   const handleResidentRegisterSuccess = (residentData) => {
     setResident(residentData);
     login(residentData, "resident");
-    setScreen("user-dashboard");
+    setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
     setActiveTab("dashboard");
   };
 
@@ -272,6 +322,8 @@ export default function App() {
     logout();
     setOfficer(null);
     setResident(null);
+    setOobCode(null);
+    setInviteLinkState(null);
     if (window.location.pathname.startsWith("/admin")) {
       window.history.replaceState({}, "", "/");
     } else if (auth.role === "station") {
@@ -344,6 +396,80 @@ export default function App() {
     );
   }
 
+  if (screen === "station-invite-password" && inviteLinkState) {
+    return (
+      <PasswordReset
+        oobCode={oobCode}
+        stationInviteEmail={inviteLinkState.email}
+        onStationInviteSession={async (user) => {
+          login(user, "station");
+          setOfficer(user);
+          window.history.replaceState({}, "", window.location.pathname);
+          setOobCode(null);
+          setInviteLinkState(null);
+          setActiveTab("dashboard");
+          setScreen("dashboard");
+        }}
+        onBack={() => {
+          window.history.replaceState({}, "", window.location.pathname);
+          setOobCode(null);
+          setInviteLinkState(null);
+          setScreen("landing");
+        }}
+      />
+    );
+  }
+
+  if (screen === "station-invite-setup" && inviteLinkState) {
+    return (
+      <StationRegister
+        mode="inviteLink"
+        inviteOobCode={oobCode}
+        inviteEmail={inviteLinkState.email}
+        invitePrefill={inviteLinkState.prefill}
+        onBack={() => {
+          window.history.replaceState({}, "", window.location.pathname);
+          setOobCode(null);
+          setInviteLinkState(null);
+          setScreen("landing");
+        }}
+        onInviteSession={async (user) => {
+          login(user, "station");
+          setOfficer(user);
+          window.history.replaceState({}, "", window.location.pathname);
+          setOobCode(null);
+          setInviteLinkState(null);
+          setActiveTab("dashboard");
+          setScreen("dashboard");
+        }}
+      />
+    );
+  }
+
+  if (screen === "station-onboarding") {
+    return (
+      <RoleGuard requiredRole="station" onDeny={() => setScreen("landing")}>
+        <StationRegister
+          mode="onboarding"
+          onBack={handleLogout}
+          onComplete={async () => {
+            const uid = typeof auth.user?.uid === "string" ? auth.user.uid : "";
+            if (uid) {
+              await acceptPendingStationAssignment(uid);
+            }
+            const base = officer ?? auth.user;
+            if (base && typeof base === "object") {
+              const next = {...base, assignmentStatus: "active"};
+              login(next, "station");
+              setOfficer(next);
+            }
+            setScreen("dashboard");
+          }}
+        />
+      </RoleGuard>
+    );
+  }
+
   // ── Protected screens — each guarded to its own role ───────────────────────
 
   if (screen === "admin") {
@@ -380,6 +506,7 @@ export default function App() {
           officer={officer}
           scannedResident={scannedResident}
           onBack={handleValidationBack}
+          onLogout={handleLogout}
           onDispenseSuccess={() => void handleDispenseSuccess()}
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}

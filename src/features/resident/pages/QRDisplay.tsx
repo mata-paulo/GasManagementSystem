@@ -13,7 +13,7 @@ function formatTimestamp(iso: string) {
 export default function QRDisplay({ resident, onDone }) {
   const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
   const fullName = `${firstName} ${lastName}`;
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);
