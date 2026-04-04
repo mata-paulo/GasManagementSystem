@@ -169,10 +169,12 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
         </span>
       </header>
 
-      <main className="flex-1 px-4 py-5 pb-28 max-w-lg mx-auto w-full space-y-4">
-        <p className="text-xs text-slate-500 leading-relaxed">
-          Update current inventory and price per liter. Use <strong>Top Up</strong> to add incoming supply — it adds to the current stock up to the max capacity.
-        </p>
+      <main className="flex-1 px-4 py-5 pb-28 max-w-6xl mx-auto w-full space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-xs text-slate-500 leading-relaxed max-w-lg">
+            Update current inventory and price per liter. Use <strong>Top Up</strong> to add incoming supply — it adds to the current stock up to the max capacity.
+          </p>
+        </div>
 
         {error && (
           <div className="rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm font-medium px-4 py-3">
@@ -180,7 +182,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {fuelNames.map((name) => {
             const vis = fuelVisual(name);
             const isEnabled = enabledFuels.has(name);
@@ -348,7 +350,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t border-slate-200 safe-area-pb">
-        <div className="max-w-lg mx-auto flex gap-3">
+        <div className="max-w-sm md:max-w-md mx-auto flex gap-3">
           <button
             type="button"
             onClick={onBack}
@@ -369,3 +371,4 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
     </div>
   );
 }
+

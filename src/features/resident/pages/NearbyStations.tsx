@@ -39,24 +39,24 @@ const FILTERS = [
   { label: "Other" },
 ];
 
-const STANDARD_FUELS = [
-  { name: "Diesel",                    type: "Diesel",       price: 0 },
-  { name: "Premium Diesel",            type: "PremiumDiesel", price: 0 },
-  { name: "Regular/Unleaded (91)",     type: "Gasoline",     price: 0 },
-  { name: "Premium (95)",              type: "Premium95",    price: 0 },
-  { name: "Super Premium (97)",        type: "Premium97",    price: 0 },
+const mkFuels = (d: number, pd: number, r: number, p95: number, p97: number) => [
+  { name: "Diesel",                type: "Diesel",        price: d   },
+  { name: "Premium Diesel",        type: "PremiumDiesel", price: pd  },
+  { name: "Regular/Unleaded (91)", type: "Gasoline",      price: r   },
+  { name: "Premium (95)",          type: "Premium95",     price: p95 },
+  { name: "Super Premium (97)",    type: "Premium97",     price: p97 },
 ];
 
 const BRAND_FUELS = {
-  Shell: STANDARD_FUELS,
-  Petron: STANDARD_FUELS,
-  Caltex: STANDARD_FUELS,
-  Phoenix: STANDARD_FUELS,
-  Seaoil: STANDARD_FUELS,
-  "Flying V": STANDARD_FUELS,
-  Diatoms: STANDARD_FUELS,
-  Other: STANDARD_FUELS,
-  default: STANDARD_FUELS,
+  Shell:      mkFuels(58.75, 63.45, 62.20, 70.85, 76.50),
+  Petron:     mkFuels(58.50, 63.10, 61.95, 70.60, 76.15),
+  Caltex:     mkFuels(58.60, 63.25, 62.05, 70.70, 76.30),
+  Phoenix:    mkFuels(57.90, 62.50, 61.40, 69.95, 75.60),
+  Seaoil:     mkFuels(57.75, 62.30, 61.25, 69.75, 75.40),
+  "Flying V": mkFuels(57.50, 62.00, 60.95, 69.50, 75.10),
+  Diatoms:    mkFuels(57.40, 61.90, 60.85, 69.40, 75.00),
+  Other:      mkFuels(57.25, 61.75, 60.70, 69.25, 74.85),
+  default:    mkFuels(58.00, 62.75, 61.50, 70.00, 75.75),
 };
 
 const FUEL_TYPE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -228,6 +228,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   const stationRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const stationListRef = useRef<HTMLDivElement>(null);
   const handleBarRef = useRef<HTMLDivElement>(null);
+  const markerElsRef = useRef<Record<number, HTMLElement>>({});
 
   useEffect(() => {
     const el = drawerRef.current;
@@ -335,18 +336,21 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
+    markerElsRef.current = {};
 
-    filteredStations.forEach((st, idx) => {
+    filteredStations.forEach((st) => {
       const el = document.createElement("div");
       el.style.cssText = `
         width:32px;height:32px;border-radius:50%;
-        background:${idx === 0 ? "#c9a227" : "#003366"};
+        background:#003366;
         border:2px solid #fff;display:flex;align-items:center;
         justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);
         cursor:pointer;font-size:16px;
       `;
       el.innerHTML = "⛽";
       el.addEventListener("click", () => handleSelectStation(st));
+
+      markerElsRef.current[st.id] = el;
 
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat([st.lon, st.lat])
@@ -355,6 +359,17 @@ export default function NearbyStations({ activeTab, onTabChange }) {
       markersRef.current.push(marker);
     });
   }, [filteredStations]);
+
+  // ── Sync marker highlight with selectedStation ───────────────────────────────
+  useEffect(() => {
+    filteredStations.forEach((st) => {
+      const el = markerElsRef.current[st.id];
+      if (!el) return;
+      const isActive = selectedStation?.id === st.id;
+      el.style.background = isActive ? "#c9a227" : "#003366";
+      el.style.fontSize = isActive ? "18px" : "16px";
+    });
+  }, [selectedStation, filteredStations]);
 
   // ── Route drawing ───────────────────────────────────────────────────────────
   const drawRoute = async (st) => {
@@ -691,3 +706,4 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     </div>
   );
 }
+

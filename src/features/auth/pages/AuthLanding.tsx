@@ -61,9 +61,10 @@ export default function AuthLanding({ onLogin, onResidentRegister }: AuthLanding
         </button>
 
         <p className="text-center text-[10px] text-outline pt-2">
-          © 2024 Mata Technologies Inc. · A.G.A.S
+          © 2026 Mata Technologies Inc. · A.G.A.S
         </p>
       </div>
     </div>
   );
 }
+

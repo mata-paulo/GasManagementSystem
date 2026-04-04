@@ -14,7 +14,9 @@ import QRDisplay from "@/features/resident/pages/QRDisplay";
 import UserDashboard from "@/features/resident/pages/UserDashboard";
 import UserScanHistory from "@/features/resident/pages/UserScanHistory";
 import Dashboard from "@/features/station/pages/Dashboard";
+import OfficerSettings from "@/features/station/pages/OfficerSettings";
 import QRScanner from "@/features/station/pages/QRScanner";
+import ResidentWebPortal from "@/features/station/pages/ResidentWebPortal";
 import ScanHistory from "@/features/station/pages/ScanHistory";
 import StationFuelSetup from "@/features/station/pages/StationFuelSetup";
 import ValidationSuccess from "@/features/station/pages/ValidationSuccess";
@@ -79,7 +81,7 @@ export default function App() {
       setScreen("dashboard");
     } else if (auth.role === "resident") {
       setResident(auth.user);
-      setScreen("user-dashboard");
+      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
     } else if (auth.role === "admin") {
       setScreen("admin");
     } else {
@@ -134,7 +136,7 @@ export default function App() {
       setActiveTab("dashboard");
     } else if (role === "resident") {
       setResident(user);
-      setScreen("user-dashboard");
+      setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
       setActiveTab("dashboard");
     } else if (role === "admin") {
       setScreen("admin");
@@ -206,6 +208,14 @@ export default function App() {
         onBack={() => setScreen("landing")}
         onSuccess={handleStationRegisterSuccess}
       />
+    );
+  }
+
+  if (screen === "resident-web") {
+    return (
+      <RoleGuard requiredRole="resident" onDeny={() => setScreen("landing")}>
+        <ResidentWebPortal resident={resident} onLogout={handleLogout} />
+      </RoleGuard>
     );
   }
 
@@ -283,6 +293,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onScan={handleScan}
+          onLogout={handleLogout}
         />
       </RoleGuard>
     );
@@ -291,17 +302,12 @@ export default function App() {
   if (screen === "settings") {
     return (
       <RoleGuard requiredRole="station" onDeny={() => setScreen("landing")}>
-        <Settings
+        <OfficerSettings
           officer={officer}
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
           onLogout={handleLogout}
           onChangePassword={() => setScreen("change-password")}
-          tabs={[
-            { id: "dashboard", icon: "dashboard", label: "Dashboard" },
-            { id: "history", icon: "receipt_long", label: "Transaction" },
-            { id: "settings", icon: "account_circle", label: "Account" },
-          ]}
         />
       </RoleGuard>
     );
@@ -325,6 +331,7 @@ export default function App() {
           onLogout={handleLogout}
           onShowQR={() => setScreen("qr-display")}
           onChangePassword={() => setScreen("change-password")}
+          onUpdateProfile={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Transactions" },
@@ -410,7 +417,9 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}
         lastUpdated={lastUpdated}
+        onLogout={handleLogout}
       />
     </RoleGuard>
   );
 }
+

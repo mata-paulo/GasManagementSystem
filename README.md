@@ -34,7 +34,6 @@ npm run lint
 npm run test
 npm run functions:build
 npm run functions:test
-npm run seed:emulator
 npm run emulators
 ```
 
