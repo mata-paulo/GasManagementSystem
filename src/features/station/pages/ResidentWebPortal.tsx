@@ -325,8 +325,10 @@ export default function ResidentWebPortal({ resident, onLogout }) {
         {/* Collapse + Sign out */}
         <div className="border-t border-white/10 px-2 py-3 space-y-1">
           <button
+            type="button"
+            title={collapsed ? "Expand menu" : "Collapse menu"}
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/50 hover:bg-white/10 hover:text-white transition-all"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sky-200/90 hover:bg-white/10 hover:text-white transition-all"
           >
             <span className="material-symbols-outlined text-[20px] shrink-0">
               {collapsed ? "chevron_right" : "chevron_left"}

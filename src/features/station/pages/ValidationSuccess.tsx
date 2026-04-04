@@ -1,9 +1,47 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDecodedDate } from "@/lib/qr/qrCodec";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 
+type OfficerFuel = {
+  officerFirstName?: string;
+  firstName?: string;
+  brand?: string;
+  fuelPrices?: Record<string, number>;
+};
+
+/** Fallback ₱/L when station has not set a price for that product (aligned with Dashboard mock defaults). */
+const DEFAULT_FUEL_PRICES: Record<string, number> = {
+  Diesel: 68.25,
+  "Premium Diesel": 70.1,
+  "Regular/Unleaded (91)": 72.5,
+  "Premium (95)": 75.9,
+  "Super Premium (97)": 78.4,
+};
+
+function pricePerLiterFor(officer: OfficerFuel | undefined, fuelName: string): number {
+  const p = officer?.fuelPrices?.[fuelName];
+  if (typeof p === "number" && Number.isFinite(p) && p > 0) return p;
+  return DEFAULT_FUEL_PRICES[fuelName] ?? 72.5;
+}
+
+/** Pesos with centavos always shown (2 decimal places), for labels only. */
+function formatPeso(n: number): string {
+  return n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** For controlled `type="number"` cash field — no grouping so `parseFloat` stays correct. */
+function pesoInputString(n: number): string {
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+/** Show liters derived from exact cash (avoid misleading 2dp when cash is the source of truth). */
+function formatLitersFromExactCash(liters: number): string {
+  const s = liters.toFixed(4);
+  return s.replace(/0+$/, "").replace(/\.$/, "") || "0";
+}
+
 type ValidationSuccessProps = {
-  officer?: { officerFirstName?: string; firstName?: string; brand?: string };
+  officer?: OfficerFuel;
   scannedResident?: {
     firstCode?: string;
     lastCode?: string;
@@ -16,7 +54,13 @@ type ValidationSuccessProps = {
   onTabChange: (tab: string) => void;
 };
 
-export default function ValidationSuccess({ scannedResident, onBack, activeTab, onTabChange }: ValidationSuccessProps) {
+export default function ValidationSuccess({
+  officer,
+  scannedResident,
+  onBack,
+  activeTab,
+  onTabChange,
+}: ValidationSuccessProps) {
   const firstName = scannedResident?.firstCode || "JCX";
   const lastName = scannedResident?.lastCode || "LEQ";
   const plateNumber = "ABC-1234";
@@ -28,27 +72,12 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
   const [fuelConsumed, setFuelConsumed] = useState(12);
   const [fuelLimit] = useState(20);
   const [literInput, setLiterInput] = useState("");
+  const [cashInput, setCashInput] = useState("");
+  const [inputMode, setInputMode] = useState<"liters" | "cash">("liters");
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [actionError, setActionError] = useState("");
   const remainingLiters = Math.max(fuelLimit - fuelConsumed, 0);
-  const inputLiters = parseFloat(literInput);
-  const previewDeduct = !isNaN(inputLiters) && inputLiters > 0 ? inputLiters : 0;
-  const previewRemaining = Math.max(remainingLiters - previewDeduct, 0);
 
-  const handleConfirmDispense = () => {
-    const liters = parseFloat(literInput);
-    if (isNaN(liters) || liters <= 0) {
-      setActionError("Please enter liters before confirming dispense.");
-      return;
-    }
-    if (fuelConsumed + liters > fuelLimit) {
-      setShowLimitModal(true);
-      return;
-    }
-    setFuelConsumed((prev) => prev + liters);
-    setActionError("");
-    onBack();
-  };
   const gasTypeFromQR = (scannedResident?.gasType ?? "").trim();
   const isDieselType = gasTypeFromQR.toLowerCase().includes("diesel");
   const fuelOptionButtons = isDieselType
@@ -60,6 +89,84 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
     return fuelOptionButtons[0] || "";
   });
 
+  const pricePerLiter = useMemo(
+    () => pricePerLiterFor(officer, selectedFuelOption),
+    [officer, selectedFuelOption],
+  );
+
+  const litersFromLiterField = parseFloat(literInput);
+  const cashFromCashField = parseFloat(cashInput);
+
+  const maxCashForAllocation = Math.round(remainingLiters * pricePerLiter * 100) / 100;
+
+  /** Cash mode: exact amount charged (presets 50/100/500/1000 stay exact; no ₱100.33 from L×price round-trip). */
+  const effectiveCash =
+    inputMode === "cash" &&
+    !isNaN(cashFromCashField) &&
+    cashFromCashField > 0
+      ? Math.min(Math.round(cashFromCashField * 100) / 100, maxCashForAllocation)
+      : 0;
+
+  const litersToDispense =
+    inputMode === "liters"
+      ? !isNaN(litersFromLiterField) && litersFromLiterField > 0
+        ? Math.min(litersFromLiterField, remainingLiters)
+        : 0
+      : effectiveCash > 0 && pricePerLiter > 0
+        ? Math.min(remainingLiters, effectiveCash / pricePerLiter)
+        : 0;
+
+  const cashTotalForDispense =
+    inputMode === "cash" && effectiveCash > 0
+      ? effectiveCash
+      : litersToDispense > 0 && pricePerLiter > 0
+        ? Math.round(litersToDispense * pricePerLiter * 100) / 100
+        : 0;
+
+  const litersLabelForUi =
+    inputMode === "cash" && litersToDispense > 0
+      ? formatLitersFromExactCash(litersToDispense)
+      : litersToDispense.toFixed(2);
+
+  const previewDeduct = litersToDispense;
+  const previewRemaining = Math.max(remainingLiters - previewDeduct, 0);
+
+  const handleConfirmDispense = () => {
+    if (litersToDispense <= 0) {
+      setActionError(
+        inputMode === "liters"
+          ? "Please enter liters before confirming dispense."
+          : "Please enter a valid cash amount before confirming dispense.",
+      );
+      return;
+    }
+    if (fuelConsumed + litersToDispense > fuelLimit) {
+      setShowLimitModal(true);
+      return;
+    }
+    setFuelConsumed((prev) => prev + litersToDispense);
+    setActionError("");
+    onBack();
+  };
+
+  const switchInputMode = (mode: "liters" | "cash") => {
+    if (mode === inputMode) return;
+    if (mode === "cash") {
+      const L = parseFloat(literInput);
+      if (!isNaN(L) && L > 0 && pricePerLiter > 0) {
+        setCashInput(pesoInputString(Math.round(L * pricePerLiter * 100) / 100));
+      }
+    } else {
+      const c = parseFloat(cashInput);
+      if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
+        const capped = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
+        const L = Math.min(remainingLiters, capped / pricePerLiter);
+        setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+      }
+    }
+    setInputMode(mode);
+    setActionError("");
+  };
   const displayFuelType = selectedFuelOption.toLowerCase().includes("diesel")
     ? "Diesel"
     : "Gasoline";
@@ -217,10 +324,38 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                 </div>
               </div>
 
-              {/* Liter Input */}
+              {/* Amount input: Liters vs Cash (₱) */}
               <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-3">
-                <label className="text-outline text-[12px] font-bold uppercase tracking-wider">Input Liter</label>  
-                <div className={`grid gap-2 ${isDieselType ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-outline text-[12px] font-bold uppercase tracking-wider">Dispense amount</span>
+                  <div className="relative grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 w-[min(100%,220px)] shrink-0">
+                    <div
+                      className={`absolute top-1 bottom-1 w-[calc(50%-0.25rem)] rounded-lg bg-[#003366] shadow-sm transition-transform duration-300 ease-out ${
+                        inputMode === "liters" ? "translate-x-0" : "translate-x-[calc(100%+0.25rem)]"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => switchInputMode("liters")}
+                      className={`relative z-10 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
+                        inputMode === "liters" ? "text-white" : "text-slate-600"
+                      }`}
+                    >
+                      Liters
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchInputMode("cash")}
+                      className={`relative z-10 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
+                        inputMode === "cash" ? "text-white" : "text-slate-600"
+                      }`}
+                    >
+                      Cash (₱)
+                    </button>
+                  </div>
+                </div>
+
+                <div className={`grid gap-2 ${isDieselType ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-3"}`}>
                   {fuelOptionButtons.map((option) => {
                     const active = selectedFuelOption === option;
                     return (
@@ -242,11 +377,21 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                     );
                   })}
                 </div>
+                <p className="text-[11px] text-slate-600 -mt-1">
+                  <span className="font-bold text-[#003366]">₱{formatPeso(pricePerLiter)}</span>
+                  <span className="text-outline"> / L</span>
+                  {officer?.fuelPrices?.[selectedFuelOption] != null ? (
+                    <span className="text-outline"> · station price</span>
+                  ) : (
+                    <span className="text-outline"> · default until set in Fuel &amp; pricing</span>
+                  )}
+                </p>
+
                 {remainingLiters <= 0 ? (
                   <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold px-4 py-3 text-center">
                     No allocation remaining — this resident has used their full weekly limit.
                   </div>
-                ) : (
+                ) : inputMode === "liters" ? (
                   <>
                     <input
                       type="number"
@@ -274,7 +419,10 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                             key={amount}
                             type="button"
                             disabled={exceeds}
-                            onClick={() => { setLiterInput(String(amount)); setActionError(""); }}
+                            onClick={() => {
+                              setLiterInput(String(amount));
+                              setActionError("");
+                            }}
                             className={`rounded-lg border py-2.5 text-sm font-bold transition-all ${
                               exceeds
                                 ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
@@ -287,6 +435,64 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
                       })}
                     </div>
                   </>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      max={maxCashForAllocation}
+                      step="0.01"
+                      value={cashInput}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val > maxCashForAllocation) {
+                          setCashInput(pesoInputString(maxCashForAllocation));
+                        } else {
+                          setCashInput(e.target.value);
+                        }
+                        setActionError("");
+                      }}
+                      placeholder={`Max ₱${formatPeso(maxCashForAllocation)}`}
+                      className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
+                    />
+                    <div className="grid grid-cols-4 gap-2">
+                      {[50, 100, 500, 1000].map((peso) => {
+                        const exceeds = peso > maxCashForAllocation;
+                        const approxL = pricePerLiter > 0 ? peso / pricePerLiter : 0;
+                        return (
+                          <button
+                            key={peso}
+                            type="button"
+                            disabled={exceeds}
+                            onClick={() => {
+                              setCashInput(pesoInputString(peso));
+                              setActionError("");
+                            }}
+                            className={`rounded-lg border py-2.5 px-1 text-xs sm:text-sm font-bold transition-all leading-tight ${
+                              exceeds
+                                ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
+                                : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className="block">₱{formatPeso(peso)}</span>
+                            {!exceeds && approxL > 0 && (
+                              <span className="block font-medium text-[9px] text-slate-500 mt-0.5">
+                                ≈ {formatLitersFromExactCash(approxL)} L
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {litersToDispense > 0 && remainingLiters > 0 && (
+                  <div className="rounded-lg bg-white/80 border border-outline-variant/20 px-3 py-2 text-center text-xs text-slate-700">
+                    <span className="font-black text-[#003366]">{litersLabelForUi} L</span>
+                    {" · "}
+                    <span className="font-black text-[#003366]">₱{formatPeso(cashTotalForDispense)}</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -310,15 +516,22 @@ export default function ValidationSuccess({ scannedResident, onBack, activeTab, 
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleConfirmDispense}
-                disabled={remainingLiters <= 0 || !literInput || parseFloat(literInput) <= 0}
+                disabled={remainingLiters <= 0 || litersToDispense <= 0}
                 className={`w-full font-headline font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                  remainingLiters > 0 && literInput && parseFloat(literInput) > 0
+                  remainingLiters > 0 && litersToDispense > 0
                     ? "bg-[#2e7d32] text-white active:scale-95 active:bg-[#1b5e20]"
                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
                 }`}
               >
                 <span className="material-symbols-outlined">gas_meter</span>
-                Confirm Dispense
+                <span className="flex flex-col items-center leading-tight">
+                  <span>Confirm Dispense</span>
+                  {litersToDispense > 0 && (
+                    <span className="text-[11px] font-bold opacity-90 mt-0.5">
+                      {litersLabelForUi} L · ₱{formatPeso(cashTotalForDispense)}
+                    </span>
+                  )}
+                </span>
               </button>
               <button
                 onClick={onBack}

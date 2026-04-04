@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
 
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -47,12 +48,6 @@ const ORDERED_FUELS = [
 ] as const;
 
 const MAX_DASHBOARD_TRANSACTIONS = 3;
-
-const DESKTOP_NAV = [
-  { id: "dashboard", label: "Dashboard",   icon: "dashboard" },
-  { id: "history",   label: "Transaction", icon: "receipt_long" },
-  { id: "settings",  label: "Account",     icon: "manage_accounts" },
-];
 
 function fuelTypeTheme(fuelType: string): FuelTheme {
   const n = fuelType.toLowerCase();
@@ -194,48 +189,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
   return (
     <div className="flex min-h-dvh bg-[#eef2f7]">
 
-      {/* ── Desktop Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-52 lg:w-60 shrink-0 sticky top-0 h-screen"
-        style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}>
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[#0a1628] text-[20px]"
-              style={{ fontVariationSettings: "'FILL' 1" }}>local_gas_station</span>
-          </div>
-          <div>
-            <p className="font-headline font-black text-white text-sm leading-none">A.G.A.S</p>
-            <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider mt-0.5">Station Portal</p>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5">
-          {DESKTOP_NAV.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button key={item.id} onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                  isActive ? "bg-white/15 text-white" : "text-white/50 hover:text-white hover:bg-white/10"
-                }`}>
-                <span className="material-symbols-outlined text-[20px]"
-                  style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>{item.icon}</span>
-                {item.label}
-                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-yellow-400" />}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Sign out */}
-        <div className="px-3 py-4 border-t border-white/10">
-          <button onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-400/10 transition-all">
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-            Sign Out
-          </button>
-        </div>
-      </aside>
+      <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 
       {/* ── Desktop Main Content ─────────────────────────────────────────────── */}
       <div className="hidden md:flex flex-col flex-1 overflow-hidden bg-[#f1f5f9]">
