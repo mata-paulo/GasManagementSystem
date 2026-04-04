@@ -195,8 +195,20 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
             <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
             <div className="grid grid-cols-2 gap-3">
-              {field("Plate Number", "plate", "e.g. ABC 1234")}
-              {pickerTrigger("Vehicle Type", "vehicleType")}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Number</p>
+                <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
+                  <span>{form.plate || plate}</span>
+                  <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vehicle Type</p>
+                <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
+                  <span>{form.vehicleType || vehicleType}</span>
+                  <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
+                </div>
+              </div>
             </div>
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
@@ -210,7 +222,13 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           {/* Location */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
             <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Location</p>
-            {pickerTrigger("Barangay", "barangay")}
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Barangay</p>
+              <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
+                <span>{form.barangay || barangay}</span>
+                <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
+              </div>
+            </div>
           </div>
 
           {/* Buttons — pushed to bottom */}
