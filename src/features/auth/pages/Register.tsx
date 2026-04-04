@@ -19,6 +19,9 @@ function envValue(...keys: string[]): string | undefined {
   return undefined;
 }
 
+/** Matches `.firebaserc` default; used in dev when emulators are on but `VITE_FIREBASE_PROJECT_ID` is missing (e.g. env file not named `.env`). */
+const DEFAULT_DEV_FIREBASE_PROJECT_ID = "agas-fuel-rationing-system";
+
 function getRegisterResidentUrl(): string {
   const explicitUrl = envValue(
     "VITE_REGISTER_RESIDENT_URL",
@@ -28,17 +31,18 @@ function getRegisterResidentUrl(): string {
     return explicitUrl;
   }
 
-  const projectId = envValue(
-    "VITE_FIREBASE_PROJECT_ID",
-    "VITE_PUBLIC_FIREBASE_PROJECT_ID",
-  );
+  const useEmu =
+    envValue("VITE_USE_FIREBASE_EMULATORS", "VITE_PUBLIC_USE_EMULATOR") === "true";
+
+  const projectId =
+    envValue("VITE_FIREBASE_PROJECT_ID", "VITE_PUBLIC_FIREBASE_PROJECT_ID") ||
+    (import.meta.env.DEV && useEmu ? DEFAULT_DEV_FIREBASE_PROJECT_ID : undefined);
+
   const region =
     envValue(
       "VITE_FIREBASE_FUNCTIONS_REGION",
       "VITE_PUBLIC_FIREBASE_FUNCTIONS_REGION",
     ) ?? "asia-southeast1";
-  const useEmu =
-    envValue("VITE_USE_FIREBASE_EMULATORS", "VITE_PUBLIC_USE_EMULATOR") === "true";
 
   if (import.meta.env.DEV && useEmu && projectId) {
     return `http://127.0.0.1:5001/${projectId}/${region}/registerResident`;
@@ -48,6 +52,7 @@ function getRegisterResidentUrl(): string {
     return `https://${region}-${projectId}.cloudfunctions.net/registerResident`;
   }
 
+  // Production build: same-origin on Firebase Hosting (rewrite → function). Local Vite: proxied to emulator (see vite.config.ts).
   return "/api/registerResident";
 }
 

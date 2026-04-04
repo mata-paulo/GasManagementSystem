@@ -1,4 +1,4 @@
-import BottomNav from "../components/BottomNav";
+import BottomNav from "@/shared/components/navigation/BottomNav";
 
 const APP_VERSION = "V 1.0.0";
 

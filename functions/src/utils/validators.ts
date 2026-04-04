@@ -4,7 +4,14 @@ import {z} from "zod";
 export const PLATE_MAX_LENGTH = 10;
 
 export const NAME_MAX_LENGTH = 50;
-
+export const CORS=[
+      "https://agas-fuel-rationing-system.web.app",
+      "http://localhost:5173",
+      "localhost:5173",
+      "localhost",
+      "http://127.0.0.1:5173",
+      "https://agas.ph",
+    ];
 /** Matches client-side Register.tsx (min 6). */
 export const PASSWORD_MIN_LENGTH = 6;
 export const PASSWORD_MAX_LENGTH = 128;
@@ -103,3 +110,33 @@ export const registerResidentSchema = z.strictObject({
 });
 
 export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
+
+export const assignStationUserSchema = z.strictObject({
+  stationDirectoryId: z
+    .string()
+    .trim()
+    .min(1, "Station is required."),
+  firstName: z
+    .string()
+    .trim()
+    .min(1, "First name is required.")
+    .max(
+      NAME_MAX_LENGTH,
+      `First name must be at most ${NAME_MAX_LENGTH} characters.`
+    ),
+  lastName: z
+    .string()
+    .trim()
+    .min(1, "Last name is required.")
+    .max(
+      NAME_MAX_LENGTH,
+      `Last name must be at most ${NAME_MAX_LENGTH} characters.`
+    ),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email is required.")
+    .refine((v) => EMAIL_REGEX.test(v), "Invalid email address."),
+});
+
+export type AssignStationUserInput = z.infer<typeof assignStationUserSchema>;
