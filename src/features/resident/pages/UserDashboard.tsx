@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import {
+  subscribeResidentAllocationSummary,
+  type DispenseTransaction,
+  type ResidentAccount,
+  WEEKLY_FUEL_LIMIT,
+} from "@/lib/data/agas";
 
 
 const DEFAULT_LAT = 10.3157;
 const DEFAULT_LON = 123.8854;
+const MAX_RECENT_TRANSACTIONS = 3;
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -29,10 +36,39 @@ const ANNOUNCEMENTS = [
   },
 ];
 
-export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR }) {
-  const mapPreviewRef = useRef(null);
-  const mapInstanceRef = useRef(null);
+function formatTransactionDate(value: Date | null): string {
+  if (!value) return "Unknown date";
+  return value.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTransactionTime(value: Date | null): string {
+  if (!value) return "--:--";
+  return value.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+type UserDashboardProps = {
+  resident: ResidentAccount | null;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onShowQR: () => void;
+};
+
+export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR }: UserDashboardProps) {
+  const mapPreviewRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
+  const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
+  const [liveFuelAllocation, setLiveFuelAllocation] = useState(WEEKLY_FUEL_LIMIT);
+  const [usedLiters, setUsedLiters] = useState(0);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   const fullName = resident
     ? `${resident.firstName || ""} ${resident.lastName || ""}`.trim()
@@ -41,12 +77,48 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const plate = resident?.plate || "N/A";
   const barangay = resident?.barangay || "Not set";
   const vehicleType = resident?.vehicleType || "car";
+  const residentStatus = resident?.status || "Active";
+  const fuelAllocation = liveFuelAllocation;
+  const remainingLiters = Math.max(fuelAllocation - usedLiters, 0);
+  const usagePercent = Math.min((usedLiters / fuelAllocation) * 100, 100);
+  const pctLeft = Math.round((remainingLiters / fuelAllocation) * 100);
 
-  const weeklyAllocation = 20;
-  const usedLiters = 8;
-  const remainingLiters = Math.max(weeklyAllocation - usedLiters, 0);
-  const usagePercent = Math.min((usedLiters / weeklyAllocation) * 100, 100);
-  const pctLeft = Math.round((remainingLiters / weeklyAllocation) * 100);
+  const recentTransactions = useMemo(
+    () => transactions.slice(0, MAX_RECENT_TRANSACTIONS),
+    [transactions],
+  );
+
+  useEffect(() => {
+    if (!resident?.uid) {
+      setTransactions([]);
+      setLiveFuelAllocation(WEEKLY_FUEL_LIMIT);
+      setUsedLiters(0);
+      return;
+    }
+
+    setLoadingSummary(true);
+    setLiveFuelAllocation(resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
+
+    const unsubscribe = subscribeResidentAllocationSummary(
+      resident.uid,
+      (summary) => {
+        setTransactions(summary.transactions);
+        setLiveFuelAllocation(summary.fuelAllocation);
+        setUsedLiters(summary.usedLiters);
+        setLoadingSummary(false);
+      },
+      () => {
+        setTransactions([]);
+        setLiveFuelAllocation(resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
+        setUsedLiters(0);
+        setLoadingSummary(false);
+      },
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [resident?.fuelAllocation, resident?.uid]);
 
   const statusConfig =
     pctLeft > 50
@@ -61,45 +133,37 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#2e7d32]",
         }
       : pctLeft > 20
-      ? {
-          section: "bg-[#fff3e0] border-[#f57c00]/25",
-          iconClass: "text-[#f57c00] icon-fill text-[32px]",
-          valueClass: "text-4xl font-black font-headline leading-none text-[#f57c00]",
-          labelClass: "text-base font-bold mt-1 text-[#e65100]",
-          circleColor: "#f57c00",
-          pctClass: "text-lg font-black leading-none text-[#f57c00]",
-          barClass: "bg-[#f57c00]",
-          rowClass: "flex justify-between mt-2 text-sm font-bold text-[#f57c00]",
-        }
-      : {
-          section: "bg-[#ffebee] border-[#c62828]/25",
-          iconClass: "text-[#c62828] icon-fill text-[32px]",
-          valueClass: "text-4xl font-black font-headline leading-none text-[#c62828]",
-          labelClass: "text-base font-bold mt-1 text-[#c62828]",
-          circleColor: "#c62828",
-          pctClass: "text-lg font-black leading-none text-[#c62828]",
-          barClass: "bg-[#c62828]",
-          rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
-        };
+        ? {
+            section: "bg-[#fff3e0] border-[#f57c00]/25",
+            iconClass: "text-[#f57c00] icon-fill text-[32px]",
+            valueClass: "text-4xl font-black font-headline leading-none text-[#f57c00]",
+            labelClass: "text-base font-bold mt-1 text-[#e65100]",
+            circleColor: "#f57c00",
+            pctClass: "text-lg font-black leading-none text-[#f57c00]",
+            barClass: "bg-[#f57c00]",
+            rowClass: "flex justify-between mt-2 text-sm font-bold text-[#f57c00]",
+          }
+        : {
+            section: "bg-[#ffebee] border-[#c62828]/25",
+            iconClass: "text-[#c62828] icon-fill text-[32px]",
+            valueClass: "text-4xl font-black font-headline leading-none text-[#c62828]",
+            labelClass: "text-base font-bold mt-1 text-[#c62828]",
+            circleColor: "#c62828",
+            pctClass: "text-lg font-black leading-none text-[#c62828]",
+            barClass: "bg-[#c62828]",
+            rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
+          };
 
-  const allTransactions = [
-    { id: 1, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
-    { id: 2, station: "Petron – Jones Ave",    date: "Mar 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
-    { id: 3, station: "Caltex – Mango Ave",    date: "Mar 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
-  ];
-
-  // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
-  const residentFuelType = resident?.gasType === "Diesel" ? "Diesel" : "Regular";
-  const recentTransactions = allTransactions.filter((tx) => tx.fuelType === residentFuelType);
-
-  const touchStartX = useRef(null);
-  const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
-  const handleTouchEnd = (e) => {
+  const touchStartX = useRef<number | null>(null);
+  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
     if (touchStartX.current === null) return;
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40) {
       setAnnouncementIdx((i) =>
-        diff > 0 ? (i + 1) % ANNOUNCEMENTS.length : (i - 1 + ANNOUNCEMENTS.length) % ANNOUNCEMENTS.length
+        diff > 0 ? (i + 1) % ANNOUNCEMENTS.length : (i - 1 + ANNOUNCEMENTS.length) % ANNOUNCEMENTS.length,
       );
     }
     touchStartX.current = null;
@@ -108,9 +172,12 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   useEffect(() => {
     if (!mapPreviewRef.current || mapInstanceRef.current) return;
 
-    // Start map immediately with default center — don't wait for GPS
-    const map = L.map(mapPreviewRef.current, {
-      zoomControl: false,
+    const map = new mapboxgl.Map({
+      container: mapPreviewRef.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: [DEFAULT_LON, DEFAULT_LAT],
+      zoom: 13,
+      interactive: false,
       attributionControl: false,
       dragging: false,
       scrollWheelZoom: false,
@@ -140,7 +207,6 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
 
     mapInstanceRef.current = map;
 
-    // Update center once GPS resolves
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -148,12 +214,15 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           map.setView([lat, lon], 13);
           marker.setLatLng([lat, lon]);
         },
-        () => {},
-        { timeout: 5000, maximumAge: 60000 }
+        () => undefined,
+        { timeout: 5000, maximumAge: 60000 },
       );
     }
 
-    return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
+    return () => {
+      mapInstanceRef.current?.remove();
+      mapInstanceRef.current = null;
+    };
   }, []);
 
   const ann = ANNOUNCEMENTS[announcementIdx];
@@ -161,8 +230,6 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   return (
     <div className="flex flex-col min-h-dvh bg-background">
       <main className="flex-1 pb-44 max-w-2xl mx-auto w-full">
-
-        {/* Profile bar */}
         <div className="mx-4 mt-5 mb-4 flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm border border-outline-variant/20">
           <div className="w-11 h-11 rounded-full border-2 border-[#2e7d32] flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-[#2e7d32] text-2xl">person</span>
@@ -178,8 +245,6 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         </div>
 
         <div className="px-4 space-y-4">
-
-          {/* User Details */}
           <section className="grid grid-cols-3 gap-3">
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
               <div className="flex items-center gap-1 text-on-surface-variant">
@@ -201,17 +266,16 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="material-symbols-outlined text-[13px]">verified_user</span>
                 <span className="text-[9px] font-bold uppercase tracking-tight">Status</span>
               </div>
-              <p className="text-sm font-black font-headline text-green-700">Active</p>
-              <p className="text-[9px] text-on-surface-variant">Verified</p>
+              <p className="text-sm font-black font-headline text-green-700">{residentStatus}</p>
+              <p className="text-[9px] text-on-surface-variant">Live profile</p>
             </div>
           </section>
 
-          {/* Allocation */}
           <section className={`rounded-2xl p-5 shadow-sm border ${statusConfig.section}`}>
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                  Fuel Allocation
+                  Weekly Fuel Allocation
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`material-symbols-outlined ${statusConfig.iconClass}`}>
@@ -221,13 +285,16 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     {remainingLiters.toFixed(1)}<span className="text-xl ml-1 font-normal">Liters</span>
                   </p>
                 </div>
-                <p className={statusConfig.labelClass}>Remaining</p>
+                <p className={statusConfig.labelClass}>{loadingSummary ? "Refreshing" : "Remaining"}</p>
               </div>
               <div className="relative w-16 h-16 shrink-0">
                 <svg viewBox="0 0 56 56" className="w-full h-full -rotate-90">
                   <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5" />
                   <circle
-                    cx="28" cy="28" r="22" fill="none"
+                    cx="28"
+                    cy="28"
+                    r="22"
+                    fill="none"
                     stroke={statusConfig.circleColor}
                     strokeWidth="5"
                     strokeLinecap="round"
@@ -242,24 +309,22 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               </div>
             </div>
 
-            {/* Progress bar — width is a computed percentage, must use style */}
             <div className="h-5 w-full rounded-full bg-white/70 overflow-hidden shadow-inner">
               <div
                 className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 ${statusConfig.barClass}`}
                 style={{ width: `${usagePercent}%` }}
               >
                 {usagePercent > 20 && (
-                  <span className="text-[9px] font-black text-white">{usedLiters}L used</span>
+                  <span className="text-[9px] font-black text-white">{usedLiters.toFixed(1)}L used</span>
                 )}
               </div>
             </div>
             <div className={statusConfig.rowClass}>
-              <span className="ml-auto">Total: {weeklyAllocation} L / week</span>
+              <span className="ml-auto">Total: {fuelAllocation} L / week</span>
             </div>
           </section>
 
-          {/* Map preview */}
-          <section className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate">
+          <section className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px]">
             <div ref={mapPreviewRef} className="w-full h-full" />
             <button
               onClick={() => onTabChange("map")}
@@ -274,41 +339,56 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Recent Activity */}
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-headline font-bold text-on-surface-variant uppercase tracking-wider">
                 Recent Fuel Activity
               </h3>
-              <button className="text-xs font-bold text-primary-container hover:underline">View All</button>
+              <button
+                type="button"
+                onClick={() => onTabChange("user-history")}
+                className="text-xs font-bold text-primary-container hover:underline"
+              >
+                View All
+              </button>
             </div>
             <div className="space-y-2">
-              {recentTransactions.map((tx) => {
-                const total = tx.liters * tx.pricePerLiter;
-                return (
-                  <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
-                      <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
-                      <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
-                        {tx.fuelType}
-                      </span>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
-                      <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
-                    </div>
+              {loadingSummary && (
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-outline-variant/10 text-sm text-slate-400">
+                  Loading your recent transactions...
+                </div>
+              )}
+
+              {!loadingSummary && recentTransactions.length === 0 && (
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-outline-variant/10 text-sm text-slate-400">
+                  No fuel transactions yet.
+                </div>
+              )}
+
+              {recentTransactions.map((tx) => (
+                <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
                   </div>
-                );
-              })}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-on-surface leading-tight">{tx.stationName || "Unknown Station"}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {formatTransactionDate(tx.createdAt)} · {formatTransactionTime(tx.createdAt)}
+                    </p>
+                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                      {tx.fuelType}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter.toFixed(2)}/L</p>
+                    <p className="text-sm font-black text-[#003366] mt-0.5">₱{tx.totalPaid.toFixed(2)}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 
-          {/* Announcements — swipeable banner carousel */}
           <section className="space-y-3 pb-2">
             <h3 className="text-xs font-headline font-bold text-on-surface-variant uppercase tracking-wider">
               Announcements
@@ -319,13 +399,11 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Decorative background icon */}
               <span className="material-symbols-outlined absolute -right-4 -bottom-4 opacity-10 pointer-events-none icon-fill text-[140px] text-white">
                 {ann.decorIcon}
               </span>
 
               <div className="relative z-10 p-5 flex flex-col gap-3">
-                {/* Tag row */}
                 <div className="flex items-center gap-2">
                   <span className={`material-symbols-outlined icon-fill text-[16px] ${ann.badgeIconClass}`}>
                     {ann.badgeIcon}
@@ -335,17 +413,14 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                   </span>
                 </div>
 
-                {/* Headline */}
                 <p className="text-white font-headline font-black text-lg leading-snug">
                   {ann.title}
                 </p>
 
-                {/* Subtitle */}
                 <p className="text-white/65 text-[11px] leading-relaxed">
                   {ann.subtitle}
                 </p>
 
-                {/* CTA + dots */}
                 <div className="flex items-center justify-between mt-1">
                   <button className={`px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 ${ann.ctaClass}`}>
                     {ann.cta}
@@ -370,7 +445,6 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         </div>
       </main>
 
-      {/* Floating QR button */}
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
           onClick={onShowQR}

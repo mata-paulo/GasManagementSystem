@@ -27,7 +27,7 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
   const processCode = (raw: string) => {
     const result = decodeQR(raw);
     if (!result) {
-      setError("Invalid QR code format. Expected format: JOHSMI46111.8560");
+      setError("Invalid QR code format. Expected AGAS resident QR payload.");
       setDecoded(null);
       return false;
     }
@@ -281,9 +281,9 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
 
             <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
               <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Expected QR Format</p>
-              <p className="text-white font-mono text-sm tracking-widest">JOHSMI46111.8560</p>
+              <p className="text-white font-mono text-sm tracking-widest">AGAS_UID|resident-user-id</p>
               <p className="text-white/40 text-[10px] mt-1">
-                [First 3 letters] + [Last 3 letters] + [Excel serial date]
+                Legacy and current AGAS resident QR formats are supported
               </p>
             </div>
           </>

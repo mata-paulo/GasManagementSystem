@@ -67,8 +67,63 @@ Admin-specific note:
 2. Frontend calls `registerResident`.
 3. Cloud Function validates payload and uniqueness.
 4. Admin SDK creates the auth user.
-5. Firestore account document is created.
+5. Firestore account document is created with resident profile fields plus fuel tracking defaults such as `fuelAllocation: 20` and `fuelUsed: 0`.
 6. Frontend signs the new user in and stores the local session.
+
+## Firestore Data Model
+
+### `accounts/{uid}`
+
+Resident documents include the profile and fuel-allocation state used by both resident and station flows.
+
+- `role`
+- `firstName`
+- `lastName`
+- `plate`
+- `barangay`
+- `vehicleType`
+- `gasType`
+- `fuelAllocation`
+- `fuelUsed`
+- `fuelWeekKey`
+- `registeredAt`
+- `updatedAt`
+
+Station documents include assignment, presence, and fuel-management fields.
+
+- `role`
+- `brand`
+- `barangay`
+- `stationDirectoryId`
+- `stationSourceId`
+- `stationCode`
+- `stationName`
+- `availableFuels`
+- `fuelCapacities`
+- `fuelInventory`
+- `fuelPrices`
+- `assignmentStatus`
+- `presenceStatus`
+- `lastSeenAt`
+
+### `transactions/{transactionId}`
+
+Transactions are the durable fuel-dispense records shared by resident, station, and admin views.
+
+- `residentUid`
+- `stationUid`
+- `stationId`
+- `residentName`
+- `stationName`
+- `plate`
+- `vehicleType`
+- `fuelType`
+- `liters`
+- `pricePerLiter`
+- `amount`
+- `occurredAt`
+- `weekKey`
+- `status`
 
 ## Admin Provisioning Flow
 
@@ -85,6 +140,28 @@ Admin-specific note:
 3. Station invite records are loaded from `stationInvites` so pending assignments and invite delivery status can be shown in the admin UI.
 4. The existing dashboard UI derives analytics, heatmap markers, allocation summaries, users, and transaction views from those live records.
 5. Static location metadata is still used only to place known station brands on the map when Firestore records do not yet store coordinates.
+
+## Resident Allocation Model
+
+Resident allocation is week-aware and uses Monday as the start of the week.
+
+1. `src/lib/data/agas.ts` derives a `weekKey` for the current week.
+2. Resident `fuelUsed` applies only when `fuelWeekKey` matches the current week.
+3. If the stored `fuelWeekKey` is from a past week, the app treats current-week usage as `0`.
+4. Resident dashboard remaining liters are computed on the frontend as `fuelAllocation - usedLiters`.
+5. During station dispensing, the station flow updates both `fuelUsed` and `fuelWeekKey` on the resident account, then writes a matching transaction record with the same week key.
+
+This gives the app an automatic weekly reset without needing a scheduled batch job.
+
+## QR Validation Flow
+
+Station validation now uses a UID-based QR payload.
+
+1. Resident QR generation encodes the resident Firebase Auth UID.
+2. Station scan decodes the UID.
+3. The app fetches `accounts/{uid}` from Firestore.
+4. Verified resident details shown to the station are taken from the live resident account.
+5. Dispense validation uses the fetched resident account, current-week quota state, and station inventory before writing the transaction.
 
 ## Station Invite Flow
 

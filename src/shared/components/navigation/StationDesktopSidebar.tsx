@@ -1,10 +1,9 @@
 import { useStationSidebarCollapsed } from "@/shared/hooks/useStationSidebarCollapsed";
-
-const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard" },
-  { id: "history", label: "Transaction", icon: "receipt_long" },
-  { id: "settings", label: "Account", icon: "manage_accounts" },
-] as const;
+import {
+  getStationPath,
+  STATION_NAV_ITEMS,
+  type StationNavId,
+} from "@/shared/navigation/stationRoutes";
 
 type StationDesktopSidebarProps = {
   activeTab: string;
@@ -48,14 +47,21 @@ export default function StationDesktopSidebar({
       </div>
 
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
+        {STATION_NAV_ITEMS.map((item) => {
           const isActive = activeTab === item.id;
           return (
-            <button
+            <a
               key={item.id}
-              type="button"
+              href={getStationPath(item.id as StationNavId)}
               title={collapsed ? item.label : undefined}
-              onClick={() => onTabChange(item.id)}
+              aria-current={isActive ? "page" : undefined}
+              onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                  return;
+                }
+                event.preventDefault();
+                onTabChange(item.id);
+              }}
               className={`relative w-full flex items-center rounded-xl text-sm font-medium transition-all text-left ${
                 collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5"
               } ${
@@ -77,7 +83,7 @@ export default function StationDesktopSidebar({
               {collapsed && isActive && (
                 <span className="absolute top-2 right-1.5 w-1.5 h-1.5 rounded-full bg-yellow-400" />
               )}
-            </button>
+            </a>
           );
         })}
       </nav>

@@ -3,8 +3,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
+import { subscribeResidentAllocationSummary, WEEKLY_FUEL_LIMIT } from "@/lib/data/agas";
 import { encodeQR } from "@/lib/qr/qrCodec";
-
+import mapboxgl from "mapbox-gl";
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
     month: "short", day: "numeric", year: "numeric",
@@ -12,6 +13,56 @@ function formatTimestamp(iso: string) {
   });
 }
 
+function formatTransactionDate(value: Date | null) {
+  if (!value) return "Unknown date";
+  return value.toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTransactionTime(value: Date | null) {
+  if (!value) return "--:--";
+  return value.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function matchesTransactionFilter(date: Date | null, filter: string) {
+  if (!date || filter === "All") return true;
+
+  const now = new Date();
+  if (filter === "Today") {
+    return date.toDateString() === now.toDateString();
+  }
+
+  if (filter === "Week") {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    return date >= weekAgo;
+  }
+
+  if (filter === "Month") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+
+  return true;
+}
+
+function toPortalTransaction(transaction) {
+  return {
+    ...transaction,
+    station: transaction.stationName || "Unknown Station",
+    date: formatTransactionDate(transaction.createdAt),
+    time: formatTransactionTime(transaction.createdAt),
+  };
+}
+
+mapboxgl.accessToken =
+  "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
 const NAV_ITEMS = [
   { id: "overview",      icon: "dashboard",       label: "Overview"         },
@@ -112,6 +163,10 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const [txFilter, setTxFilter]         = useState("All");
   const [brandFilter, setBrandFilter]           = useState("All");
   const [selectedStation, setSelectedStation]   = useState<typeof ALL_STATIONS[0] | null>(null);
+  const [transactions, setTransactions] = useState([]);
+  const [weeklyQuota, setWeeklyQuota]   = useState(resident?.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
+  const [used, setUsed]                 = useState(0);
+  const [remaining, setRemaining]       = useState(resident?.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
   const mapRef                          = useRef<HTMLDivElement>(null);
   const mapInst                         = useRef<L.Map | null>(null);
   const markerEls                       = useRef<Record<number, HTMLElement>>({});
@@ -130,14 +185,55 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const registeredAt = resident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 
-  const remaining    = resident?.remaining ?? 12.0;
-  const weeklyQuota  = 20;
-  const used         = weeklyQuota - remaining;
-  const pct          = Math.round((remaining / weeklyQuota) * 100);
-  const totalSpent   = TRANSACTIONS.reduce((s, t) => s + t.liters * t.pricePerLiter, 0);
+  const pct = weeklyQuota > 0 ? Math.round((remaining / weeklyQuota) * 100) : 0;
+  const totalSpent = transactions.reduce((sum, tx) => sum + Number(tx.totalPaid ?? 0), 0);
+  const recentTransactions = transactions.slice(0, 3);
+  const filteredTransactions = transactions.filter((tx) => matchesTransactionFilter(tx.createdAt, txFilter));
 
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
+  const qrData = encodeQR(
+    firstName,
+    lastName,
+    registeredAt,
+    gasType,
+    resident?.uid,
+    plate,
+    vehicleType,
+    barangay,
+    weeklyQuota,
+    used,
+  );
   const circumference = 2 * Math.PI * 22;
+
+  useEffect(() => {
+    if (!resident?.uid) {
+      setTransactions([]);
+      setWeeklyQuota(WEEKLY_FUEL_LIMIT);
+      setUsed(0);
+      setRemaining(WEEKLY_FUEL_LIMIT);
+      return;
+    }
+
+    const fallbackAllocation = resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT;
+    const unsubscribe = subscribeResidentAllocationSummary(
+      resident.uid,
+      (summary) => {
+        setTransactions(summary.transactions.map(toPortalTransaction));
+        setWeeklyQuota(summary.fuelAllocation);
+        setUsed(summary.usedLiters);
+        setRemaining(summary.remainingLiters);
+      },
+      () => {
+        setTransactions([]);
+        setWeeklyQuota(fallbackAllocation);
+        setUsed(0);
+        setRemaining(fallbackAllocation);
+      },
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [resident?.fuelAllocation, resident?.uid]);
 
   /* ── Map (All Stations page) ── */
   useEffect(() => {
@@ -404,13 +500,13 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     </button>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {TRANSACTIONS.map((tx) => (
+                    {recentTransactions.map((tx) => (
                       <div key={tx.id} className="flex items-center gap-4 px-5 py-4">
                         <div className="w-10 h-10 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
                           <span className="text-white font-black text-sm">{initials}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-slate-800">{fullName}</p>
+                          <p className="text-sm font-bold text-slate-800">{tx.stationName || "Unknown Station"}</p>
                           <p className="text-xs text-slate-400">{plate} · {tx.date} · {tx.time}</p>
                           <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${FUEL_BADGE[tx.fuelType] ?? "bg-slate-100 text-slate-600"}`}>
                             {tx.fuelType}
@@ -585,8 +681,8 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               {/* Summary */}
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: "Total Dispensed",  value: `${TRANSACTIONS.reduce((s,t)=>s+t.liters,0).toFixed(1)} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
-                  { label: "Transactions",      value: TRANSACTIONS.length,                                          color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
+                  { label: "Total Dispensed",  value: `${filteredTransactions.reduce((s, t) => s + t.liters, 0).toFixed(1)} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
+                  { label: "Transactions",      value: filteredTransactions.length,                                   color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
                   { label: "Total Spent",       value: `₱${totalSpent.toFixed(2)}`,                                 color: "text-green-700",  bg: "bg-green-50 border-green-200" },
                 ].map((c) => (
                   <div key={c.label} className={`border rounded-2xl p-5 ${c.bg}`}>
@@ -622,7 +718,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   <span className="text-right">Total</span>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {TRANSACTIONS.map((tx) => (
+                  {filteredTransactions.map((tx) => (
                     <div key={tx.id} className="grid grid-cols-6 px-5 py-4 items-center hover:bg-slate-50 transition-colors">
                       <div className="col-span-2 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">

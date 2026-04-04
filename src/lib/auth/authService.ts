@@ -112,6 +112,12 @@ export async function login({ email, password }: { email: string; password: stri
       barangay: data.barangay as string | undefined,
       vehicleType: data.vehicleType as string | undefined,
       gasType: data.gasType as string | undefined,
+      fuelAllocation:
+        typeof data.fuelAllocation === "number" ? data.fuelAllocation : Number(data.fuelAllocation ?? 20),
+      fuelUsed:
+        typeof data.fuelUsed === "number" ? data.fuelUsed : Number(data.fuelUsed ?? 0),
+      fuelWeekKey:
+        typeof data.fuelWeekKey === "string" ? data.fuelWeekKey : undefined,
       registeredAt,
       brand: data.brand as string | undefined,
       stationCode: data.stationCode as string | undefined,

@@ -1,6 +1,13 @@
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
-import { formatDecodedDate } from "@/lib/qr/qrCodec";
+import { useEffect, useMemo, useState } from "react";
+import { formatDecodedDate, type DecodedQR } from "@/lib/qr/qrCodec";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import {
+  recordDispenseTransaction,
+  resolveResidentFromQR,
+  type ResolvedResidentScan,
+  type StationAccount,
+  WEEKLY_FUEL_LIMIT,
+} from "@/lib/data/agas";
 
 type OfficerFuel = {
   officerFirstName?: string;
@@ -41,251 +48,193 @@ function formatLitersFromExactCash(liters: number): string {
 }
 
 type ValidationSuccessProps = {
-  officer?: OfficerFuel;
-  scannedResident?: {
-    firstCode?: string;
-    lastCode?: string;
-    date?: Date | string;
-    gasType?: string;
-    serial?: string;
-  } | null;
+  officer?: StationAccount | null;
+  scannedResident?: DecodedQR | null;
   onBack: () => void;
+  onDispenseSuccess: () => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
 };
+
+function normalizeFuelType(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function getFuelOptions(officer: StationAccount | null | undefined, gasType: string | null | undefined): string[] {
+  const availableFuels = Array.isArray(officer?.availableFuels) && officer.availableFuels.length > 0
+    ? officer.availableFuels
+    : Object.keys(officer?.fuelPrices ?? {});
+
+  const wantsDiesel = normalizeFuelType(gasType).includes("diesel");
+  const filtered = availableFuels.filter((item) => {
+    const isDiesel = item.toLowerCase().includes("diesel");
+    return wantsDiesel ? isDiesel : !isDiesel;
+  });
+
+  return filtered.length > 0 ? filtered : availableFuels;
+}
+
+function fuelTypeTheme(fuelType: string) {
+  const normalized = fuelType.toLowerCase();
+  if (normalized.includes("diesel")) {
+    return { bgFrom: "#dcfce7", bgTo: "#bbf7d0", border: "#86efac", text: "#166534" };
+  }
+  if (normalized.includes("regular") || normalized.includes("unleaded")) {
+    return { bgFrom: "#fee2e2", bgTo: "#fecaca", border: "#fca5a5", text: "#991b1b" };
+  }
+  return { bgFrom: "#ffedd5", bgTo: "#fed7aa", border: "#fdba74", text: "#9a3412" };
+}
 
 export default function ValidationSuccess({
   officer,
   scannedResident,
   onBack,
+  onDispenseSuccess,
   activeTab,
   onTabChange,
 }: ValidationSuccessProps) {
-  const firstName = scannedResident?.firstCode || "JCX";
-  const lastName = scannedResident?.lastCode || "LEQ";
-  const plateNumber = "ABC-1234";
-  const vehicleType = "Motorcycle";
-  const registeredAt = scannedResident?.date
-    ? formatDecodedDate(new Date(scannedResident.date))
-    : null;
-
-  const [fuelConsumed, setFuelConsumed] = useState(12);
-  const [fuelLimit] = useState(20);
+  const [resolvedResident, setResolvedResident] = useState<ResolvedResidentScan | null>(null);
+  const [loadingResident, setLoadingResident] = useState(false);
+  const [lookupError, setLookupError] = useState("");
   const [literInput, setLiterInput] = useState("");
   const [cashInput, setCashInput] = useState("");
   const [inputMode, setInputMode] = useState<"liters" | "cash">("liters");
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [actionError, setActionError] = useState("");
-  const remainingLiters = Math.max(fuelLimit - fuelConsumed, 0);
+  const [submitting, setSubmitting] = useState(false);
 
-  const gasTypeFromQR = (scannedResident?.gasType ?? "").trim();
-  const isDieselType = gasTypeFromQR.toLowerCase().includes("diesel");
-  const fuelOptionButtons = isDieselType
-    ? ["Diesel", "Premium Diesel"]
-    : ["Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"];
+  useEffect(() => {
+    if (!scannedResident) {
+      setResolvedResident(null);
+      setLookupError("No QR payload was provided.");
+      return;
+    }
 
-  const [selectedFuelOption, setSelectedFuelOption] = useState<string>(() => {
-    if (gasTypeFromQR && fuelOptionButtons.includes(gasTypeFromQR)) return gasTypeFromQR;
-    return fuelOptionButtons[0] || "";
-  });
+    let cancelled = false;
+    setLoadingResident(true);
+    setLookupError("");
+    setActionError("");
 
-  const pricePerLiter = useMemo(
-    () => pricePerLiterFor(officer, selectedFuelOption),
-    [officer, selectedFuelOption],
+    void resolveResidentFromQR(scannedResident)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result) {
+          setResolvedResident(null);
+          setLookupError("Resident record was not found for this QR code.");
+          return;
+        }
+        setResolvedResident(result);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedResident(null);
+          setLookupError("Could not validate this QR code against live resident data.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingResident(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scannedResident]);
+
+  const fuelOptionButtons = useMemo(
+    () => getFuelOptions(officer, resolvedResident?.resident.gasType ?? scannedResident?.gasType),
+    [officer, resolvedResident?.resident.gasType, scannedResident?.gasType],
   );
 
-  const litersFromLiterField = parseFloat(literInput);
-  const cashFromCashField = parseFloat(cashInput);
-
-  const maxCashForAllocation = Math.round(remainingLiters * pricePerLiter * 100) / 100;
+  const [selectedFuelOption, setSelectedFuelOption] = useState("");
 
   useEffect(() => {
-    if (inputMode !== "cash") return;
-    const c = parseFloat(cashInput);
-    if (cashInput.trim() === "" || isNaN(c) || c <= 0 || pricePerLiter <= 0) {
-      setLiterInput("");
-      return;
-    }
-    const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
-    if (eff !== c) {
-      setCashInput(pesoInputString(eff));
-    }
-    const L = Math.min(remainingLiters, eff / pricePerLiter);
-    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
-  }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
+    setSelectedFuelOption((current) => {
+      if (current && fuelOptionButtons.includes(current)) return current;
+      return fuelOptionButtons[0] ?? "";
+    });
+  }, [fuelOptionButtons]);
 
-  useEffect(() => {
-    if (inputMode !== "liters") return;
-    const L = parseFloat(literInput);
-    if (literInput.trim() === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
-      setCashInput("");
-      return;
-    }
-    const Lc = Math.min(L, remainingLiters);
-    let cash = Math.round(Lc * pricePerLiter * 100) / 100;
-    cash = Math.min(cash, maxCashForAllocation);
-    setCashInput(pesoInputString(cash));
-    const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-    setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
-  }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
+  const resident = resolvedResident?.resident;
+  const firstName = resident?.firstName || scannedResident?.firstName || scannedResident?.firstCode || "Unknown";
+  const lastName = resident?.lastName || scannedResident?.lastName || scannedResident?.lastCode || "Resident";
+  const plateNumber = resident?.plate || scannedResident?.plate || "N/A";
+  const vehicleType = resident?.vehicleType || scannedResident?.vehicleType || "Vehicle";
+  const registeredAt = resident?.registeredAt
+    ? formatDecodedDate(new Date(resident.registeredAt))
+    : scannedResident?.registeredAt
+      ? formatDecodedDate(new Date(scannedResident.registeredAt))
+      : scannedResident?.date
+        ? formatDecodedDate(new Date(scannedResident.date))
+        : null;
 
-  /** Cash mode: exact amount charged (no ₱ drift from L×price round-trip; cash field is source of truth). */
-  const effectiveCash =
-    inputMode === "cash" &&
-    !isNaN(cashFromCashField) &&
-    cashFromCashField > 0
-      ? Math.min(Math.round(cashFromCashField * 100) / 100, maxCashForAllocation)
-      : 0;
-
-  const litersToDispense =
-    inputMode === "liters"
-      ? !isNaN(litersFromLiterField) && litersFromLiterField > 0
-        ? Math.min(litersFromLiterField, remainingLiters)
-        : 0
-      : effectiveCash > 0 && pricePerLiter > 0
-        ? Math.min(remainingLiters, effectiveCash / pricePerLiter)
-        : 0;
-
-  const cashTotalForDispense =
-    inputMode === "cash" && effectiveCash > 0
-      ? effectiveCash
-      : litersToDispense > 0 && pricePerLiter > 0
-        ? Math.round(litersToDispense * pricePerLiter * 100) / 100
-        : 0;
-
-  const litersLabelForUi =
-    inputMode === "cash" && litersToDispense > 0
-      ? formatLitersFromExactCash(litersToDispense)
-      : litersToDispense.toFixed(2);
-
-  const previewDeduct = litersToDispense;
+  const fuelConsumed = resolvedResident?.usedLiters ?? scannedResident?.fuelUsed ?? 0;
+  const fuelLimit = resident?.fuelAllocation ?? scannedResident?.fuelAllocation ?? WEEKLY_FUEL_LIMIT;
+  const hasAllocationSource =
+    resolvedResident?.remainingLiters != null ||
+    scannedResident?.fuelAllocation != null ||
+    scannedResident?.fuelUsed != null;
+  const remainingLiters = hasAllocationSource
+    ? Math.max(fuelLimit - fuelConsumed, 0)
+    : 0;
+  const inputLiters = parseFloat(literInput);
+  const previewDeduct = !Number.isNaN(inputLiters) && inputLiters > 0 ? inputLiters : 0;
   const previewRemaining = Math.max(remainingLiters - previewDeduct, 0);
+  const selectedPrice = Number(officer?.fuelPrices?.[selectedFuelOption] ?? 0);
+  const selectedInventory = Number(officer?.fuelInventory?.[selectedFuelOption] ?? 0);
+  const selectedTheme = fuelTypeTheme(selectedFuelOption || resolvedResident?.resident.gasType || "Fuel");
+  const isLow = previewRemaining <= 7;
+  const circleColor = isLow ? "#dc2626" : "#16a34a";
+  const allocationBg = isLow ? "#fef2f2" : "#f0fdf4";
+  const allocationBorder = isLow ? "#fca5a5" : "#e5e5eb";
+  const textColor = isLow ? "#dc2626" : "#15803d";
+  const textMutedColor = isLow ? "#991b1b" : "#166534";
+  const barColor = isLow ? "#ef4444" : "#16a34a";
 
-  const handleConfirmDispense = () => {
-    if (litersToDispense <= 0) {
-      setActionError(
-        inputMode === "liters"
-          ? "Please enter liters before confirming dispense."
-          : "Please enter a valid cash amount before confirming dispense.",
-      );
+  const handleConfirmDispense = async () => {
+    const liters = parseFloat(literInput);
+    if (Number.isNaN(liters) || liters <= 0) {
+      setActionError("Please enter liters before confirming dispense.");
       return;
     }
-    if (fuelConsumed + litersToDispense > fuelLimit) {
+
+    if (!resident?.uid || !officer?.uid) {
+      setActionError("Resident or station account data is missing.");
+      return;
+    }
+
+    if (liters > remainingLiters) {
       setShowLimitModal(true);
       return;
     }
-    setFuelConsumed((prev) => prev + litersToDispense);
-    setActionError("");
-    onBack();
-  };
 
-  const switchInputMode = (mode: "liters" | "cash") => {
-    if (mode === inputMode) return;
-    if (mode === "cash") {
-      const L = parseFloat(literInput);
-      if (!isNaN(L) && L > 0 && pricePerLiter > 0) {
-        const cash = Math.min(Math.round(L * pricePerLiter * 100) / 100, maxCashForAllocation);
-        setCashInput(pesoInputString(cash));
-        const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-        setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
-      } else {
-        const c = parseFloat(cashInput);
-        if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
-          const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
-          const L2 = Math.min(remainingLiters, eff / pricePerLiter);
-          setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
-        }
-      }
-    } else {
-      const c = parseFloat(cashInput);
-      if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
-        const capped = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
-        const L = Math.min(remainingLiters, capped / pricePerLiter);
-        setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
-      }
-    }
-    setInputMode(mode);
-    setActionError("");
-  };
-  const displayFuelType = selectedFuelOption.toLowerCase().includes("diesel")
-    ? "Diesel"
-    : "Gasoline";
-
-  const fuelTypeTheme = selectedFuelOption.toLowerCase().includes("diesel")
-    ? { bgFrom: "#dcfce7", bgTo: "#bbf7d0", border: "#86efac", text: "#166534" }
-    : selectedFuelOption.toLowerCase().includes("regular")
-      ? { bgFrom: "#fee2e2", bgTo: "#fecaca", border: "#fca5a5", text: "#991b1b" }
-      : { bgFrom: "#ffedd5", bgTo: "#fed7aa", border: "#fdba74", text: "#9a3412" };
-  const isLow = previewRemaining <= 7;
-  const circleColor    = isLow ? "#dc2626" : "#16a34a";
-  const allocationBg   = isLow ? "#fef2f2" : "#f0fdf4";
-  const allocationBorder = isLow ? "#fca5a5" : "#e5e5eb";
-  const textColor      = isLow ? "#dc2626" : "#15803d";
-  const textMutedColor = isLow ? "#991b1b" : "#166534";
-  const barColor       = isLow ? "#ef4444" : "#16a34a";
-
-  const onConversionPesoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    const val = parseFloat(raw);
-    let next = raw;
-    if (!isNaN(val) && val > maxCashForAllocation) {
-      next = pesoInputString(maxCashForAllocation);
-    }
-    setCashInput(next);
-    const c = parseFloat(next);
-    if (raw === "" || isNaN(c) || c <= 0 || pricePerLiter <= 0) {
-      setLiterInput("");
-      setActionError("");
+    if (liters > selectedInventory) {
+      setActionError("Station inventory is not enough for this request.");
       return;
     }
-    const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
-    const L = Math.min(remainingLiters, eff / pricePerLiter);
-    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
-    setActionError("");
-  };
 
-  const onConversionLiterChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    if (inputMode === "cash") {
-      setLiterInput(raw);
-      const L = parseFloat(raw);
-      if (raw === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
-        setCashInput("");
-        setActionError("");
-        return;
-      }
-      const Lcapped = Math.min(L, remainingLiters);
-      let cash = Math.round(Lcapped * pricePerLiter * 100) / 100;
-      cash = Math.min(cash, maxCashForAllocation);
-      setCashInput(pesoInputString(cash));
-      const LfromCash = Math.min(remainingLiters, cash / pricePerLiter);
-      setLiterInput(LfromCash > 0 ? formatLitersFromExactCash(LfromCash) : "");
-      setActionError("");
+    if (!selectedFuelOption) {
+      setActionError("Select a fuel type before confirming.");
       return;
     }
-    const val = parseFloat(raw);
-    let nextL = raw;
-    if (!isNaN(val) && val > remainingLiters) {
-      nextL = String(remainingLiters);
-    }
-    setLiterInput(nextL);
-    const L = parseFloat(nextL);
-    if (raw === "" || isNaN(L) || L <= 0 || pricePerLiter <= 0) {
-      setCashInput("");
-      setActionError("");
-      return;
-    }
-    const Lc = Math.min(L, remainingLiters);
-    let cash = Math.round(Lc * pricePerLiter * 100) / 100;
-    if (cash > maxCashForAllocation) {
-      cash = maxCashForAllocation;
-      setCashInput(pesoInputString(cash));
-      const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-      setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
-    } else {
-      setCashInput(pesoInputString(cash));
-    }
+
+    setSubmitting(true);
     setActionError("");
+
+    try {
+      await recordDispenseTransaction({
+        stationUid: officer.uid,
+        residentUid: resident.uid,
+        liters,
+        fuelType: selectedFuelOption,
+      });
+      onDispenseSuccess();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to record this dispense transaction.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -297,11 +246,10 @@ export default function ValidationSuccess({
             "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='0.03' fill-rule='evenodd'/%3E%3C/svg%3E\")",
         }}
       >
-        <div className=" bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
-          {/* Status Header */}
-          <div className="p-5 text-center relative"
-            style={{ background: "linear-gradient(135deg, #003366 0%, #001e40 100%)" }}>
-            <div className="absolute inset-0 opacity-10"
+        <div className="bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
+          <div className="p-5 text-center relative" style={{ background: "linear-gradient(135deg, #003366 0%, #001e40 100%)" }}>
+            <div
+              className="absolute inset-0 opacity-10"
               style={{
                 backgroundImage:
                   "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23003366' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E\")",
@@ -309,8 +257,7 @@ export default function ValidationSuccess({
             />
             <div className="relative z-10 flex flex-col items-center">
               <div className="w-14 h-14 bg-[#2e7d32] rounded-full flex items-center justify-center mb-3 shadow-xl">
-                <span className="material-symbols-outlined text-3xl text-white"
-                  style={{ fontVariationSettings: "'FILL' 1" }}>
+                <span className="material-symbols-outlined text-3xl text-white" style={{ fontVariationSettings: "'FILL' 1" }}>
                   check_circle
                 </span>
               </div>
@@ -320,7 +267,16 @@ export default function ValidationSuccess({
           </div>
 
           <div className="p-6 space-y-4">
-            {/* Resident Identity */}
+            {(loadingResident || lookupError) && (
+              <div className={`rounded-xl border px-4 py-3 text-sm ${
+                loadingResident
+                  ? "bg-slate-50 border-slate-200 text-slate-500"
+                  : "bg-red-50 border-red-200 text-red-700"
+              }`}>
+                {loadingResident ? "Loading live resident data..." : lookupError}
+              </div>
+            )}
+
             <div className="bg-surface-container-low rounded-xl p-4 space-y-3">
               <p className="text-outline text-xs font-bold tracking-widest uppercase text-center">Verified Resident</p>
               <div className="grid grid-cols-2 gap-2">
@@ -339,23 +295,23 @@ export default function ValidationSuccess({
                 <p className="text-outline text-xs font-bold uppercase tracking-wider mt-2">Vehicle Type</p>
                 <p className="font-headline font-bold text-xl text-on-surface">{vehicleType}</p>
               </div>
-              {displayFuelType && (
+              {selectedFuelOption && (
                 <div
-                  className="mx-auto w-full max-w-[240px] rounded-full border px-4 py-2 flex items-center justify-center gap-2 shadow-sm"
+                  className="mx-auto w-full max-w-[260px] rounded-full border px-4 py-2 flex items-center justify-center gap-2 shadow-sm"
                   style={{
-                    backgroundImage: `linear-gradient(to right, ${fuelTypeTheme.bgFrom}, ${fuelTypeTheme.bgTo})`,
-                    borderColor: fuelTypeTheme.border,
+                    backgroundImage: `linear-gradient(to right, ${selectedTheme.bgFrom}, ${selectedTheme.bgTo})`,
+                    borderColor: selectedTheme.border,
                   }}
                 >
                   <span
                     className="material-symbols-outlined"
-                    style={{ color: fuelTypeTheme.text, fontSize: "18px", fontVariationSettings: "'FILL' 1" }}
+                    style={{ color: selectedTheme.text, fontSize: "18px", fontVariationSettings: "'FILL' 1" }}
                   >
                     local_gas_station
                   </span>
                   <div className="text-center">
-                    <p className="text-[11px] font-bold uppercase tracking-wider leading-none" style={{ color: fuelTypeTheme.text }}>Fuel Type</p>
-                    <p className="text-lg font-black leading-tight" style={{ color: fuelTypeTheme.text }}>{displayFuelType}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wider leading-none" style={{ color: selectedTheme.text }}>Dispense Fuel</p>
+                    <p className="text-lg font-black leading-tight" style={{ color: selectedTheme.text }}>{selectedFuelOption}</p>
                   </div>
                 </div>
               )}
@@ -364,12 +320,8 @@ export default function ValidationSuccess({
               )}
             </div>
 
-            {/* Transaction Details */}
             <div className="space-y-4">
-              <div
-                className="rounded-2xl p-3 sm:p-4 border overflow-hidden"
-                style={{ background: allocationBg, borderColor: allocationBorder }}
-              >
+              <div className="rounded-2xl p-3 sm:p-4 border overflow-hidden" style={{ background: allocationBg, borderColor: allocationBorder }}>
                 <div className="flex items-start justify-between gap-2 sm:gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider" style={{ color: textMutedColor }}>Fuel Allocation</p>
@@ -386,22 +338,22 @@ export default function ValidationSuccess({
                   </div>
                   {(() => {
                     const pct = Math.round((previewRemaining / fuelLimit) * 100);
-                    const r = 22;
-                    const circ = 2 * Math.PI * r;
-                    const dash = (pct / 100) * circ;
+                    const radius = 22;
+                    const circumference = 2 * Math.PI * radius;
+                    const dash = (pct / 100) * circumference;
                     return (
                       <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
                         <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90 absolute inset-0">
-                          {/* Track */}
-                          <circle cx="32" cy="32" r={r} fill="none" stroke={allocationBorder} strokeWidth="5" />
-                          {/* Arc */}
+                          <circle cx="32" cy="32" r={radius} fill="none" stroke={allocationBorder} strokeWidth="5" />
                           <circle
-                            cx="32" cy="32" r={r}
+                            cx="32"
+                            cy="32"
+                            r={radius}
                             fill="none"
                             stroke={circleColor}
                             strokeWidth="5"
                             strokeLinecap="round"
-                            strokeDasharray={`${dash} ${circ}`}
+                            strokeDasharray={`${dash} ${circumference}`}
                           />
                         </svg>
                         <div className="relative flex flex-col items-center leading-none">
@@ -418,47 +370,17 @@ export default function ValidationSuccess({
                     className="h-full rounded-full flex items-center justify-end pr-2"
                     style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}
                   >
-                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
+                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed.toFixed(1)}L used</span>
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-end text-base sm:text-2xl font-bold" style={{ color: textColor }}>
-
                   <span className="text-right">Total: {fuelLimit} L / week</span>
                 </div>
               </div>
 
-              {/* Amount input: Liters vs Cash (₱) */}
               <div className="bg-surface-container-low p-4 rounded-xl flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-outline text-[12px] font-bold uppercase tracking-wider">Dispense amount</span>
-                  <div className="relative flex w-[min(100%,220px)] gap-1 rounded-xl bg-slate-200/70 p-1 shrink-0">
-                    <div
-                      className={`absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-lg bg-[#003366] shadow-sm transition-transform duration-300 ease-out ${
-                        inputMode === "cash" ? "translate-x-0" : "translate-x-[calc(100%+0.25rem)]"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => switchInputMode("cash")}
-                      className={`relative z-10 flex-1 min-w-0 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
-                        inputMode === "cash" ? "text-white" : "text-slate-600"
-                      }`}
-                    >
-                      Cash (₱)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => switchInputMode("liters")}
-                      className={`relative z-10 flex-1 min-w-0 rounded-lg py-2 text-[11px] font-black uppercase tracking-wide transition-colors duration-300 ${
-                        inputMode === "liters" ? "text-white" : "text-slate-600"
-                      }`}
-                    >
-                      Liters
-                    </button>
-                  </div>
-                </div>
-
-                <div className={`grid gap-2 ${isDieselType ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-3"}`}>
+                <label className="text-outline text-[12px] font-bold uppercase tracking-wider">Input Liter</label>
+                <div className={`grid gap-2 ${fuelOptionButtons.length <= 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
                   {fuelOptionButtons.map((option) => {
                     const active = selectedFuelOption === option;
                     return (
@@ -480,76 +402,67 @@ export default function ValidationSuccess({
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-slate-600 -mt-1">
-                  <span className="font-bold text-[#003366]">₱{formatPeso(pricePerLiter)}</span>
-                  <span className="text-outline"> / L</span>
-                  {officer?.fuelPrices?.[selectedFuelOption] != null ? (
-                    <span className="text-outline"> · station price</span>
-                  ) : (
-                    <span className="text-outline"> · default until set in Fuel &amp; pricing</span>
-                  )}
-                </p>
+
+                {selectedFuelOption && (
+                  <div className="grid grid-cols-2 gap-3 rounded-xl bg-white p-3 border border-outline-variant/20">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Price / Liter</p>
+                      <p className="text-lg font-black text-[#003366]">₱{selectedPrice.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Station Stock</p>
+                      <p className="text-lg font-black text-[#003366]">{selectedInventory.toFixed(1)} L</p>
+                    </div>
+                  </div>
+                )}
 
                 {remainingLiters <= 0 ? (
                   <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold px-4 py-3 text-center">
-                    No allocation remaining — this resident has used their full weekly limit.
+                    No allocation remaining. This resident has used the full weekly limit.
                   </div>
                 ) : (
                   <>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-outline">Conversion</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div
-                        className={`relative min-w-0 ${inputMode === "cash" ? "order-1" : "order-2"}`}
-                      >
-                        <span
-                          className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg font-black ${
-                            inputMode === "liters" ? "text-slate-400" : "text-[#003366]"
-                          }`}
-                        >
-                          ₱
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={maxCashForAllocation}
-                          step="0.01"
-                          value={cashInput}
-                          onChange={onConversionPesoChange}
-                          placeholder={formatPeso(0)}
-                          disabled={inputMode === "liters"}
-                          className={`w-full rounded-lg border py-3 pl-9 pr-3 outline-none disabled:opacity-100 ${
-                            inputMode === "liters"
-                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-800"
-                              : "border-outline-variant/30 bg-white text-on-surface focus:border-[#003366]"
-                          }`}
-                        />
-                      </div>
-                      <div
-                        className={`relative min-w-0 ${inputMode === "cash" ? "order-2" : "order-1"}`}
-                      >
-                        <input
-                          type="number"
-                          min="0"
-                          max={remainingLiters}
-                          step={inputMode === "liters" ? "0.1" : "any"}
-                          value={literInput}
-                          onChange={onConversionLiterChange}
-                          placeholder="0"
-                          disabled={inputMode === "cash"}
-                          className={`w-full rounded-lg border py-3 pl-3 pr-10 outline-none disabled:opacity-100 ${
-                            inputMode === "cash"
-                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-800"
-                              : "border-outline-variant/30 bg-white text-on-surface focus:border-[#003366]"
-                          }`}
-                        />
-                        <span
-                          className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg font-black ${
-                            inputMode === "cash" ? "text-slate-400" : "text-[#003366]"
-                          }`}
-                        >
-                          L
-                        </span>
-                      </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Math.min(remainingLiters, selectedInventory)}
+                      step="0.1"
+                      value={literInput}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value);
+                        const maxValue = Math.min(remainingLiters, selectedInventory || remainingLiters);
+                        if (!Number.isNaN(value) && value > maxValue) {
+                          setLiterInput(String(maxValue));
+                        } else {
+                          setLiterInput(e.target.value);
+                        }
+                        setActionError("");
+                      }}
+                      placeholder={`Max ${Math.min(remainingLiters, selectedInventory || remainingLiters).toFixed(1)} L`}
+                      className="w-full rounded-lg border border-outline-variant/30 px-4 py-3 text-on-surface bg-white outline-none focus:border-[#003366]"
+                    />
+                    <div className="grid grid-cols-5 gap-2">
+                      {[2, 5, 10, 15, 20].map((amount) => {
+                        const exceeds = amount > remainingLiters || amount > selectedInventory;
+                        return (
+                          <button
+                            key={amount}
+                            type="button"
+                            disabled={exceeds}
+                            onClick={() => {
+                              setLiterInput(String(amount));
+                              setActionError("");
+                            }}
+                            className={`rounded-lg border py-2.5 text-sm font-bold transition-all ${
+                              exceeds
+                                ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed"
+                                : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"
+                            }`}
+                          >
+                            {amount} L
+                          </button>
+                        );
+                      })}
                     </div>
                     <p className="text-[10px] text-slate-500 -mt-1">
                       Max ₱{formatPeso(maxCashForAllocation)} · {remainingLiters.toFixed(1)} L allocation
@@ -632,12 +545,10 @@ export default function ValidationSuccess({
               </div>
             </div>
 
-            {/* Info Banner */}
             <div className="bg-tertiary-fixed/30 border-l-4 border-tertiary p-4 rounded-r-lg flex gap-3">
               <span className="material-symbols-outlined text-tertiary shrink-0">info</span>
               <p className="text-sm text-on-tertiary-fixed-variant leading-tight">
-                Allocation is valid for immediate dispensing at the designated pump station.
-                Please ensure fuel nozzle is securely attached.
+                This dispense is recorded against live resident allocation and live station inventory.
               </p>
             </div>
 
@@ -647,26 +558,30 @@ export default function ValidationSuccess({
               </div>
             )}
 
-            {/* Action Buttons */}
             <div className="flex flex-col gap-3 pt-2">
               <button
-                onClick={handleConfirmDispense}
-                disabled={remainingLiters <= 0 || litersToDispense <= 0}
+                onClick={() => void handleConfirmDispense()}
+                disabled={
+                  loadingResident ||
+                  submitting ||
+                  !resident?.uid ||
+                  remainingLiters <= 0 ||
+                  !literInput ||
+                  parseFloat(literInput) <= 0
+                }
                 className={`w-full font-headline font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                  remainingLiters > 0 && litersToDispense > 0
+                  !loadingResident &&
+                  !submitting &&
+                  resident?.uid &&
+                  remainingLiters > 0 &&
+                  literInput &&
+                  parseFloat(literInput) > 0
                     ? "bg-[#2e7d32] text-white active:scale-95 active:bg-[#1b5e20]"
                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
                 }`}
               >
                 <span className="material-symbols-outlined">gas_meter</span>
-                <span className="flex flex-col items-center leading-tight">
-                  <span>Confirm Dispense</span>
-                  {litersToDispense > 0 && (
-                    <span className="text-[11px] font-bold opacity-90 mt-0.5">
-                      {litersLabelForUi} L · ₱{formatPeso(cashTotalForDispense)}
-                    </span>
-                  )}
-                </span>
+                {submitting ? "Recording Dispense..." : "Confirm Dispense"}
               </button>
               <button
                 onClick={onBack}
@@ -686,14 +601,12 @@ export default function ValidationSuccess({
 
       <BottomNav active={activeTab} onChange={onTabChange} />
 
-      {/* Fuel Limit Modal */}
       {showLimitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex flex-col items-center text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-                <span className="material-symbols-outlined text-red-600"
-                  style={{ fontSize: "32px", fontVariationSettings: "'FILL' 1" }}>
+                <span className="material-symbols-outlined text-red-600" style={{ fontSize: "32px", fontVariationSettings: "'FILL' 1" }}>
                   warning
                 </span>
               </div>
@@ -702,7 +615,7 @@ export default function ValidationSuccess({
                 This fuel request exceeds the allowed limit for this resident.
               </p>
               <div className="mt-4 w-full rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                <p><span className="font-semibold">Consumed:</span> {fuelConsumed}L</p>
+                <p><span className="font-semibold">Consumed:</span> {fuelConsumed.toFixed(1)}L</p>
                 <p><span className="font-semibold">Limit:</span> {fuelLimit}L</p>
               </div>
               <button

@@ -135,6 +135,7 @@ npm run build
 - Firebase Hosting serves the SPA
 - Hosting rewrites `/api/registerResident` to the backend function in production
 - Admin provisioning is intentionally kept out of Hosting routes and public UI
+- Firestore Rules should be deployed together with frontend and Functions changes when resident fuel allocation logic changes
 
 ## Station Invite Email Setup
 
@@ -174,3 +175,24 @@ Station online/offline state in the admin dashboard is presence-based:
 - at least one assigned station user currently active: station is `Online`
 
 Pending invited users do not count as online until they accept the invite and sign in.
+
+## Weekly Fuel Quota Behavior
+
+- Resident quota defaults to `20L` per week.
+- Resident `fuelUsed` is tracked against `fuelWeekKey`.
+- The app treats resident usage as reset when `fuelWeekKey` is from an older week.
+- No cron or scheduled reset job is required for the weekly resident quota.
+- Station dispense updates resident `fuelUsed`, resident `fuelWeekKey`, station inventory, and the `transactions` collection in one flow.
+
+## Data Collections Used By Resident And Station Portals
+
+### `accounts`
+
+- Resident records include profile fields, `fuelAllocation`, `fuelUsed`, and `fuelWeekKey`.
+- Station records include station assignment, online presence, fuel inventory, capacities, and prices.
+
+### `transactions`
+
+- Each transaction stores the resident plate, station branch reference via `stationId`, liters dispensed, peso amount, and the transaction timestamp.
+- Resident users only see their own transactions.
+- Station users only see transactions recorded by their own station account.

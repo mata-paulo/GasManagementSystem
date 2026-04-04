@@ -1,6 +1,11 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/app/providers/AuthContext";
-import { acceptPendingStationAssignment } from "@/lib/data/agas";
+import {
+  acceptPendingStationAssignment,
+  fetchResidentAccount,
+  fetchStationAccount,
+  saveStationFuelSettings,
+} from "@/lib/data/agas";
 import ChangePassword from "@/features/account/pages/ChangePassword";
 import Settings from "@/features/account/pages/Settings";
 import AdminDashboard from "@/features/admin/pages/AdminDashboard";
@@ -21,6 +26,17 @@ import ScanHistory from "@/features/station/pages/ScanHistory";
 import StationFuelSetup from "@/features/station/pages/StationFuelSetup";
 import ValidationSuccess from "@/features/station/pages/ValidationSuccess";
 import RoleGuard from "@/shared/guards/RoleGuard";
+import {
+  getStationPath,
+  getStationTabFromPath,
+  type StationNavId,
+} from "@/shared/navigation/stationRoutes";
+
+function stationTabToScreen(tab: StationNavId): "dashboard" | "history" | "settings" {
+  if (tab === "history") return "history";
+  if (tab === "settings") return "settings";
+  return "dashboard";
+}
 
 // ─── Splash shown while restoring session from localStorage ──────────────────
 function SplashScreen() {
@@ -48,6 +64,42 @@ export default function App() {
   const [resident, setResident] = useState(null);
   const [scannedResident, setScannedResident] = useState(null);
   const [oobCode, setOobCode] = useState<string | null>(null);
+
+  const refreshPortalUser = useCallback(async () => {
+    const uid = typeof auth.user?.uid === "string" ? auth.user.uid : "";
+    if (!uid) return;
+
+    if (auth.role === "station") {
+      const nextOfficer = await fetchStationAccount(uid);
+      if (nextOfficer) {
+        setOfficer(nextOfficer);
+        setLastUpdated(nextOfficer.updatedAt ? new Date(nextOfficer.updatedAt) : null);
+      }
+      return;
+    }
+
+    if (auth.role === "resident") {
+      const nextResident = await fetchResidentAccount(uid);
+      if (nextResident) {
+        setResident(nextResident);
+      }
+    }
+  }, [auth.role, auth.user]);
+
+  const syncStationLocation = useCallback((tab: StationNavId, replace = false) => {
+    const nextPath = getStationPath(tab);
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+    if (currentPath === nextPath) return;
+
+    const historyMethod = replace ? "replaceState" : "pushState";
+    window.history[historyMethod]({}, "", nextPath);
+  }, []);
+
+  const navigateStation = useCallback((tab: StationNavId, replace = false) => {
+    setActiveTab(tab);
+    setScreen(stationTabToScreen(tab));
+    syncStationLocation(tab, replace);
+  }, [syncStationLocation]);
 
   // Once auth state is restored, route to the correct portal
   useEffect(() => {
@@ -78,7 +130,8 @@ export default function App() {
     }
     if (auth.role === "station") {
       setOfficer(auth.user);
-      setScreen("dashboard");
+      const stationTab = getStationTabFromPath(window.location.pathname) ?? "dashboard";
+      navigateStation(stationTab, true);
     } else if (auth.role === "resident") {
       setResident(auth.user);
       setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
@@ -87,7 +140,15 @@ export default function App() {
     } else {
       setScreen("landing");
     }
-  }, [loading, auth.isAuthenticated, auth.role, auth.user]);
+  }, [loading, auth.isAuthenticated, auth.role, auth.user, navigateStation]);
+
+  useEffect(() => {
+    if (loading || !auth.isAuthenticated || !auth.role || typeof auth.user?.uid !== "string") {
+      return;
+    }
+
+    void refreshPortalUser().catch(() => undefined);
+  }, [auth.isAuthenticated, auth.role, auth.user, loading, refreshPortalUser]);
 
   useEffect(() => {
     if (loading || !auth.isAuthenticated || auth.role !== "station") return;
@@ -99,20 +160,36 @@ export default function App() {
     let cancelled = false;
     void acceptPendingStationAssignment(uid).then((accepted) => {
       if (!accepted || cancelled) return;
-      setOfficer((prev) => (prev ? { ...prev, assignmentStatus: "active" } : prev));
+      void refreshPortalUser().catch(() => undefined);
     }).catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-  }, [loading, auth.isAuthenticated, auth.role, auth.user]);
+  }, [loading, auth.isAuthenticated, auth.role, auth.user, refreshPortalUser]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (auth.role !== "station") return;
+
+      const stationTab = getStationTabFromPath(window.location.pathname);
+      if (!stationTab) return;
+
+      setActiveTab(stationTab);
+      setScreen(stationTabToScreen(stationTab));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [auth.role]);
 
   // ─── Tab navigation ────────────────────────────────────────────────────────
   const handleOfficerTabChange = (tab) => {
-    setActiveTab(tab);
-    if (tab === "dashboard") setScreen("dashboard");
-    else if (tab === "history") setScreen("history");
-    else if (tab === "settings") setScreen("settings");
+    if (tab === "dashboard" || tab === "history" || tab === "settings") {
+      navigateStation(tab);
+    }
   };
 
   const handleUserTabChange = (tab) => {
@@ -132,8 +209,7 @@ export default function App() {
     login(user, role);
     if (role === "station") {
       setOfficer(user);
-      setScreen("dashboard");
-      setActiveTab("dashboard");
+      navigateStation("dashboard", true);
     } else if (role === "resident") {
       setResident(user);
       setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
@@ -153,8 +229,7 @@ export default function App() {
 
   const handleStationRegisterSuccess = (stationData) => {
     setOfficer(stationData);
-    setScreen("dashboard");
-    setActiveTab("dashboard");
+    navigateStation("dashboard", true);
   };
 
   // ─── Scanner ───────────────────────────────────────────────────────────────
@@ -164,8 +239,12 @@ export default function App() {
     setScreen("validation");
   };
   const handleValidationBack = () => {
-    setScreen("dashboard");
-    setActiveTab("dashboard");
+    navigateStation("dashboard");
+  };
+  const handleDispenseSuccess = async () => {
+    await refreshPortalUser();
+    setLastUpdated(new Date());
+    navigateStation("dashboard");
   };
 
   // ─── Logout ────────────────────────────────────────────────────────────────
@@ -174,6 +253,8 @@ export default function App() {
     setOfficer(null);
     setResident(null);
     if (window.location.pathname.startsWith("/admin")) {
+      window.history.replaceState({}, "", "/");
+    } else if (auth.role === "station") {
       window.history.replaceState({}, "", "/");
     }
     setScreen("landing");
@@ -279,6 +360,7 @@ export default function App() {
           officer={officer}
           scannedResident={scannedResident}
           onBack={handleValidationBack}
+          onDispenseSuccess={() => void handleDispenseSuccess()}
           activeTab={activeTab}
           onTabChange={handleOfficerTabChange}
         />
@@ -384,24 +466,17 @@ export default function App() {
         <StationFuelSetup
           officer={officer}
           onBack={() => {
-            setScreen("dashboard");
-            setActiveTab("dashboard");
+            navigateStation("dashboard");
           }}
-          onSave={(payload) => {
-            setOfficer((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    fuelInventory: payload.fuelInventory,
-                    fuelCapacities: payload.fuelCapacities,
-                    fuelPrices: payload.fuelPrices,
-                    availableFuels: Object.keys(payload.fuelInventory),
-                  }
-                : prev
-            );
-            setLastUpdated(new Date());
-            setScreen("dashboard");
-            setActiveTab("dashboard");
+          onSave={async (payload) => {
+            if (typeof officer?.uid === "string") {
+              const nextOfficer = await saveStationFuelSettings(officer.uid, payload);
+              if (nextOfficer) {
+                setOfficer(nextOfficer);
+                setLastUpdated(nextOfficer.updatedAt ? new Date(nextOfficer.updatedAt) : new Date());
+              }
+            }
+            navigateStation("dashboard");
           }}
         />
       </RoleGuard>

@@ -25,9 +25,27 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function stationCanUpdateResidentFuelUsage() {
+      return isStation()
+        && resource.data.role == "resident"
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fuelUsed", "fuelWeekKey", "updatedAt"])
+        && request.resource.data.fuelUsed is number
+        && request.resource.data.fuelUsed >= 0
+        && (
+          !request.resource.data.keys().hasAny(["fuelWeekKey"])
+          || request.resource.data.fuelWeekKey is string
+        )
+        && (
+          request.resource.data.fuelWeekKey != resource.data.fuelWeekKey
+          || !(resource.data.fuelUsed is number)
+          || request.resource.data.fuelUsed >= resource.data.fuelUsed
+        );
+    }
+
     match /accounts/{uid} {
       allow read: if isOwner(uid) || isAdmin() || (isStation() && resource.data.role in ["resident", "station"]);
-      allow update: if isOwner(uid) && isStation();
+      allow update: if (isOwner(uid) && isStation()) || stationCanUpdateResidentFuelUsage();
       allow create, delete: if false;
     }
 

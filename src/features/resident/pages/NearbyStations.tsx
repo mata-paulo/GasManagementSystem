@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
-import { fetchStationDirectory, type StationDirectoryRecord } from "@/lib/data/agas";
+import { fetchStationDirectory } from "@/lib/data/agas";
 
 
 const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
@@ -161,7 +161,8 @@ function normalizeStationBrand(brand) {
 
 function mapDirectoryStation(station) {
   return {
-    id: station.sourceId,
+    id: station.id,
+    sourceId: station.sourceId,
     name: station.name,
     brand: normalizeStationBrand(station.brand),
     address: station.address,
@@ -225,10 +226,10 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
   const drawerOpen = drawerHeight > PEEK_HEIGHT + 20;
   const drawerRef = useRef<HTMLDivElement>(null);
-  const stationRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const stationRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const stationListRef = useRef<HTMLDivElement>(null);
   const handleBarRef = useRef<HTMLDivElement>(null);
-  const markerElsRef = useRef<Record<number, HTMLElement>>({});
+  const markerElsRef = useRef<Record<string, HTMLElement>>({});
 
   useEffect(() => {
     const el = drawerRef.current;
@@ -302,23 +303,18 @@ export default function NearbyStations({ activeTab, onTabChange }) {
 
       try {
         const directoryStations = await fetchStationDirectory();
-        const sourceStations = directoryStations.length > 0
-          ? directoryStations.map((station) => mapDirectoryStation(station))
-          : STATIC_STATIONS;
 
         if (cancelled) return;
 
-        const withDistance = sourceStations
+        const withDistance = directoryStations
+          .map((station) => mapDirectoryStation(station))
           .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
           .sort((a, b) => a.distance - b.distance);
         setStations(withDistance);
       } catch {
         if (cancelled) return;
 
-        const withDistance = STATIC_STATIONS
-          .map((st) => ({ ...st, distance: getDistance(lat, lon, st.lat, st.lon) }))
-          .sort((a, b) => a.distance - b.distance);
-        setStations(withDistance);
+        setStations([]);
       } finally {
         if (!cancelled) {
           setLoadingStations(false);
