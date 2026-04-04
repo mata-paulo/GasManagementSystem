@@ -44,19 +44,31 @@ type AdminMockCatalog = {
   brandColors: Record<string, BrandColor>;
 };
 
+function readProjectIdFromEnvSource(source: string): string | undefined {
+  for (const key of ["VITE_FIREBASE_PROJECT_ID", "VITE_PUBLIC_FIREBASE_PROJECT_ID"]) {
+    const match = source.match(
+      new RegExp(`^${key}\\s*=\\s*["']?([^"'\\r\\n]+)["']?\\s*$`, "m")
+    );
+    if (match?.[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+  return undefined;
+}
+
 function readProjectIdFromEnvFile(): string | undefined {
   const candidates = [
+    path.resolve(process.cwd(), "..", ".env.local"),
     path.resolve(process.cwd(), "..", ".env"),
+    path.resolve(process.cwd(), ".env.local"),
     path.resolve(process.cwd(), ".env"),
   ];
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
     const source = fs.readFileSync(candidate, "utf8");
-    const match = source.match(/^VITE_FIREBASE_PROJECT_ID\s*=\s*["']?(.+?)["']?\s*$/m);
-    if (match?.[1]) {
-      return match[1].trim();
-    }
+    const id = readProjectIdFromEnvSource(source);
+    if (id) return id;
   }
 
   return undefined;
@@ -102,7 +114,7 @@ function loadResidentStaticStations(): ResidentCatalogStation[] {
     getSourceFilePath(path.join("src", "features", "resident", "pages", "NearbyStations.tsx")),
     "utf8"
   );
-  const stations = extractConstValue(source, "STATIC_STATIONS", "function getBrandFuels");
+  const stations = extractConstValue(source, "STATIC_STATIONS", "function normalizeBrandKey");
 
   if (!Array.isArray(stations)) {
     throw new Error("Parsed STATIC_STATIONS value is not an array");
