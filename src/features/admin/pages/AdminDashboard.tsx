@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   WEEKLY_FUEL_LIMIT,
   assignStationUser,
@@ -10,7 +11,6 @@ import {
   type AdminDashboardData,
 } from "@/lib/data/agas";
 
-mapboxgl.accessToken = "pk.eyJ1IjoibWF0YWRldnMiLCJhIjoiY21mNmdhc3YyMGcxdzJrb21xZm80c3NpbCJ9.R0nU8Ip_9RCo-Q2aWxAbXA";
 
 /* ─── Mock Data ─── */
 const STATIC_STATIONS = [
@@ -560,8 +560,9 @@ export default function AdminDashboard({ onLogout }) {
   });
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const mapRef   = useRef(null);
-  const mapInst  = useRef(null);
+  const mapRef        = useRef(null);
+  const mapInst       = useRef<L.Map | null>(null);
+  const mapMarkersRef = useRef<L.CircleMarker[]>([]);
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = normalizeAdminPage(page);
@@ -1117,122 +1118,92 @@ export default function AdminDashboard({ onLogout }) {
     year: "numeric",
   });
 
-  /* ── Mapbox init (heatmap page or overview) ── */
+  /* ── Leaflet map init (heatmap page or overview) ── */
   useEffect(() => {
     if (activePage !== "heatmap" && activePage !== "overview") return;
     const el = mapRef.current;
     if (!el || mapInst.current) return;
 
-    const map = new mapboxgl.Map({
-      container: el,
-      style:  "mapbox://styles/mapbox/light-v11",
-      center: [123.9000, 10.3157],
-      zoom:   11.5,
-      interactive: true,
-    });
+    const map = L.map(el, {
+      zoomControl: false,
+      preferCanvas: true,
+      fadeAnimation: true,
+      zoomAnimation: true,
+      markerZoomAnimation: false,
+    }).setView([10.3157, 123.9000], 11.5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      keepBuffer: 4,
+    }).addTo(map);
     mapInst.current = map;
+    map.invalidateSize();
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+    // Add circle markers for each station (simulating heatmap dots)
+    const layerGroup = L.layerGroup();
+    const markers: L.CircleMarker[] = STATIONS.map((s) => {
+      const prices: { label: string; price: number }[] = BRAND_PRICES[s.brand] ?? BRAND_PRICES.Other ?? [];
+      const statusColor = s.status === "Online" ? "#2e7d32" : "#c62828";
+      const statusBg    = s.status === "Online" ? "#e8f5e9"  : "#ffebee";
+      const priceRows   = prices.map(p =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f1f5f9">
+          <span style="color:#555;font-size:11px">${p.label}</span>
+          <span style="color:#003366;font-weight:700;font-size:12px;margin-left:12px">₱${p.price.toFixed(2)}/L</span>
+        </div>`
+      ).join("");
 
-    map.on("load", () => {
-      const geojson = {
-        type: "FeatureCollection",
-        features: STATIONS.map(s => ({
-          type: "Feature",
-          properties: {
-            name: s.name,
-            brand: s.brand,
-            dispensed: s.dispensed,
-            intensity: s.dispensed / 1000,
-            status: s.status,
-            prices: JSON.stringify(BRAND_PRICES[s.brand] ?? BRAND_PRICES.Other),
-          },
-          geometry: { type: "Point", coordinates: [s.lng, s.lat] },
-        })),
-      };
+      const popupHtml = `
+        <div style="font:13px/1.5 system-ui,sans-serif;padding:2px 0;min-width:200px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <strong style="color:#003366;font-size:13px;flex:1">${s.name}</strong>
+            <span style="font-size:10px;font-weight:700;color:${statusColor};background:${statusBg};padding:2px 7px;border-radius:99px">${s.status}</span>
+          </div>
+          <span style="color:#888;font-size:11px">${s.brand}</span>
+          <div style="margin:8px 0 6px;background:#fff3e0;border-radius:6px;padding:4px 8px;display:inline-block">
+            <span style="color:#e65100;font-weight:700;font-size:12px">⛽ ${s.dispensed.toLocaleString()} L dispensed</span>
+          </div>
+          <div style="border-top:2px solid #003366;padding-top:6px;margin-top:2px">
+            <div style="font-size:10px;font-weight:700;color:#003366;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fuel Prices</div>
+            ${priceRows}
+          </div>
+        </div>`;
 
-      map.addSource("stations", { type: "geojson", data: geojson as any });
+      // Scale radius by dispensed volume for a heatmap-like effect
+      const radius = Math.max(8, Math.min(22, (s.dispensed / 5000) * 8 + 8));
+      const circle = L.circleMarker([s.lat, s.lng], {
+        radius,
+        color: "#ffffff",
+        weight: 2,
+        fillColor: "#003366",
+        fillOpacity: 0.82,
+      }).bindPopup(popupHtml, { maxWidth: 260 });
 
-      map.addLayer({
-        id: "heat",
-        type: "heatmap",
-        source: "stations",
-        paint: {
-          "heatmap-weight":     ["interpolate", ["linear"], ["get", "intensity"], 0, 0, 6, 1],
-          "heatmap-intensity":  ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2],
-          "heatmap-color": [
-            "interpolate", ["linear"], ["heatmap-density"],
-            0,   "rgba(0,51,102,0)",
-            0.2, "rgba(0,100,200,0.45)",
-            0.5, "rgba(255,180,0,0.7)",
-            0.8, "rgba(255,80,0,0.85)",
-            1,   "rgba(200,20,20,1)",
-          ],
-          "heatmap-radius":  ["interpolate", ["linear"], ["zoom"], 10, 30, 14, 55],
-          "heatmap-opacity": 0.78,
-        },
-      });
-
-      map.addLayer({
-        id: "circles",
-        type: "circle",
-        source: "stations",
-        paint: {
-          "circle-radius":       7,
-          "circle-color":        "#003366",
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
-        },
-      });
-
-      map.on("click", "circles", (e) => {
-        const feature = e.features?.[0] as any;
-        if (!feature) return;
-        const { name, brand, dispensed, status, prices: pricesRaw } = feature.properties || {};
-        const coords = feature.geometry?.coordinates?.slice();
-        if (!coords) return;
-        const prices: { label: string; price: number }[] = JSON.parse(pricesRaw || "[]");
-        const statusColor = status === "Online" ? "#2e7d32" : "#c62828";
-        const priceRows = prices.map(p =>
-          `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f1f5f9">
-            <span style="color:#555;font-size:11px">${p.label}</span>
-            <span style="color:#003366;font-weight:700;font-size:12px;margin-left:12px">₱${p.price.toFixed(2)}/L</span>
-          </div>`
-        ).join("");
-        new mapboxgl.Popup({ offset: 14, closeButton: true, maxWidth: "240px" })
-          .setLngLat(coords)
-          .setHTML(`
-            <div style="font:13px/1.5 system-ui,sans-serif;padding:2px 0">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                <strong style="color:#003366;font-size:13px;flex:1">${name}</strong>
-                <span style="font-size:10px;font-weight:700;color:${statusColor};background:${status === "Online" ? "#e8f5e9" : "#ffebee"};padding:2px 7px;border-radius:99px">${status}</span>
-              </div>
-              <span style="color:#888;font-size:11px">${brand}</span>
-              <div style="margin:8px 0 6px;background:#fff3e0;border-radius:6px;padding:4px 8px;display:inline-block">
-                <span style="color:#e65100;font-weight:700;font-size:12px">⛽ ${dispensed.toLocaleString()} L dispensed</span>
-              </div>
-              <div style="border-top:2px solid #003366;padding-top:6px;margin-top:2px">
-                <div style="font-size:10px;font-weight:700;color:#003366;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fuel Prices</div>
-                ${priceRows}
-              </div>
-            </div>`)
-          .addTo(map);
-      });
-
-      map.on("mouseenter", "circles", () => { map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", "circles", () => { map.getCanvas().style.cursor = ""; });
+      (circle as any)._stationBrand = s.brand;
+      layerGroup.addLayer(circle);
+      return circle;
     });
 
-    return () => { map.remove(); mapInst.current = null; };
+    layerGroup.addTo(map);
+    mapMarkersRef.current = markers;
+
+    return () => { map.remove(); mapInst.current = null; mapMarkersRef.current = []; };
   }, [BRAND_PRICES, STATIONS, activePage]);
 
-  /* ── Sync heatmap brand filter → Mapbox layer filter ── */
+  /* ── Sync heatmap brand filter → show/hide Leaflet circle markers ── */
   useEffect(() => {
     const map = mapInst.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const f = heatmapFilter === "All" ? null : ["==", ["get", "brand"], heatmapFilter];
-    if (map.getLayer("circles")) map.setFilter("circles", f);
-    if (map.getLayer("heat"))    map.setFilter("heat",    f);
+    if (!map) return;
+    mapMarkersRef.current.forEach((circle) => {
+      const brand = (circle as any)._stationBrand as string;
+      const visible = heatmapFilter === "All" || brand === heatmapFilter;
+      if (visible) {
+        if (!map.hasLayer(circle)) circle.addTo(map);
+      } else {
+        if (map.hasLayer(circle)) circle.remove();
+      }
+    });
   }, [heatmapFilter]);
 
   const brandList        = ["All", ...Object.keys(BRAND_COLORS)];
