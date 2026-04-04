@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
-import { confirmPasswordReset } from "firebase/auth";
-import { auth } from "@/lib/firebase/client";
+import { confirmPasswordReset, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/client";
+import { acceptPendingStationAssignment } from "@/lib/data/agas";
+import { buildAuthUserFromAccountData, type AuthUser } from "@/lib/auth/authService";
 
 interface PasswordResetProps {
   oobCode: string | null;
   onBack: () => void;
+  /** When set with `onStationInviteSession`, completes station invite after reset (sign-in + accept assignment). */
+  stationInviteEmail?: string | null;
+  onStationInviteSession?: (user: AuthUser) => void | Promise<void>;
 }
 
-export default function PasswordReset({ oobCode, onBack }: PasswordResetProps) {
+export default function PasswordReset({
+  oobCode,
+  onBack,
+  stationInviteEmail,
+  onStationInviteSession,
+}: PasswordResetProps) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -38,6 +49,28 @@ export default function PasswordReset({ oobCode, onBack }: PasswordResetProps) {
     setError("");
     try {
       await confirmPasswordReset(auth, oobCode, newPassword);
+
+      const inviteEmail = stationInviteEmail?.trim().toLowerCase() ?? "";
+      if (inviteEmail && onStationInviteSession) {
+        const cred = await signInWithEmailAndPassword(auth, inviteEmail, newPassword);
+        const uid = cred.user.uid;
+        await acceptPendingStationAssignment(uid);
+        const afterSnap = await getDoc(doc(db, "accounts", uid));
+        if (!afterSnap.exists()) {
+          throw new Error("Account missing after invite.");
+        }
+        const built = buildAuthUserFromAccountData(
+          uid,
+          inviteEmail,
+          afterSnap.data() as Record<string, unknown>,
+        );
+        if (!built || built.role !== "station") {
+          throw new Error("Invalid station account.");
+        }
+        await onStationInviteSession(built.user);
+        return;
+      }
+
       setDone(true);
     } catch (err) {
       setError("Failed to reset password. The link may have expired or already been used.");
@@ -87,8 +120,12 @@ export default function PasswordReset({ oobCode, onBack }: PasswordResetProps) {
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="flex flex-col items-center w-full">
-          <h1 className="text-[#003366] font-headline font-bold text-2xl leading-none">Reset Password</h1>
-          <p className="text-[13px] text-[#003366] font-black uppercase tracking-wider opacity-70">Enter a new password</p>
+          <h1 className="text-[#003366] font-headline font-bold text-2xl leading-none">
+            {stationInviteEmail ? "Activate station access" : "Reset Password"}
+          </h1>
+          <p className="text-[13px] text-[#003366] font-black uppercase tracking-wider opacity-70">
+            {stationInviteEmail ? "Set your password to continue" : "Enter a new password"}
+          </p>
         </div>
       </div>
 
@@ -128,7 +165,13 @@ export default function PasswordReset({ oobCode, onBack }: PasswordResetProps) {
             disabled={loading}
             className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? "Updating…" : "Update Password"}
+            {loading
+              ? stationInviteEmail
+                ? "Activating…"
+                : "Updating…"
+              : stationInviteEmail
+                ? "Activate & continue"
+                : "Update Password"}
           </button>
         </form>
       </main>

@@ -1,4 +1,10 @@
-import { useState, useMemo, type ChangeEvent, type FormEvent } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, type ChangeEvent, type FormEvent } from "react";
+import { confirmPasswordReset, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/client";
+import { useAuth } from "@/app/providers/AuthContext";
+import { buildAuthUserFromAccountData, type AuthUser } from "@/lib/auth/authService";
+import { acceptPendingStationAssignment } from "@/lib/data/agas";
 
 // Official 80 barangays of Cebu City
 const CEBU_BARANGAYS = [
@@ -20,19 +26,81 @@ const CEBU_BARANGAYS = [
   "Tinago", "Tisa", "To-ong Pardo", "Tugbongan", "Zapatera",
 ];
 
-const BRANDS = [
-  "Default", "Shell", "Petron", "Caltex", "Phoenix",
-];
+const DEFAULT_FUEL_TEMPLATE = [
+  "Diesel",
+  "Premium Diesel",
+  "Regular/Unleaded (91)",
+  "Premium (95)",
+  "Super Premium (97)",
+] as const;
 
 const BRAND_FUELS = {
-  Default: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Caltex: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Petron: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Shell: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
+  Default: [...DEFAULT_FUEL_TEMPLATE],
+  Caltex: [...DEFAULT_FUEL_TEMPLATE],
+  Petron: [...DEFAULT_FUEL_TEMPLATE],
+  Phoenix: [...DEFAULT_FUEL_TEMPLATE],
+  Shell: [...DEFAULT_FUEL_TEMPLATE],
+  "Sea Oil": [...DEFAULT_FUEL_TEMPLATE],
+  "Flying V": [...DEFAULT_FUEL_TEMPLATE],
+  Diatoms: [...DEFAULT_FUEL_TEMPLATE],
+  Other: [...DEFAULT_FUEL_TEMPLATE],
 };
 
 type Brand = keyof typeof BRAND_FUELS;
+
+/** Picker order (matches station directory / `stationInvites.brand` names). */
+const BRANDS_LIST: Brand[] = [
+  "Shell",
+  "Petron",
+  "Caltex",
+  "Phoenix",
+  "Sea Oil",
+  "Flying V",
+  "Diatoms",
+  "Other",
+  "Default",
+];
+
+function mapInviteBrandToPickerBrand(raw: string): Brand {
+  const t = raw.trim();
+  if (t && Object.prototype.hasOwnProperty.call(BRAND_FUELS, t)) {
+    return t as Brand;
+  }
+  const key = t.toLowerCase().replace(/\s+/g, " ");
+  const compact = key.replace(/\s/g, "");
+  const aliases: Record<string, Brand> = {
+    shell: "Shell",
+    petron: "Petron",
+    caltex: "Caltex",
+    phoenix: "Phoenix",
+    seaoil: "Sea Oil",
+    "sea oil": "Sea Oil",
+    "flying v": "Flying V",
+    flyingv: "Flying V",
+    diatoms: "Diatoms",
+    other: "Other",
+    default: "Default",
+  };
+  if (aliases[key]) return aliases[key];
+  if (aliases[compact]) return aliases[compact];
+  return "Default";
+}
+
+function averagePrice(prices: Record<string, number>): number {
+  const vals = Object.values(prices).filter((n) => Number.isFinite(n) && n > 0);
+  if (vals.length === 0) return 62;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+}
+
+function buildFuelPricesForLabels(
+  labels: string[],
+  previous: Record<string, number>,
+): Record<string, number> {
+  const fallback = averagePrice(previous);
+  return Object.fromEntries(
+    labels.map((label) => [label, Number.isFinite(previous[label]) ? previous[label] : fallback]),
+  );
+}
 
 type StationForm = {
   barangay: string;
@@ -188,9 +256,21 @@ function SheetPicker({ value, onChange, options, placeholder, icon }: SheetPicke
   );
 }
 
+export type StationRegisterMode = "public" | "onboarding" | "inviteLink";
+
+export type StationInvitePrefill = {
+  brand?: string;
+  barangay?: string;
+  firstName?: string;
+  lastName?: string;
+  stationCode?: string;
+};
+
 type StationRegisterProps = {
+  mode?: StationRegisterMode;
   onBack: () => void;
-  onSuccess: (payload: {
+  /** Self-serve `?register=station` flow */
+  onSuccess?: (payload: {
     barangay: string;
     brand: string;
     officerFirstName: string;
@@ -203,9 +283,30 @@ type StationRegisterProps = {
     role: string;
     registeredAt: string;
   }) => void;
+  /** After admin invite: save fuels to Firestore, then activate assignment */
+  onComplete?: () => void | Promise<void>;
+  /** Firebase password-reset `oobCode` from invite email link */
+  inviteOobCode?: string | null;
+  inviteEmail?: string;
+  invitePrefill?: StationInvitePrefill | null;
+  /** After invite link: password + profile saved, session established */
+  onInviteSession?: (user: AuthUser) => void | Promise<void>;
 };
 
-export default function StationRegister({ onBack, onSuccess }: StationRegisterProps) {
+export default function StationRegister({
+  mode = "public",
+  onBack,
+  onSuccess,
+  onComplete,
+  inviteOobCode = null,
+  inviteEmail = "",
+  invitePrefill = null,
+  onInviteSession,
+}: StationRegisterProps) {
+  const { auth: authCtx } = useAuth();
+  const isOnboarding = mode === "onboarding";
+  const isInviteLink = mode === "inviteLink";
+
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -221,11 +322,163 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
   });
   const [fuelCapacities, setFuelCapacities] = useState<Record<string, string>>({});
   const [enabledFuels, setEnabledFuels] = useState<Set<string>>(new Set());
+  /** When set, step 2 uses directory/account labels instead of BRAND_FUELS (until user changes brand). */
+  const [customFuelLabels, setCustomFuelLabels] = useState<string[] | null>(null);
+  const [onboardingLoadError, setOnboardingLoadError] = useState("");
+  const [onboardingReady, setOnboardingReady] = useState(!isOnboarding && !isInviteLink);
+  const [inviteLinkError, setInviteLinkError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
-  const selectedFuels = form.brand ? BRAND_FUELS[form.brand] : [];
+
+  const selectedFuels = useMemo(() => {
+    if (customFuelLabels && customFuelLabels.length > 0) return customFuelLabels;
+    return form.brand ? BRAND_FUELS[form.brand] : [];
+  }, [customFuelLabels, form.brand]);
+
   const activeFuels = selectedFuels.filter((f) => enabledFuels.has(f));
+
+  const onboardingUid =
+    isOnboarding && typeof authCtx.user?.uid === "string" ? authCtx.user.uid : null;
+
+  useLayoutEffect(() => {
+    if (!isInviteLink) {
+      setInviteLinkError("");
+      return;
+    }
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) {
+      setInviteLinkError("This invite link is missing the email parameter. Use the link from your email.");
+      return;
+    }
+    if (!inviteOobCode?.trim()) {
+      setInviteLinkError("This invite link is invalid or expired.");
+      return;
+    }
+    const mapped = mapInviteBrandToPickerBrand(invitePrefill?.brand ?? "");
+    setForm((prev) => ({
+      ...prev,
+      googleEmail: email,
+      officerFirstName: invitePrefill?.firstName?.trim() ?? "",
+      officerLastName: invitePrefill?.lastName?.trim() ?? "",
+      barangay: invitePrefill?.barangay?.trim() ?? "",
+      brand: mapped,
+      stationCode: invitePrefill?.stationCode?.trim() ?? "",
+      password: "",
+      confirmPassword: "",
+    }));
+    setCustomFuelLabels(null);
+    const fuels = BRAND_FUELS[mapped];
+    setFuelCapacities(Object.fromEntries(fuels.map((f) => [f, ""])));
+    setEnabledFuels(new Set(fuels));
+    setInviteLinkError("");
+  }, [isInviteLink, inviteEmail, inviteOobCode, invitePrefill]);
+
+  useEffect(() => {
+    if (!isOnboarding || !onboardingUid) {
+      setOnboardingReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setOnboardingReady(false);
+    setOnboardingLoadError("");
+
+    void (async () => {
+      try {
+        const [inviteSnap, accountSnap] = await Promise.all([
+          getDoc(doc(db, "stationInvites", onboardingUid)),
+          getDoc(doc(db, "accounts", onboardingUid)),
+        ]);
+
+        if (cancelled) return;
+        if (!accountSnap.exists()) {
+          setOnboardingLoadError("Station profile not found. Please contact support.");
+          setOnboardingReady(true);
+          return;
+        }
+
+        const acc = accountSnap.data() as Record<string, unknown>;
+        const inv = inviteSnap.exists() ? (inviteSnap.data() as Record<string, unknown>) : null;
+
+        const inviteBrand =
+          typeof inv?.brand === "string" && inv.brand.trim()
+            ? inv.brand
+            : typeof acc.brand === "string"
+              ? acc.brand
+              : "";
+        const mappedBrand = mapInviteBrandToPickerBrand(inviteBrand);
+
+        const fromInviteBarangay = typeof inv?.barangay === "string" ? inv.barangay.trim() : "";
+        const accBarangay = typeof acc.barangay === "string" ? acc.barangay : "";
+        const barangayPrefill = fromInviteBarangay || accBarangay;
+
+        const email =
+          (typeof acc.email === "string" && acc.email) ||
+          (typeof authCtx.user?.email === "string" ? authCtx.user.email : "");
+
+        setForm({
+          barangay: barangayPrefill,
+          brand: mappedBrand,
+          officerFirstName:
+            (typeof acc.firstName === "string" && acc.firstName) ||
+            (typeof acc.officerFirstName === "string" && acc.officerFirstName) ||
+            "",
+          officerLastName:
+            (typeof acc.lastName === "string" && acc.lastName) ||
+            (typeof acc.officerLastName === "string" && acc.officerLastName) ||
+            "",
+          googleEmail: email,
+          password: "",
+          confirmPassword: "",
+          stationCode: typeof acc.stationCode === "string" ? acc.stationCode : "",
+        });
+
+        const dirFuels = Array.isArray(acc.availableFuels)
+          ? acc.availableFuels.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+          : [];
+
+        if (dirFuels.length > 0) {
+          setCustomFuelLabels(dirFuels);
+          const caps = (acc.fuelCapacities as Record<string, unknown> | undefined) ?? {};
+          const invMap = (acc.fuelInventory as Record<string, unknown> | undefined) ?? {};
+          setFuelCapacities(
+            Object.fromEntries(
+              dirFuels.map((label) => {
+                const c = caps[label];
+                const i = invMap[label];
+                const n =
+                  typeof c === "number"
+                    ? c
+                    : typeof i === "number"
+                      ? i
+                      : Number(c ?? i ?? "");
+                return [label, Number.isFinite(n) && n > 0 ? String(n) : ""];
+              }),
+            ),
+          );
+          setEnabledFuels(new Set(dirFuels));
+        } else {
+          setCustomFuelLabels(null);
+          const fuels = BRAND_FUELS[mappedBrand];
+          setFuelCapacities(Object.fromEntries(fuels.map((f) => [f, ""])));
+          setEnabledFuels(new Set(fuels));
+        }
+
+        setOnboardingReady(true);
+      } catch {
+        if (!cancelled) {
+          setOnboardingLoadError("Could not load your invite. Try again or contact support.");
+          setOnboardingReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnboarding, onboardingUid, authCtx.user?.email]);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -243,10 +496,30 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
     if (
       !officerFirstName.trim() ||
       !officerLastName.trim() ||
-      !googleEmail.trim() ||
-      !password.trim() ||
-      !confirmPassword.trim()
+      !googleEmail.trim()
     ) {
+      setError("Please complete all details first.");
+      return false;
+    }
+    if (isOnboarding) {
+      return true;
+    }
+    if (isInviteLink) {
+      if (!password.trim() || !confirmPassword.trim()) {
+        setError("Please complete all details first.");
+        return false;
+      }
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters.");
+        return false;
+      }
+      if (password !== confirmPassword) {
+        setError("Password and confirm password do not match.");
+        return false;
+      }
+      return true;
+    }
+    if (!password.trim() || !confirmPassword.trim()) {
       setError("Please complete all details first.");
       return false;
     }
@@ -297,6 +570,7 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (saving) return;
     if (!validateStepTwo()) return;
     setShowConfirm(true);
   };
@@ -304,6 +578,130 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
   const handleConfirm = () => {
     const { barangay, brand, officerFirstName, officerLastName, googleEmail, password, stationCode } = form;
     setShowConfirm(false);
+
+    if (isInviteLink) {
+      const oob = inviteOobCode?.trim();
+      const emailNorm = inviteEmail.trim().toLowerCase();
+      if (!oob || !emailNorm || !onInviteSession) return;
+
+      const caps = Object.fromEntries(
+        activeFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)]),
+      );
+      const fn = officerFirstName.trim();
+      const ln = officerLastName.trim();
+
+      setSaving(true);
+      setError("");
+      void (async () => {
+        try {
+          await confirmPasswordReset(auth, oob, password);
+          const cred = await signInWithEmailAndPassword(auth, emailNorm, password);
+          const uid = cred.user.uid;
+
+          const accountSnap = await getDoc(doc(db, "accounts", uid));
+          const prevRaw = accountSnap.exists()
+            ? (accountSnap.data().fuelPrices as Record<string, unknown> | undefined)
+            : undefined;
+          const prevPrices: Record<string, number> = {};
+          if (prevRaw && typeof prevRaw === "object") {
+            for (const [k, v] of Object.entries(prevRaw)) {
+              const n = typeof v === "number" ? v : Number(v);
+              if (Number.isFinite(n)) prevPrices[k] = n;
+            }
+          }
+
+          await updateDoc(doc(db, "accounts", uid), {
+            firstName: fn,
+            lastName: ln,
+            officerFirstName: fn,
+            officerLastName: ln,
+            barangay,
+            brand,
+            stationCode: stationCode.trim().toUpperCase(),
+            availableFuels: activeFuels,
+            fuelCapacities: caps,
+            fuelInventory: caps,
+            fuelPrices: buildFuelPricesForLabels(activeFuels, prevPrices),
+            updatedAt: serverTimestamp(),
+          });
+
+          await acceptPendingStationAssignment(uid);
+
+          const afterSnap = await getDoc(doc(db, "accounts", uid));
+          if (!afterSnap.exists()) {
+            throw new Error("Account missing after setup.");
+          }
+          const built = buildAuthUserFromAccountData(
+            uid,
+            emailNorm,
+            afterSnap.data() as Record<string, unknown>,
+          );
+          if (!built || built.role !== "station") {
+            throw new Error("Invalid station account.");
+          }
+
+          await onInviteSession(built.user);
+        } catch {
+          setError(
+            "Could not complete setup. The invite link may have expired, or the password was rejected.",
+          );
+        } finally {
+          setSaving(false);
+        }
+      })();
+      return;
+    }
+
+    if (isOnboarding) {
+      if (!onboardingUid || !onComplete) return;
+      const caps = Object.fromEntries(
+        activeFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)]),
+      );
+      const fn = officerFirstName.trim();
+      const ln = officerLastName.trim();
+
+      setSaving(true);
+      setError("");
+      void (async () => {
+        try {
+          const accountSnap = await getDoc(doc(db, "accounts", onboardingUid));
+          const prevRaw = accountSnap.exists()
+            ? (accountSnap.data().fuelPrices as Record<string, unknown> | undefined)
+            : undefined;
+          const prevPrices: Record<string, number> = {};
+          if (prevRaw && typeof prevRaw === "object") {
+            for (const [k, v] of Object.entries(prevRaw)) {
+              const n = typeof v === "number" ? v : Number(v);
+              if (Number.isFinite(n)) prevPrices[k] = n;
+            }
+          }
+
+          await updateDoc(doc(db, "accounts", onboardingUid), {
+            firstName: fn,
+            lastName: ln,
+            officerFirstName: fn,
+            officerLastName: ln,
+            barangay,
+            brand,
+            stationCode: stationCode.trim().toUpperCase(),
+            availableFuels: activeFuels,
+            fuelCapacities: caps,
+            fuelInventory: caps,
+            fuelPrices: buildFuelPricesForLabels(activeFuels, prevPrices),
+            updatedAt: serverTimestamp(),
+          });
+
+          await onComplete();
+        } catch {
+          setError("Could not save your station setup. Check your connection and try again.");
+        } finally {
+          setSaving(false);
+        }
+      })();
+      return;
+    }
+
+    if (!onSuccess) return;
     onSuccess({
       barangay,
       brand,
@@ -313,13 +711,54 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
       password,
       availableFuels: activeFuels,
       fuelCapacities: Object.fromEntries(
-        activeFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)])
+        activeFuels.map((fuel) => [fuel, Number(fuelCapacities[fuel] || 0)]),
       ),
       stationCode: stationCode.trim().toUpperCase(),
       role: "station",
       registeredAt: new Date().toISOString(),
     });
   };
+
+  if (isInviteLink && inviteLinkError) {
+    return (
+      <div className="flex flex-col min-h-dvh bg-background items-center justify-center px-6 gap-6">
+        <p className="text-error text-center text-sm">{inviteLinkError}</p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-full max-w-xs bg-primary-container text-white font-headline font-bold py-3 rounded-xl"
+        >
+          Go back
+        </button>
+      </div>
+    );
+  }
+
+  if (isOnboarding && !onboardingReady) {
+    return (
+      <div className="flex flex-col min-h-dvh bg-background items-center justify-center px-6 gap-4">
+        <span className="material-symbols-outlined text-[#003366] text-5xl animate-pulse">
+          hourglass_top
+        </span>
+        <p className="text-sm text-slate-600 text-center">Loading your station assignment…</p>
+      </div>
+    );
+  }
+
+  if (isOnboarding && onboardingLoadError) {
+    return (
+      <div className="flex flex-col min-h-dvh bg-background items-center justify-center px-6 gap-6">
+        <p className="text-error text-center text-sm">{onboardingLoadError}</p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-full max-w-xs bg-primary-container text-white font-headline font-bold py-3 rounded-xl"
+        >
+          Go back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-dvh bg-background">
@@ -349,10 +788,11 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
               </button>
               <button
                 type="button"
+                disabled={saving}
                 onClick={handleConfirm}
-                className="flex-1 bg-primary-container text-white font-bold py-3 rounded-xl shadow active:scale-95 transition-all"
+                className="flex-1 bg-primary-container text-white font-bold py-3 rounded-xl shadow active:scale-95 transition-all disabled:opacity-60"
               >
-                Yes
+                {saving ? "Saving…" : "Yes"}
               </button>
             </div>
           </div>
@@ -367,7 +807,7 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
         </button>
         <div>
           <h1 className="text-[#003366] font-headline font-bold text-lg leading-none">
-            Station Registration
+            {isOnboarding ? "Station setup" : isInviteLink ? "Accept invite" : "Station Registration"}
           </h1>
           <p className="text-[10px] text-[#003366] font-black uppercase tracking-wider opacity-70">
             A.G.A.S
@@ -378,10 +818,18 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
       <main className="flex-1 px-6 pt-8 pb-12 max-w-md mx-auto w-full">
         <div className="mb-6">
           <h2 className="font-headline font-extrabold text-primary text-2xl">
-            Register Station
+            {isOnboarding
+              ? "Complete your station profile"
+              : isInviteLink
+                ? "Finish your station invite"
+                : "Register Station"}
           </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Fill in the station and officer details.
+            {isOnboarding
+              ? "Review fuels and capacity. Brand is prefilled from your admin invite."
+              : isInviteLink
+                ? "Choose your password, confirm details, and set fuel capacities. Brand is prefilled from your invite."
+                : "Fill in the station and officer details."}
           </p>
         </div>
 
@@ -455,59 +903,64 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
                   value={form.googleEmail}
                   onChange={handleChange}
                   placeholder="e.g. juan@gmail.com"
-                  className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 px-4 text-sm"
+                  readOnly={isOnboarding || isInviteLink}
+                  className={`w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 px-4 text-sm ${isOnboarding || isInviteLink ? "opacity-80" : ""}`}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
-                    placeholder="Minimum 6 characters"
-                    className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-4 pr-12 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-xl">
-                      {showPassword ? "visibility_off" : "visibility"}
-                    </span>
-                  </button>
-                </div>
-              </div>
+              {!isOnboarding && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        name="password"
+                        value={form.password}
+                        onChange={handleChange}
+                        placeholder="Minimum 6 characters"
+                        className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-4 pr-12 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+                      >
+                        <span className="material-symbols-outlined text-xl">
+                          {showPassword ? "visibility_off" : "visibility"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    name="confirmPassword"
-                    value={form.confirmPassword}
-                    onChange={handleChange}
-                    placeholder="Re-enter password"
-                    className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-4 pr-12 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword((prev) => !prev)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-xl">
-                      {showConfirmPassword ? "visibility_off" : "visibility"}
-                    </span>
-                  </button>
-                </div>
-              </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        name="confirmPassword"
+                        value={form.confirmPassword}
+                        onChange={handleChange}
+                        placeholder="Re-enter password"
+                        className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-4 pr-12 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+                      >
+                        <span className="material-symbols-outlined text-xl">
+                          {showConfirmPassword ? "visibility_off" : "visibility"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               
             </>
@@ -551,12 +1004,13 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
                   value={form.brand}
                   onChange={(b) => {
                     setForm((prev) => ({ ...prev, brand: b as Brand }));
+                    setCustomFuelLabels(null);
                     const fuels = BRAND_FUELS[b as Brand] || [];
                     setFuelCapacities(Object.fromEntries(fuels.map((fuel) => [fuel, ""])));
                     setEnabledFuels(new Set(fuels));
                     setError("");
                   }}
-                  options={BRANDS}
+                  options={[...BRANDS_LIST]}
                   placeholder="Select brand…"
                   icon="local_gas_station"
                 />
@@ -684,9 +1138,10 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
               </button>
               <button
                 type="submit"
-                className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all"
+                disabled={saving}
+                className="w-full bg-primary-container text-white font-headline font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-60"
               >
-                Create Account
+                {isOnboarding ? "Save & continue" : isInviteLink ? "Complete invite" : "Create Account"}
               </button>
             </div>
           )}

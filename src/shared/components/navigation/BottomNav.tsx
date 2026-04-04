@@ -27,14 +27,18 @@ interface BottomNavProps {
 
 export default function BottomNav({ active, onChange, tabs = OFFICER_TABS }: BottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-8 pt-4 bg-white/80 backdrop-blur-xl shadow-[0_-4px_24px_rgba(0,30,64,0.06)] rounded-t-3xl">
+    <nav
+      className="fixed bottom-0 left-0 w-full z-50 grid items-stretch gap-1 px-4 pb-8 pt-4 bg-white/80 backdrop-blur-xl shadow-[0_-4px_24px_rgba(0,30,64,0.06)] rounded-t-3xl"
+      style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+    >
       {tabs.map((tab) => {
         const isActive = active === tab.id;
         return (
           <button
             key={tab.id}
+            type="button"
             onClick={() => onChange(tab.id)}
-            className={`flex flex-1 flex-col items-center justify-center py-2 rounded-xl transition-all duration-200 ${
+            className={`flex min-w-0 flex-col items-center justify-center py-2 rounded-xl transition-all duration-200 ${
               isActive
                 ? "bg-[#003366] text-white scale-105"
                 : "text-slate-400 hover:text-[#705d00]"

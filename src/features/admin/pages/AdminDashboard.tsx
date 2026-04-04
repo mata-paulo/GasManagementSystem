@@ -992,7 +992,7 @@ export default function AdminDashboard({ onLogout }) {
 
     try {
       const result = await assignStationUser({
-        stationDirectoryId: selectedUserDrawerDirectory.id,
+        stationDirectoryId: String(selectedUserDrawerDirectory.id),
         email,
       });
 

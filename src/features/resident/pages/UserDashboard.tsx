@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import {
   subscribeResidentAllocationSummary,
@@ -63,7 +63,7 @@ type UserDashboardProps = {
 
 export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR }: UserDashboardProps) {
   const mapPreviewRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
   const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
   const [liveFuelAllocation, setLiveFuelAllocation] = useState(WEEKLY_FUEL_LIMIT);
@@ -172,23 +172,18 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   useEffect(() => {
     if (!mapPreviewRef.current || mapInstanceRef.current) return;
 
-    const map = new mapboxgl.Map({
-      container: mapPreviewRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [DEFAULT_LON, DEFAULT_LAT],
-      zoom: 13,
-      interactive: false,
-      attributionControl: false,
+    const map = L.map(mapPreviewRef.current, {
+      zoomControl: false,
+      preferCanvas: true,
+      fadeAnimation: true,
+      zoomAnimation: true,
+      markerZoomAnimation: false,
       dragging: false,
       scrollWheelZoom: false,
       doubleClickZoom: false,
       boxZoom: false,
       keyboard: false,
       touchZoom: false,
-      preferCanvas: true,
-      fadeAnimation: true,
-      zoomAnimation: true,
-      markerZoomAnimation: false,
     }).setView([DEFAULT_LAT, DEFAULT_LON], 13);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -220,7 +215,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
     }
 
     return () => {
-      mapInstanceRef.current?.remove();
+      map.remove();
       mapInstanceRef.current = null;
     };
   }, []);

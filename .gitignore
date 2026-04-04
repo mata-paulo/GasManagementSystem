@@ -23,9 +23,12 @@ dist-ssr
 # AI agent / IDE tool artifacts
 .agents/
 .augment/
+.cursor/
 .firebase/
 .junie/
+.serena/
 skills-lock.json
+CLAUDE.md
 
 # Editor directories and files
 .vscode/*
