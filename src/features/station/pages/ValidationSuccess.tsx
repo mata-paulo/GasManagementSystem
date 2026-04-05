@@ -1,8 +1,9 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
-import { doc, getDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
+import { Timestamp, doc, getDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { recordDispenseTransaction } from "@/lib/data/agas";
-import { formatDecodedDate, type DecodedQR } from "@/lib/qr/qrCodec";
+import { formatLitersQuantity, roundLiters } from "@/utils/fuelVolume";
+import { formatDecodedDate, qrNameCode, type DecodedQR } from "@/lib/qr/qrCodec";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
 
@@ -39,10 +40,38 @@ function pesoInputString(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);
 }
 
-/** Show liters derived from exact cash (avoid misleading 2dp when cash is the source of truth). */
-function formatLitersFromExactCash(liters: number): string {
-  const s = liters.toFixed(4);
-  return s.replace(/0+$/, "").replace(/\.$/, "") || "0";
+/** First character uppercase for labels (e.g. motorcycle → Motorcycle). */
+function displayVehicleTypeLabel(raw: string): string {
+  if (!raw || raw === "---") return raw;
+  const t = raw.trim();
+  if (!t) return raw;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function isEpochDate(d: Date | null | undefined): boolean {
+  if (!d || Number.isNaN(d.getTime())) return true;
+  return d.getTime() === 0;
+}
+
+function coerceFirestoreDate(raw: unknown): Date | null {
+  if (raw == null) return null;
+  if (raw instanceof Timestamp) {
+    const d = raw.toDate();
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof raw === "string") {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof raw === "object" && raw !== null && "toDate" in raw && typeof (raw as { toDate: () => Date }).toDate === "function") {
+    try {
+      const d = (raw as { toDate: () => Date }).toDate();
+      return Number.isNaN(d.getTime()) ? null : d;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 type ValidationSuccessProps = {
@@ -64,15 +93,10 @@ export default function ValidationSuccess({
   activeTab,
   onTabChange,
 }: ValidationSuccessProps) {
-  const firstName = scannedResident?.firstCode
-    || (scannedResident?.firstName?.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase())
-    || "---";
-  const lastName = scannedResident?.lastCode
-    || (scannedResident?.lastName?.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase())
-    || "---";
-  const registeredAt = scannedResident?.date
-    ? formatDecodedDate(new Date(scannedResident.date))
-    : null;
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
+  const [profileRegisteredAt, setProfileRegisteredAt] = useState<Date | null>(null);
+  const [accountGasType, setAccountGasType] = useState("");
 
   const [plateNumber, setPlateNumber] = useState(scannedResident?.plate || "---");
   const [vehicleType, setVehicleType] = useState(scannedResident?.vehicleType || "---");
@@ -83,6 +107,38 @@ export default function ValidationSuccess({
   const [dispensing, setDispensing] = useState(false);
 
   useEffect(() => {
+    setProfileFirstName(scannedResident?.firstName?.trim() ?? "");
+    setProfileLastName(scannedResident?.lastName?.trim() ?? "");
+    setAccountGasType("");
+    const fromIso = scannedResident?.registeredAt
+      ? coerceFirestoreDate(scannedResident.registeredAt)
+      : null;
+    const fromDecodedDate = scannedResident?.date ? new Date(scannedResident.date) : null;
+    const initialReg =
+      (fromIso && !isEpochDate(fromIso) ? fromIso : null)
+      ?? (fromDecodedDate && !isEpochDate(fromDecodedDate) ? fromDecodedDate : null);
+    setProfileRegisteredAt(initialReg);
+    setPlateNumber(scannedResident?.plate || "---");
+    setVehicleType(scannedResident?.vehicleType || "---");
+    setFuelConsumed(scannedResident?.fuelUsed ?? 0);
+    setFuelLimit(scannedResident?.fuelAllocation ?? 20);
+    setResidentUid(scannedResident?.uid ?? null);
+  }, [scannedResident]);
+
+  /** 3-letter QR identity (not full legal names) for station validation UI. */
+  const rawFirst = profileFirstName || scannedResident?.firstName || "";
+  const rawLast = profileLastName || scannedResident?.lastName || "";
+  const legacyFirst = scannedResident?.firstCode?.trim();
+  const legacyLast = scannedResident?.lastCode?.trim();
+  const displayFirstQr = rawFirst.trim() ? qrNameCode(rawFirst) : legacyFirst ? qrNameCode(legacyFirst) : "---";
+  const displayLastQr = rawLast.trim() ? qrNameCode(rawLast) : legacyLast ? qrNameCode(legacyLast) : "---";
+  const vehicleTypeDisplay = displayVehicleTypeLabel(vehicleType);
+  const registeredAtLabel =
+    profileRegisteredAt && !isEpochDate(profileRegisteredAt)
+      ? formatDecodedDate(profileRegisteredAt)
+      : null;
+
+  useEffect(() => {
     const uid = scannedResident?.uid;
     const fName = scannedResident?.firstName;
     const lName = scannedResident?.lastName;
@@ -91,13 +147,21 @@ export default function ValidationSuccess({
     setAccountLoading(true);
 
     const applyData = (docId: string, d: Record<string, unknown>) => {
-      if (!residentUid) setResidentUid(docId);
+      setResidentUid(docId);
       if (d.plate) setPlateNumber(String(d.plate).trim().toUpperCase());
       if (d.vehicleType) setVehicleType(String(d.vehicleType));
       const alloc = typeof d.fuelAllocation === "number" ? d.fuelAllocation : Number(d.fuelAllocation ?? NaN);
       const used = typeof d.fuelUsed === "number" ? d.fuelUsed : Number(d.fuelUsed ?? NaN);
       if (Number.isFinite(alloc)) setFuelLimit(alloc);
       if (Number.isFinite(used)) setFuelConsumed(used);
+      const fn = typeof d.firstName === "string" ? d.firstName.trim() : "";
+      const ln = typeof d.lastName === "string" ? d.lastName.trim() : "";
+      if (fn) setProfileFirstName(fn);
+      if (ln) setProfileLastName(ln);
+      const reg = coerceFirestoreDate(d.registeredAt);
+      if (reg && !isEpochDate(reg)) setProfileRegisteredAt(reg);
+      const gt = typeof d.gasType === "string" ? d.gasType.trim() : "";
+      if (gt) setAccountGasType(gt);
     };
 
     const fetchAccount = uid
@@ -126,7 +190,7 @@ export default function ValidationSuccess({
   const [actionError, setActionError] = useState("");
   const remainingLiters = Math.max(fuelLimit - fuelConsumed, 0);
 
-  const gasTypeFromQR = (scannedResident?.gasType ?? "").trim();
+  const gasTypeFromQR = (accountGasType || scannedResident?.gasType || "").trim();
   const isDieselType = gasTypeFromQR.toLowerCase().includes("diesel");
   const fuelOptionButtons = isDieselType
     ? ["Diesel", "Premium Diesel"]
@@ -159,7 +223,7 @@ export default function ValidationSuccess({
       setCashInput(pesoInputString(eff));
     }
     const L = Math.min(remainingLiters, eff / pricePerLiter);
-    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+    setLiterInput(L > 0 ? formatLitersQuantity(L) : "");
   }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
 
   useEffect(() => {
@@ -174,7 +238,7 @@ export default function ValidationSuccess({
     cash = Math.min(cash, maxCashForAllocation);
     setCashInput(pesoInputString(cash));
     const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-    setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+    setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
   }, [selectedFuelOption, pricePerLiter, remainingLiters, maxCashForAllocation, inputMode]);
 
   /** Cash mode: exact amount charged (no ₱ drift from L×price round-trip; cash field is source of truth). */
@@ -185,7 +249,7 @@ export default function ValidationSuccess({
       ? Math.min(Math.round(cashFromCashField * 100) / 100, maxCashForAllocation)
       : 0;
 
-  const litersToDispense =
+  const litersToDispenseRaw =
     inputMode === "liters"
       ? !isNaN(litersFromLiterField) && litersFromLiterField > 0
         ? Math.min(litersFromLiterField, remainingLiters)
@@ -193,6 +257,7 @@ export default function ValidationSuccess({
       : effectiveCash > 0 && pricePerLiter > 0
         ? Math.min(remainingLiters, effectiveCash / pricePerLiter)
         : 0;
+  const litersToDispense = litersToDispenseRaw > 0 ? roundLiters(litersToDispenseRaw) : 0;
 
   const cashTotalForDispense =
     inputMode === "cash" && effectiveCash > 0
@@ -201,10 +266,7 @@ export default function ValidationSuccess({
         ? Math.round(litersToDispense * pricePerLiter * 100) / 100
         : 0;
 
-  const litersLabelForUi =
-    inputMode === "cash" && litersToDispense > 0
-      ? formatLitersFromExactCash(litersToDispense)
-      : litersToDispense.toFixed(2);
+  const litersLabelForUi = litersToDispense > 0 ? formatLitersQuantity(litersToDispense) : "0";
 
   const previewDeduct = litersToDispense;
   const previewRemaining = Math.max(remainingLiters - previewDeduct, 0);
@@ -234,13 +296,13 @@ export default function ValidationSuccess({
     setDispensing(true);
     setActionError("");
     try {
-      await recordDispenseTransaction({
+      const result = await recordDispenseTransaction({
         stationUid: officer.uid,
         residentUid,
         liters: litersToDispense,
         fuelType: selectedFuelOption,
       });
-      setFuelConsumed((prev) => prev + litersToDispense);
+      setFuelConsumed(result.usedLiters);
       onDispenseSuccess?.();
     } catch (err) {
       console.error("[ValidationSuccess] Dispense failed:", err);
@@ -258,13 +320,13 @@ export default function ValidationSuccess({
         const cash = Math.min(Math.round(L * pricePerLiter * 100) / 100, maxCashForAllocation);
         setCashInput(pesoInputString(cash));
         const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-        setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+        setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
       } else {
         const c = parseFloat(cashInput);
         if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
           const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
           const L2 = Math.min(remainingLiters, eff / pricePerLiter);
-          setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+          setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
         }
       }
     } else {
@@ -272,7 +334,7 @@ export default function ValidationSuccess({
       if (!isNaN(c) && c > 0 && pricePerLiter > 0) {
         const capped = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
         const L = Math.min(remainingLiters, capped / pricePerLiter);
-        setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+        setLiterInput(L > 0 ? formatLitersQuantity(L) : "");
       }
     }
     setInputMode(mode);
@@ -311,7 +373,7 @@ export default function ValidationSuccess({
     }
     const eff = Math.min(Math.round(c * 100) / 100, maxCashForAllocation);
     const L = Math.min(remainingLiters, eff / pricePerLiter);
-    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+    setLiterInput(L > 0 ? formatLitersQuantity(L) : "");
     setActionError("");
   };
 
@@ -330,7 +392,7 @@ export default function ValidationSuccess({
       cash = Math.min(cash, maxCashForAllocation);
       setCashInput(pesoInputString(cash));
       const LfromCash = Math.min(remainingLiters, cash / pricePerLiter);
-      setLiterInput(LfromCash > 0 ? formatLitersFromExactCash(LfromCash) : "");
+      setLiterInput(LfromCash > 0 ? formatLitersQuantity(LfromCash) : "");
       setActionError("");
       return;
     }
@@ -352,7 +414,7 @@ export default function ValidationSuccess({
       cash = maxCashForAllocation;
       setCashInput(pesoInputString(cash));
       const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-      setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+      setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
     } else {
       setCashInput(pesoInputString(cash));
     }
@@ -374,7 +436,7 @@ export default function ValidationSuccess({
             </button>
             <div>
               <h1 className="font-headline font-black text-[#003366] text-xl leading-none">Validation Result</h1>
-              <p className="text-xs text-slate-400 mt-1">{firstName} {lastName} · {plateNumber}</p>
+              <p className="text-xs text-slate-400 mt-1">{displayFirstQr} {displayLastQr} · {plateNumber}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-4 py-1.5">
@@ -399,11 +461,11 @@ export default function ValidationSuccess({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
                       <p className="text-outline text-[10px] font-bold uppercase tracking-wider">First Name</p>
-                      <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5">{firstName}</p>
+                      <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5 break-words">{displayFirstQr}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
                       <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Last Name</p>
-                      <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5">{lastName}</p>
+                      <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5 break-words">{displayLastQr}</p>
                     </div>
                   </div>
 
@@ -412,7 +474,7 @@ export default function ValidationSuccess({
                     <p className="font-headline font-black text-5xl text-[#003366] tracking-widest leading-tight mt-1">{plateNumber}</p>
                     <div className="flex items-center justify-center gap-2 mt-2">
                       <p className="text-outline text-xs font-bold uppercase tracking-wider">Vehicle Type:</p>
-                      <p className="font-headline font-bold text-lg text-on-surface">{vehicleType}</p>
+                      <p className="font-headline font-bold text-lg text-on-surface">{vehicleTypeDisplay}</p>
                     </div>
                   </div>
 
@@ -432,8 +494,8 @@ export default function ValidationSuccess({
                     </div>
                   )}
 
-                  {registeredAt && (
-                    <p className="text-outline text-xs text-center">Registered: {registeredAt}</p>
+                  {registeredAtLabel && (
+                    <p className="text-outline text-xs text-center">Registered: {registeredAtLabel}</p>
                   )}
 
                   {/* Fuel Allocation */}
@@ -543,7 +605,7 @@ export default function ValidationSuccess({
                             <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-lg font-black ${inputMode === "cash" ? "text-slate-400" : "text-[#003366]"}`}>L</span>
                           </div>
                         </div>
-                        <p className="text-[10px] text-slate-500">Max ₱{formatPeso(maxCashForAllocation)} · {remainingLiters.toFixed(1)} L allocation</p>
+                        <p className="text-[10px] text-slate-500">Max ₱{formatPeso(maxCashForAllocation)} · {formatLitersQuantity(remainingLiters)} L allocation</p>
 
                         {inputMode === "liters" ? (
                           <div className="grid grid-cols-5 gap-2">
@@ -559,7 +621,7 @@ export default function ValidationSuccess({
                                       cash = maxCashForAllocation;
                                       setCashInput(pesoInputString(cash));
                                       const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-                                      setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+                                      setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
                                     } else {
                                       setLiterInput(String(Lc));
                                       setCashInput(pesoInputString(cash));
@@ -583,13 +645,13 @@ export default function ValidationSuccess({
                                     if (exceeds) return;
                                     setCashInput(pesoInputString(peso));
                                     const L = pricePerLiter > 0 ? Math.min(remainingLiters, peso / pricePerLiter) : 0;
-                                    setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+                                    setLiterInput(L > 0 ? formatLitersQuantity(L) : "");
                                     setActionError("");
                                   }}
                                   className={`rounded-lg border py-2.5 px-1 text-xs font-bold transition-all leading-tight ${exceeds ? "border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed" : "border-outline-variant/40 bg-white text-[#003366] active:scale-95 hover:bg-slate-50"}`}>
                                   <span className="block">₱{formatPeso(peso)}</span>
                                   {!exceeds && approxL > 0 && (
-                                    <span className="block font-medium text-[9px] text-slate-500 mt-0.5">≈ {formatLitersFromExactCash(approxL)} L</span>
+                                    <span className="block font-medium text-[9px] text-slate-500 mt-0.5">≈ {formatLitersQuantity(approxL)} L</span>
                                   )}
                                 </button>
                               );
@@ -630,9 +692,8 @@ export default function ValidationSuccess({
                   </div>
                 </div>
 
-                <div className="text-center text-outline text-xs space-y-1 pb-4">
+                <div className="text-center text-outline text-xs pb-4">
                   <p>© 2026 Mata Technologies Inc.</p>
-                  <p>Ref ID: VAL-9823-CEB-2024</p>
                 </div>
               </div>
             </div>
@@ -678,18 +739,18 @@ export default function ValidationSuccess({
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white p-2.5">
                   <p className="text-outline text-[9px] font-bold uppercase tracking-wider">First Name</p>
-                  <p className="font-headline font-black text-xl text-[#003366] tracking-widest">{firstName}</p>
+                  <p className="font-headline font-black text-xl text-[#003366] tracking-widest break-words">{displayFirstQr}</p>
                 </div>
                 <div className="rounded-lg bg-white p-2.5">
                   <p className="text-outline text-[9px] font-bold uppercase tracking-wider">Last Name</p>
-                  <p className="font-headline font-black text-xl text-[#003366] tracking-widest">{lastName}</p>
+                  <p className="font-headline font-black text-xl text-[#003366] tracking-widest break-words">{displayLastQr}</p>
                 </div>
               </div>
               <div className="rounded-lg bg-white p-3 text-center">
                 <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Plate Number</p>
                 <p className="font-headline font-black text-4xl text-[#003366] tracking-widest leading-none mt-1">{plateNumber}</p>
                 <p className="text-outline text-xs font-bold uppercase tracking-wider mt-2">Vehicle Type</p>
-                <p className="font-headline font-bold text-xl text-on-surface">{vehicleType}</p>
+                <p className="font-headline font-bold text-xl text-on-surface">{vehicleTypeDisplay}</p>
               </div>
               {displayFuelType && (
                 <div
@@ -711,8 +772,8 @@ export default function ValidationSuccess({
                   </div>
                 </div>
               )}
-              {registeredAt && (
-                <p className="text-outline text-[11px] text-center">Registered: {registeredAt}</p>
+              {registeredAtLabel && (
+                <p className="text-outline text-[11px] text-center">Registered: {registeredAtLabel}</p>
               )}
             </div>
 
@@ -904,7 +965,7 @@ export default function ValidationSuccess({
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-500 -mt-1">
-                      Max ₱{formatPeso(maxCashForAllocation)} · {remainingLiters.toFixed(1)} L allocation
+                      Max ₱{formatPeso(maxCashForAllocation)} · {formatLitersQuantity(remainingLiters)} L allocation
                     </p>
 
                     {inputMode === "liters" ? (
@@ -924,7 +985,7 @@ export default function ValidationSuccess({
                                   cash = maxCashForAllocation;
                                   setCashInput(pesoInputString(cash));
                                   const L2 = Math.min(remainingLiters, cash / pricePerLiter);
-                                  setLiterInput(L2 > 0 ? formatLitersFromExactCash(L2) : "");
+                                  setLiterInput(L2 > 0 ? formatLitersQuantity(L2) : "");
                                 } else {
                                   setLiterInput(String(Lc));
                                   setCashInput(pesoInputString(cash));
@@ -959,7 +1020,7 @@ export default function ValidationSuccess({
                                   pricePerLiter > 0
                                     ? Math.min(remainingLiters, peso / pricePerLiter)
                                     : 0;
-                                setLiterInput(L > 0 ? formatLitersFromExactCash(L) : "");
+                                setLiterInput(L > 0 ? formatLitersQuantity(L) : "");
                                 setActionError("");
                               }}
                               className={`rounded-lg border py-2.5 px-1 text-xs sm:text-sm font-bold transition-all leading-tight ${
@@ -971,7 +1032,7 @@ export default function ValidationSuccess({
                               <span className="block">₱{formatPeso(peso)}</span>
                               {!exceeds && approxL > 0 && (
                                 <span className="block font-medium text-[9px] text-slate-500 mt-0.5">
-                                  ≈ {formatLitersFromExactCash(approxL)} L
+                                  ≈ {formatLitersQuantity(approxL)} L
                                 </span>
                               )}
                             </button>
@@ -1030,9 +1091,8 @@ export default function ValidationSuccess({
           </div>
         </div>
 
-        <div className="mt-8 text-center text-outline text-xs space-y-1 pb-4">
+        <div className="mt-8 text-center text-outline text-xs pb-4">
           <p>© 2026 Mata Technologies Inc.</p>
-          <p>Ref ID: VAL-9823-CEB-2024</p>
         </div>
       </main>
 

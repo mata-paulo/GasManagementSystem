@@ -9,6 +9,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -16,6 +17,7 @@ import {
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth, db } from "@/lib/firebase/client";
 import type { DecodedQR } from "@/lib/qr/qrCodec";
+import { roundLiters } from "@/utils/fuelVolume";
 
 export const WEEKLY_FUEL_LIMIT = 20;
 
@@ -575,12 +577,13 @@ export function getAccountDisplayName(
   return [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email || "User";
 }
 
+/** Admin "online" if lastSeenAt is newer than this (heartbeat runs every 60s while the app is open). */
 const STATION_ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 const QR_EXCEL_EPOCH = new Date(1899, 11, 30).getTime();
 
 export function isStationUserOnline(account: Partial<StationAccount>): boolean {
   if (account.role !== "station") return false;
-  if (account.assignmentStatus !== "active") return false;
+  if ((account.assignmentStatus ?? "active") !== "active") return false;
   if (account.presenceStatus && account.presenceStatus.toLowerCase() !== "online") return false;
   if (!account.lastSeenAt) return false;
 
@@ -659,11 +662,11 @@ function getResidentCycleTransactionLiters(
   transactions: DispenseTransaction[],
   cycleKey = getResidentFuelCycleKey(resident),
 ): number {
-  return Math.round(
+  return roundLiters(
     transactions
       .filter((transaction) => getResidentTransactionCycleKey(resident, transaction) === cycleKey)
-      .reduce((sum, transaction) => sum + transaction.liters, 0) * 100,
-  ) / 100;
+      .reduce((sum, transaction) => sum + transaction.liters, 0),
+  );
 }
 
 function buildResidentAllocationSummary(
@@ -1009,6 +1012,41 @@ export async function saveStationFuelSettings(
   return fetchStationAccount(uid);
 }
 
+/** Keeps lastSeenAt fresh without overwriting manual presenceStatus (offline). */
+export async function stampStationLastSeen(uid: string): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.uid !== uid) return;
+
+  await setDoc(
+    doc(db, "accounts", uid),
+    {
+      lastSeenAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function setStationPresenceStatus(
+  uid: string,
+  status: "online" | "offline",
+): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.uid !== uid) {
+    throw new Error("You must be signed in as this station user to update presence.");
+  }
+
+  await setDoc(
+    doc(db, "accounts", uid),
+    {
+      presenceStatus: status,
+      lastSeenAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function recordDispenseTransaction(
   input: RecordDispenseTransactionInput,
 ): Promise<RecordDispenseTransactionResult> {
@@ -1017,7 +1055,7 @@ export async function recordDispenseTransaction(
     throw new Error("You must be signed in as this station user to record a dispense transaction.");
   }
 
-  const liters = Math.round(Number(input.liters) * 100) / 100;
+  const liters = roundLiters(Number(input.liters));
   if (!Number.isFinite(liters) || liters <= 0) {
     throw new Error("Liters must be greater than zero.");
   }
@@ -1058,9 +1096,9 @@ export async function recordDispenseTransaction(
   const amount = Math.round(liters * pricePerLiter * 100) / 100;
   const nextFuelInventory = {
     ...(station.fuelInventory ?? {}),
-    [selectedFuel]: Math.round((availableInventory - liters) * 100) / 100,
+    [selectedFuel]: roundLiters(availableInventory - liters),
   };
-  const nextFuelUsed = Math.round((usedLitersBefore + liters) * 100) / 100;
+  const nextFuelUsed = roundLiters(usedLitersBefore + liters);
 
   const transactionRef = doc(collection(db, "transactions"));
   const stationRef = doc(db, "accounts", station.uid);
@@ -1138,7 +1176,7 @@ export async function recordDispenseTransaction(
       updatedAt: createdAt.toISOString(),
     },
     usedLiters: nextFuelUsed,
-    remainingLiters: Math.max(Math.round((fuelAllocation - nextFuelUsed) * 100) / 100, 0),
+    remainingLiters: Math.max(roundLiters(fuelAllocation - nextFuelUsed), 0),
   };
 }
 

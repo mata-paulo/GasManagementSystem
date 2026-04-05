@@ -8,7 +8,7 @@ import {
   type ResidentAccount,
   WEEKLY_FUEL_LIMIT,
 } from "@/lib/data/agas";
-
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 const DEFAULT_LAT = 10.3157;
 const DEFAULT_LON = 123.8854;
@@ -277,7 +277,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     local_gas_station
                   </span>
                   <p className={statusConfig.valueClass}>
-                    {remainingLiters.toFixed(1)}<span className="text-xl ml-1 font-normal">Liters</span>
+                    {formatLitersQuantity(remainingLiters)}<span className="text-xl ml-1 font-normal">Liters</span>
                   </p>
                 </div>
                 <p className={statusConfig.labelClass}>{loadingSummary ? "Refreshing" : "Remaining"}</p>
@@ -310,7 +310,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 style={{ width: `${usagePercent}%` }}
               >
                 {usagePercent > 20 && (
-                  <span className="text-[9px] font-black text-white">{usedLiters.toFixed(1)}L used</span>
+                  <span className="text-[9px] font-black text-white">{formatLitersQuantity(usedLiters)}L used</span>
                 )}
               </div>
             </div>
@@ -375,7 +375,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
+                    <p className="text-base font-black text-on-surface leading-none">{formatLitersQuantity(tx.liters)} L</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter.toFixed(2)}/L</p>
                     <p className="text-sm font-black text-[#003366] mt-0.5">₱{tx.totalPaid.toFixed(2)}</p>
                   </div>

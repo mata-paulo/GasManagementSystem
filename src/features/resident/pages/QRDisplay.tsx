@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
-import { encodeQR } from "@/lib/qr/qrCodec";
+import { encodeQR, formatQrIdentityLabel } from "@/lib/qr/qrCodec";
 
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -12,7 +12,7 @@ function formatTimestamp(iso: string) {
 
 export default function QRDisplay({ resident, onDone }) {
   const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
-  const fullName = `${firstName} ${lastName}`;
+  const qrNameLabel = formatQrIdentityLabel(firstName, lastName);
   const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -69,7 +69,7 @@ export default function QRDisplay({ resident, onDone }) {
           <QRCodeSVG value={qrData} size={280} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
             {[
-              { label: "Full Name",   value: fullName },
+              { label: "Name (QR)",   value: qrNameLabel },
               { label: "Plate No.",   value: plate },
               { label: "Vehicle",     value: vehicleType },
               { label: "Barangay",    value: barangay },
@@ -95,7 +95,7 @@ export default function QRDisplay({ resident, onDone }) {
         <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, width: "100%" }}>
           {[
-            { label: "Full Name", value: fullName },
+            { label: "Name (QR)", value: qrNameLabel },
             { label: "Plate No.", value: plate },
             { label: "Vehicle",   value: vehicleType },
             { label: "Barangay",  value: barangay },
@@ -151,7 +151,7 @@ export default function QRDisplay({ resident, onDone }) {
             <div className="px-4 pb-3 flex flex-col gap-2">
               <div className="w-full grid grid-cols-2 gap-2">
                 {[
-                  { label: "Full Name",  value: fullName },
+                  { label: "Name (QR)",  value: qrNameLabel },
                   { label: "Plate No.", value: plate },
                   { label: "Vehicle",   value: vehicleType },
                   { label: "Barangay",  value: barangay },

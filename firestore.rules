@@ -57,7 +57,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    match /stationDirectory/{stationId} {
+    match /stationDirectory/{sourceId} {
       allow read: if signedIn();
       allow write: if false;
     }

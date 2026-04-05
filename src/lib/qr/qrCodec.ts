@@ -40,6 +40,19 @@ function namePart(name: string): string {
   return clean.slice(0, 3).padEnd(3, "X");
 }
 
+/** First 3 letters A–Z only (non-letters stripped), uppercase, padded with X — one segment of the QR identity. */
+export function qrNameCode(name: string | null | undefined): string {
+  return namePart(String(name ?? ""));
+}
+
+/** First 3 + last 3 letters (A–Z, padded with X), uppercase — matches QR identity prefix; for on-card display only. */
+export function formatQrIdentityLabel(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): string {
+  return `${namePart(String(firstName ?? ""))} ${namePart(String(lastName ?? ""))}`.trim();
+}
+
 function toBase64Url(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = "";

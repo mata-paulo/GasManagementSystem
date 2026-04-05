@@ -6,6 +6,7 @@ import {
   type DispenseTransaction,
   type StationAccount,
 } from "@/lib/data/agas";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -37,6 +38,10 @@ function nameInitials(fullName: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+function formatDispenseLiters(liters: number): string {
+  return `${formatLitersQuantity(liters)} L`;
 }
 
 function fuelTypeTheme(fuelType: string) {
@@ -104,7 +109,7 @@ function toCsv(transactions: DispenseTransaction[]): string {
       formatDateLabel(date),
       formatTimeLabel(date),
       tx.fuelType,
-      tx.liters.toFixed(1),
+      formatLitersQuantity(tx.liters),
       tx.pricePerLiter.toFixed(2),
       tx.totalPaid.toFixed(2),
     ];
@@ -259,7 +264,7 @@ export default function ScanHistory({
             {[
               {
                 label: "Total Dispensed",
-                value: `${totalDispensed.toFixed(1)} L`,
+                value: `${formatLitersQuantity(totalDispensed)} L`,
                 icon: "local_gas_station",
                 iconBg: "bg-blue-50",
                 iconColor: "text-blue-600",
@@ -366,7 +371,7 @@ export default function ScanHistory({
                           {tx.fuelType}
                         </span>
                         <div className="text-right shrink-0 w-28">
-                          <p className="text-sm font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
+                          <p className="text-sm font-black text-[#003366]">{formatDispenseLiters(tx.liters)}</p>
                           <p className="text-[10px] text-slate-400">PHP {tx.pricePerLiter.toFixed(2)}/L</p>
                         </div>
                         <div className="text-right shrink-0 w-24">
@@ -449,7 +454,7 @@ export default function ScanHistory({
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex">
             <div className="flex-1 px-4 py-3 text-center border-r border-slate-100">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Dispensed</p>
-              <p className="font-headline font-black text-[#003366] text-lg leading-tight mt-0.5">{totalDispensed.toFixed(1)} L</p>
+              <p className="font-headline font-black text-[#003366] text-lg leading-tight mt-0.5">{formatLitersQuantity(totalDispensed)} L</p>
             </div>
             <div className="flex-1 px-4 py-3 text-center border-r border-slate-100">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
@@ -501,7 +506,7 @@ export default function ScanHistory({
                       </div>
                     </div>
                     <div className="text-right shrink-0 max-w-[50%]">
-                      <p className="text-base font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
+                      <p className="text-base font-black text-[#003366]">{formatDispenseLiters(tx.liters)}</p>
                       <p className="text-[10px] font-bold text-slate-500 mt-0.5">PHP {tx.pricePerLiter.toFixed(2)}/L</p>
                       <p className="text-sm font-black text-[#003366] mt-1">
                         PHP {totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

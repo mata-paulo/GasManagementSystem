@@ -144,7 +144,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
               </button>
             </div>
 
-            <p className="text-center text-slate-300 text-[10px] pb-2">© 2024 Mata Technologies Inc. · A.G.A.S</p>
+            <p className="text-center text-slate-300 text-[10px] pb-2">© 2026 Mata Technologies Inc. · A.G.A.S</p>
           </div>
         </main>
       </div>
@@ -219,7 +219,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
           </div>
 
           <p className="text-center text-slate-300 text-[10px] pt-5 pb-2">
-            © 2024 Mata Technologies Inc. · A.G.A.S
+            © 2026 Mata Technologies Inc. · A.G.A.S
           </p>
         </main>
 

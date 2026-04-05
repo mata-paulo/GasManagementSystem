@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { signOut } from "firebase/auth";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { setStationPresenceStatus, stampStationLastSeen } from "@/lib/data/agas";
 import { parseStoredSession, type AuthUser, type Role, type StoredSession } from "@/lib/auth/authService";
-import { auth as firebaseAuth, db } from "@/lib/firebase/client";
+import { auth as firebaseAuth } from "@/lib/firebase/client";
 
 interface AuthState {
   user: AuthUser | null;
@@ -23,17 +23,6 @@ const SESSION_KEY = "frs_auth_session";
 
 interface AuthProviderProps {
   children: ReactNode;
-}
-
-async function updateStationPresence(
-  uid: string,
-  status: "online" | "offline",
-): Promise<void> {
-  await setDoc(doc(db, "accounts", uid), {
-    presenceStatus: status,
-    lastSeenAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -65,15 +54,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     const uid = auth.user.uid;
-    void updateStationPresence(uid, "online").catch(() => undefined);
+    void setStationPresenceStatus(uid, "online").catch(() => undefined);
 
     const heartbeat = window.setInterval(() => {
-      void updateStationPresence(uid, "online").catch(() => undefined);
+      void stampStationLastSeen(uid).catch(() => undefined);
     }, 60_000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        void updateStationPresence(uid, "online").catch(() => undefined);
+        void stampStationLastSeen(uid).catch(() => undefined);
       }
     };
 
@@ -102,7 +91,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const logout = (): void => {
     if (auth.role === "station" && typeof auth.user?.uid === "string") {
-      void updateStationPresence(auth.user.uid, "offline").catch(() => undefined);
+      void setStationPresenceStatus(auth.user.uid, "offline").catch(() => undefined);
     }
     void signOut(firebaseAuth).catch(() => undefined);
     localStorage.removeItem(SESSION_KEY);

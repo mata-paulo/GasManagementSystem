@@ -10,7 +10,7 @@ import {
   isStationUserOnline,
   type AdminDashboardData,
 } from "@/lib/data/agas";
-
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 /* ─── Mock Data ─── */
 const STATIC_STATIONS = [
@@ -1479,7 +1479,7 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-2.5">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}>{tx.type}</span>
                             </td>
-                            <td className="px-5 py-2.5 text-right font-black text-[#003366] text-xs">{tx.liters.toFixed(1)} L</td>
+                            <td className="px-5 py-2.5 text-right font-black text-[#003366] text-xs">{formatLitersQuantity(tx.liters)} L</td>
                             <td className="px-5 py-2.5 text-right font-black text-green-700 text-xs">₱{(tx.liters * tx.pricePerLiter).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className="px-5 py-2.5 text-right text-xs text-slate-400">{tx.date} · {tx.time}</td>
                           </tr>
@@ -1844,8 +1844,8 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
                             </td>
-                            <td className="px-5 py-3 text-right font-black text-[#003366]">{r.used.toFixed(1)} L</td>
-                            <td className="px-5 py-3 text-right font-bold text-green-700">{r.remaining.toFixed(1)} L</td>
+                            <td className="px-5 py-3 text-right font-black text-[#003366]">{formatLitersQuantity(r.used)} L</td>
+                            <td className="px-5 py-3 text-right font-bold text-green-700">{formatLitersQuantity(r.remaining)} L</td>
                             <td className="px-5 py-3">
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1981,13 +1981,13 @@ export default function AdminDashboard({ onLogout }) {
                           <td className="px-5 py-3">
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
                           </td>
-                          <td className="px-5 py-3 text-right font-bold text-[#003366]">{r.used.toFixed(1)} L</td>
-                          <td className="px-5 py-3 text-right font-bold text-green-700">{r.remaining.toFixed(1)} L</td>
+                          <td className="px-5 py-3 text-right font-bold text-[#003366]">{formatLitersQuantity(r.used)} L</td>
+                          <td className="px-5 py-3 text-right font-bold text-green-700">{formatLitersQuantity(r.remaining)} L</td>
                           <td className="px-5 py-3 text-right font-black text-green-700">
                             {totalSpent > 0 ? `₱${totalSpent.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}` : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-500">
-                            {avgFill > 0 ? `${avgFill.toFixed(1)} L` : <span className="text-slate-300">—</span>}
+                            {avgFill > 0 ? `${formatLitersQuantity(avgFill)} L` : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
@@ -2240,7 +2240,7 @@ export default function AdminDashboard({ onLogout }) {
                   ["Resident","Station","Plate","Fuel Type","Liters","Price/L","Total Paid","Date","Time"],
                   ...filteredTxnAll.map(t => [
                     t.resident, t.station, t.plate, t.type,
-                    t.liters.toFixed(1), t.pricePerLiter.toFixed(2),
+                    formatLitersQuantity(t.liters), t.pricePerLiter.toFixed(2),
                     (t.liters * t.pricePerLiter).toFixed(2), t.date, t.time,
                   ]),
                 ];
@@ -2250,7 +2250,7 @@ export default function AdminDashboard({ onLogout }) {
                   ...byResident.map(r => {
                     const liters = r.txns.reduce((a, t) => a + t.liters, 0);
                     const spent  = r.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                    return [r.name, r.plate, String(r.txns.length), liters.toFixed(1), (liters / r.txns.length).toFixed(1), spent.toFixed(2)];
+                    return [r.name, r.plate, String(r.txns.length), formatLitersQuantity(liters), formatLitersQuantity(liters / r.txns.length), spent.toFixed(2)];
                   }),
                 ];
               } else {
@@ -2259,7 +2259,7 @@ export default function AdminDashboard({ onLogout }) {
                   ...byStation.map(s => {
                     const liters   = s.txns.reduce((a, t) => a + t.liters, 0);
                     const revenue  = s.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                    return [s.name, s.brand, String(s.txns.length), liters.toFixed(1), revenue.toFixed(2)];
+                    return [s.name, s.brand, String(s.txns.length), formatLitersQuantity(liters), revenue.toFixed(2)];
                   }),
                 ];
               }
@@ -2283,7 +2283,7 @@ export default function AdminDashboard({ onLogout }) {
                 const headerRow = ["Resident","Station","Plate","Fuel Type","Liters","Price/L","Total Paid","Date","Time"];
                 const dataRows  = filteredTxnAll.map(t => [
                   t.resident, t.station, t.plate, t.type,
-                  `${t.liters.toFixed(1)} L`, `₱${t.pricePerLiter.toFixed(2)}`,
+                  `${formatLitersQuantity(t.liters)} L`, `₱${t.pricePerLiter.toFixed(2)}`,
                   `₱${(t.liters * t.pricePerLiter).toFixed(2)}`, t.date, t.time,
                 ]);
                 tableHTML = `<tr>${headerRow.map(h => `<th>${h}</th>`).join("")}</tr>${dataRows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}`;
@@ -2292,7 +2292,7 @@ export default function AdminDashboard({ onLogout }) {
                 const dataRows  = byResident.map(r => {
                   const liters = r.txns.reduce((a, t) => a + t.liters, 0);
                   const spent  = r.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                  return [r.name, r.plate, r.txns.length, `${liters.toFixed(1)} L`, `${(liters/r.txns.length).toFixed(1)} L`, `₱${spent.toFixed(2)}`];
+                  return [r.name, r.plate, r.txns.length, `${formatLitersQuantity(liters)} L`, `${formatLitersQuantity(liters/r.txns.length)} L`, `₱${spent.toFixed(2)}`];
                 });
                 tableHTML = `<tr>${headerRow.map(h => `<th>${h}</th>`).join("")}</tr>${dataRows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}`;
               } else {
@@ -2300,7 +2300,7 @@ export default function AdminDashboard({ onLogout }) {
                 const dataRows  = byStation.map(s => {
                   const liters  = s.txns.reduce((a, t) => a + t.liters, 0);
                   const revenue = s.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                  return [s.name, s.brand, s.txns.length, `${liters.toFixed(1)} L`, `₱${revenue.toFixed(2)}`];
+                  return [s.name, s.brand, s.txns.length, `${formatLitersQuantity(liters)} L`, `₱${revenue.toFixed(2)}`];
                 });
                 tableHTML = `<tr>${headerRow.map(h => `<th>${h}</th>`).join("")}</tr>${dataRows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}`;
               }
@@ -2358,9 +2358,9 @@ export default function AdminDashboard({ onLogout }) {
               {/* Summary cards */}
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: "Total Dispensed", value: `${totalLiters.toFixed(1)} L`,  colorClass: "text-[#003366]"  },
+                  { label: "Total Dispensed", value: `${formatLitersQuantity(totalLiters)} L`,  colorClass: "text-[#003366]"  },
                   { label: "Transactions",    value: filteredTxn.length,               colorClass: "text-[#1565c0]"  },
-                  { label: "Avg per Fill",    value: `${avgFill.toFixed(1)} L`,        colorClass: "text-[#7b1fa2]"  },
+                  { label: "Avg per Fill",    value: `${formatLitersQuantity(avgFill)} L`,        colorClass: "text-[#7b1fa2]"  },
                   { label: "Total Revenue",   value: `₱${totalRevenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}`, colorClass: "text-[#2e7d32]" },
                 ].map(c => (
                   <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
@@ -2434,7 +2434,7 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3 text-xs text-slate-500">{tx.station}</td>
                             <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{tx.plate}</td>
                             <td className="px-5 py-3"><span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}>{tx.type}</span></td>
-                            <td className="px-5 py-3 text-right font-black text-[#003366]">{tx.liters.toFixed(1)} L</td>
+                            <td className="px-5 py-3 text-right font-black text-[#003366]">{formatLitersQuantity(tx.liters)} L</td>
                             <td className="px-5 py-3 text-right text-xs text-slate-400">₱{tx.pricePerLiter.toFixed(2)}</td>
                             <td className="px-5 py-3 text-right font-black text-green-700">₱{total.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                             <td className="px-5 py-3 text-right text-xs text-slate-400">{tx.date}</td>
@@ -2499,8 +2499,8 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3 text-center">
                               <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{r.txns.length}</span>
                             </td>
-                            <td className="px-5 py-3 text-right font-black text-[#003366]">{liters.toFixed(1)} L</td>
-                            <td className="px-5 py-3 text-right text-xs text-slate-500">{avg.toFixed(1)} L</td>
+                            <td className="px-5 py-3 text-right font-black text-[#003366]">{formatLitersQuantity(liters)} L</td>
+                            <td className="px-5 py-3 text-right text-xs text-slate-500">{formatLitersQuantity(avg)} L</td>
                             <td className="px-5 py-3 text-right font-black text-green-700">₱{spent.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                           </tr>
                         );
@@ -2511,8 +2511,8 @@ export default function AdminDashboard({ onLogout }) {
                         <tr className="bg-[#003366]/5 border-t-2 border-[#003366]/10">
                           <td colSpan={2} className="px-5 py-3 text-xs font-black text-[#003366] uppercase tracking-wider">Total</td>
                           <td className="px-5 py-3 text-center text-xs font-black text-[#003366]">{filteredTxn.length}</td>
-                          <td className="px-5 py-3 text-right text-sm font-black text-[#003366]">{totalLiters.toFixed(1)} L</td>
-                          <td className="px-5 py-3 text-right text-xs font-black text-slate-500">{avgFill.toFixed(1)} L</td>
+                          <td className="px-5 py-3 text-right text-sm font-black text-[#003366]">{formatLitersQuantity(totalLiters)} L</td>
+                          <td className="px-5 py-3 text-right text-xs font-black text-slate-500">{formatLitersQuantity(avgFill)} L</td>
                           <td className="px-5 py-3 text-right text-sm font-black text-green-700">₱{totalRevenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                         </tr>
                       </tfoot>
@@ -2607,7 +2607,7 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3 text-center">
                               <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{s.txns.length}</span>
                             </td>
-                            <td className="px-5 py-3 text-right font-black text-[#003366]">{liters.toFixed(1)} L</td>
+                            <td className="px-5 py-3 text-right font-black text-[#003366]">{formatLitersQuantity(liters)} L</td>
                             <td className="px-5 py-3 text-right font-black text-green-700">₱{revenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                           </tr>
                         );
@@ -2618,7 +2618,7 @@ export default function AdminDashboard({ onLogout }) {
                         <tr className="bg-[#003366]/5 border-t-2 border-[#003366]/10">
                           <td colSpan={3} className="px-5 py-3 text-xs font-black text-[#003366] uppercase tracking-wider">Total</td>
                           <td className="px-5 py-3 text-center text-xs font-black text-[#003366]">{stationTotalTxns}</td>
-                          <td className="px-5 py-3 text-right text-sm font-black text-[#003366]">{stationTotalLiters.toFixed(1)} L</td>
+                          <td className="px-5 py-3 text-right text-sm font-black text-[#003366]">{formatLitersQuantity(stationTotalLiters)} L</td>
                           <td className="px-5 py-3 text-right text-sm font-black text-green-700">₱{stationTotalRevenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                         </tr>
                       </tfoot>
@@ -2995,15 +2995,15 @@ export default function AdminDashboard({ onLogout }) {
                           </td>
                           <td className="px-5 py-3 text-right">
                             <p className="font-black text-[#003366]">{user.todayTxns ?? 0}</p>
-                            <p className="text-[10px] text-slate-400">{(user.todayLiters ?? 0).toFixed(1)} L</p>
+                            <p className="text-[10px] text-slate-400">{formatLitersQuantity(user.todayLiters ?? 0)} L</p>
                           </td>
                           <td className="px-5 py-3 text-right">
                             <p className="font-black text-[#1565c0]">{user.weekTxns ?? 0}</p>
-                            <p className="text-[10px] text-slate-400">{(user.weekLiters ?? 0).toFixed(1)} L</p>
+                            <p className="text-[10px] text-slate-400">{formatLitersQuantity(user.weekLiters ?? 0)} L</p>
                           </td>
                           <td className="px-5 py-3 text-right">
                             <p className="font-black text-[#2e7d32]">{user.monthTxns ?? 0}</p>
-                            <p className="text-[10px] text-slate-400">{(user.monthLiters ?? 0).toFixed(1)} L</p>
+                            <p className="text-[10px] text-slate-400">{formatLitersQuantity(user.monthLiters ?? 0)} L</p>
                           </td>
                         </tr>
                       ))}
@@ -3217,7 +3217,7 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                   <div className="bg-white/10 rounded-xl p-3">
                     <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Total Liters</p>
-                    <p className="text-white font-black text-lg">{liters.toFixed(1)} L</p>
+                    <p className="text-white font-black text-lg">{formatLitersQuantity(liters)} L</p>
                   </div>
                   <div className="bg-white/10 rounded-xl p-3">
                     <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Revenue</p>
@@ -3239,7 +3239,7 @@ export default function AdminDashboard({ onLogout }) {
                         ["Resident","Plate","Fuel Type","Date","Time","Price/L","Liters","Total Paid"],
                         ...drawerTxns.map(t => [
                           t.resident, t.plate, t.type, t.date, t.time,
-                          t.pricePerLiter.toFixed(2), t.liters.toFixed(1),
+                          t.pricePerLiter.toFixed(2), formatLitersQuantity(t.liters),
                           (t.liters * t.pricePerLiter).toFixed(2),
                         ]),
                       ];
@@ -3259,7 +3259,7 @@ export default function AdminDashboard({ onLogout }) {
                     onClick={() => {
                       const tableRows = drawerTxns.map(t => {
                         const total = (t.liters * t.pricePerLiter).toFixed(2);
-                        return `<tr><td>${t.resident}</td><td>${t.plate}</td><td>${t.type}</td><td>${t.date} ${t.time}</td><td>₱${t.pricePerLiter.toFixed(2)}/L × ${t.liters.toFixed(1)} L</td><td>₱${total}</td></tr>`;
+                        return `<tr><td>${t.resident}</td><td>${t.plate}</td><td>${t.type}</td><td>${t.date} ${t.time}</td><td>₱${t.pricePerLiter.toFixed(2)}/L × ${formatLitersQuantity(t.liters)} L</td><td>₱${total}</td></tr>`;
                       }).join("");
                       const win = window.open("", "_blank");
                       if (!win) return;
@@ -3279,7 +3279,7 @@ export default function AdminDashboard({ onLogout }) {
                         <table>
                           <thead><tr><th>Resident</th><th>Plate</th><th>Fuel</th><th>Date & Time</th><th>Price × Liters</th><th>Total Paid</th></tr></thead>
                           <tbody>${tableRows}</tbody>
-                          <tfoot><tr><td colspan="4">Total</td><td>${liters.toFixed(1)} L</td><td>₱${revenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr></tfoot>
+                          <tfoot><tr><td colspan="4">Total</td><td>${formatLitersQuantity(liters)} L</td><td>₱${revenue.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr></tfoot>
                         </table>
                       </body></html>`);
                       win.document.close();
@@ -3308,7 +3308,7 @@ export default function AdminDashboard({ onLogout }) {
                       <div className="flex items-center justify-between">
                         <div className="text-[10px] text-slate-400 space-y-0.5">
                           <p>{tx.date} · {tx.time}</p>
-                          <p>₱{tx.pricePerLiter.toFixed(2)}/L × {tx.liters.toFixed(1)} L</p>
+                          <p>₱{tx.pricePerLiter.toFixed(2)}/L × {formatLitersQuantity(tx.liters)} L</p>
                         </div>
                         <p className="text-sm font-black text-green-700">₱{total.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
                       </div>

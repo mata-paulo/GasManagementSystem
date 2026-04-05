@@ -641,6 +641,7 @@ export default function App() {
         onTabChange={handleOfficerTabChange}
         lastUpdated={lastUpdated}
         onLogout={handleLogout}
+        onPresenceSaved={() => void refreshPortalUser()}
       />
     </RoleGuard>
   );

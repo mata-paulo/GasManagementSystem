@@ -9,7 +9,8 @@ L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, 
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
 import { subscribeResidentAllocationSummary, WEEKLY_FUEL_LIMIT } from "@/lib/data/agas";
-import { encodeQR } from "@/lib/qr/qrCodec";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
+import { encodeQR, formatQrIdentityLabel } from "@/lib/qr/qrCodec";
 import mapboxgl from "mapbox-gl";
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -183,6 +184,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const firstName    = resident?.firstName || "Resident";
   const lastName     = resident?.lastName  || "";
   const fullName     = `${firstName} ${lastName}`.trim();
+  const qrNameLabel  = formatQrIdentityLabel(firstName, lastName);
   const plate        = resident?.plate        || "N/A";
   const barangay     = resident?.barangay     || "Not set";
   const vehicleType  = resident?.vehicleType  || "Car";
@@ -350,7 +352,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
           <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
             {[
-              { label: "Full Name",  value: fullName },
+              { label: "Name (QR)",  value: qrNameLabel },
               { label: "Plate No.", value: plate },
               { label: "Vehicle",   value: vehicleType },
               { label: "Barangay",  value: barangay },
@@ -476,8 +478,8 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               {/* Stat cards */}
               <div className="grid grid-cols-4 gap-4">
                 {[
-                  { label: "Remaining Fuel", value: `${remaining.toFixed(1)} L`, icon: "local_gas_station", color: "text-green-700", bg: "bg-green-50", border: "border-green-200" },
-                  { label: "Used This Week",  value: `${used.toFixed(1)} L`,      icon: "ev_station",        color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
+                  { label: "Remaining Fuel", value: `${formatLitersQuantity(remaining)} L`, icon: "local_gas_station", color: "text-green-700", bg: "bg-green-50", border: "border-green-200" },
+                  { label: "Used This Week",  value: `${formatLitersQuantity(used)} L`,      icon: "ev_station",        color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
                   { label: "Allocation Used", value: `${100 - pct}%`,             icon: "donut_large",       color: "text-[#003366]",  bg: "bg-blue-50",   border: "border-blue-200" },
                   { label: "Total Spent",     value: `₱${totalSpent.toFixed(0)}`, icon: "payments",          color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200" },
                 ].map((c) => (
@@ -518,7 +520,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                           </span>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-base font-black text-slate-800">{tx.liters.toFixed(1)} L</p>
+                          <p className="text-base font-black text-slate-800">{formatLitersQuantity(tx.liters)} L</p>
                           <p className="text-xs text-slate-400">₱{tx.pricePerLiter}/L</p>
                           <p className="text-sm font-black text-[#003366]">₱{(tx.liters * tx.pricePerLiter).toFixed(2)}</p>
                         </div>
@@ -548,11 +550,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   <div className="w-full space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500 font-medium">Remaining</span>
-                      <span className="font-black text-green-700">{remaining.toFixed(1)} L</span>
+                      <span className="font-black text-green-700">{formatLitersQuantity(remaining)} L</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500 font-medium">Used</span>
-                      <span className="font-black text-orange-600">{used.toFixed(1)} L</span>
+                      <span className="font-black text-orange-600">{formatLitersQuantity(used)} L</span>
                     </div>
                     <div className="flex justify-between text-xs border-t border-slate-100 pt-2">
                       <span className="text-slate-500 font-medium">Weekly Total</span>
@@ -624,7 +626,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     </div>
                     <div className="divide-y divide-slate-100">
                       {[
-                        { icon: "person",           label: "Full Name",    value: fullName    },
+                        { icon: "person",           label: "Name (QR)",    value: qrNameLabel },
                         { icon: "directions_car",   label: "Plate No.",    value: plate       },
                         { icon: "commute",          label: "Vehicle Type", value: vehicleType },
                         { icon: "location_on",      label: "Barangay",     value: barangay    },
@@ -662,11 +664,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                       <div className="flex-1 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Remaining</span>
-                          <span className="font-black text-green-700">{remaining.toFixed(1)} L</span>
+                          <span className="font-black text-green-700">{formatLitersQuantity(remaining)} L</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Used</span>
-                          <span className="font-black text-orange-600">{used.toFixed(1)} L</span>
+                          <span className="font-black text-orange-600">{formatLitersQuantity(used)} L</span>
                         </div>
                         <div className="flex justify-between text-sm border-t pt-2">
                           <span className="text-slate-500">Weekly Quota</span>
@@ -686,7 +688,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               {/* Summary */}
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: "Total Dispensed",  value: `${filteredTransactions.reduce((s, t) => s + t.liters, 0).toFixed(1)} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
+                  { label: "Total Dispensed",  value: `${formatLitersQuantity(filteredTransactions.reduce((s, t) => s + t.liters, 0))} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
                   { label: "Transactions",      value: filteredTransactions.length,                                   color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
                   { label: "Total Spent",       value: `₱${totalSpent.toFixed(2)}`,                                 color: "text-green-700",  bg: "bg-green-50 border-green-200" },
                 ].map((c) => (
@@ -744,7 +746,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         </span>
                         <p className="text-xs text-slate-400 mt-1">₱{tx.pricePerLiter}/L</p>
                       </div>
-                      <p className="text-right text-sm font-bold text-slate-700">{tx.liters.toFixed(1)} L</p>
+                      <p className="text-right text-sm font-bold text-slate-700">{formatLitersQuantity(tx.liters)} L</p>
                       <p className="text-right text-sm font-black text-[#003366]">₱{(tx.liters * tx.pricePerLiter).toFixed(2)}</p>
                     </div>
                   ))}

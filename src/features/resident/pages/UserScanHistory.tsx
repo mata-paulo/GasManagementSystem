@@ -5,6 +5,7 @@ import {
   type DispenseTransaction,
   type ResidentAccount,
 } from "@/lib/data/agas";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -19,6 +20,10 @@ const FILTERS = [
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
 ];
+
+function residentFuelTypeLabel(resident: ResidentAccount | null): "Diesel" | "Regular" {
+  return resident?.gasType === "Diesel" ? "Diesel" : "Regular";
+}
 
 function formatDateLabel(value: Date | null): string {
   if (!value) return "Unknown date";
@@ -57,23 +62,6 @@ function matchesFilter(date: Date | null, filter: string): boolean {
   }
 
   return true;
-}
-
-function toCsv(transactions: DispenseTransaction[]): string {
-  const headers = ["Station", "Date", "Time", "Fuel Type", "Liters", "Price/L", "Total"];
-  const rows = transactions.map((tx) => [
-    tx.stationName,
-    formatDateLabel(tx.createdAt),
-    formatTimeLabel(tx.createdAt),
-    tx.fuelType,
-    tx.liters.toFixed(1),
-    tx.pricePerLiter.toFixed(2),
-    tx.totalPaid.toFixed(2),
-  ]);
-
-  return [headers, ...rows]
-    .map((row) => row.map((value) => `"${value}"`).join(","))
-    .join("\n");
 }
 
 type UserScanHistoryProps = {
@@ -119,9 +107,14 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
     };
   }, [resident?.uid]);
 
+  const fuelType = residentFuelTypeLabel(resident);
+
   const filtered = useMemo(
-    () => transactions.filter((tx) => matchesFilter(tx.createdAt, filter)),
-    [filter, transactions],
+    () =>
+      transactions.filter(
+        (tx) => tx.fuelType === fuelType && matchesFilter(tx.createdAt, filter),
+      ),
+    [filter, fuelType, transactions],
   );
 
   const grouped = useMemo(() => filtered.reduce((acc, tx) => {
@@ -134,19 +127,9 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
   const totalLiters = filtered.reduce((sum, tx) => sum + tx.liters, 0);
   const totalSpent = filtered.reduce((sum, tx) => sum + tx.totalPaid, 0);
 
-  const handleDownload = () => {
-    const csv = toCsv(filtered);
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `resident-transactions-${filter}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="flex flex-col min-h-dvh bg-background">
+      {/* Header */}
       <div className="flex items-center px-6 py-4 bg-primary-container sticky top-0 z-40">
         <div className="flex-1 flex flex-col items-center">
           <h1 className="text-white font-headline font-bold text-lg leading-none">
@@ -162,38 +145,28 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
       </div>
 
       <main className="flex-1 px-5 pt-5 pb-36 max-w-2xl mx-auto w-full space-y-5">
+        {/* Filter bar */}
         <div className="flex justify-center gap-2">
-          {FILTERS.map((item) => (
+          {FILTERS.map((f) => (
             <button
-              key={item.id}
-              onClick={() => setFilter(item.id)}
+              key={f.id}
+              onClick={() => setFilter(f.id)}
               className={`shrink-0 px-5 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                filter === item.id
+                filter === f.id
                   ? "bg-[#003366] text-white border-[#003366]"
                   : "bg-white text-slate-500 border-slate-200 active:scale-95"
               }`}
             >
-              {item.label}
+              {f.label}
             </button>
           ))}
         </div>
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            Download
-          </button>
-        </div>
-
+        {/* Summary cards */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-primary-container/10 border border-primary-container/20 rounded-2xl p-4 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Dispensed</p>
-            <p className="text-xl font-black font-headline text-primary-container">{totalLiters.toFixed(1)} L</p>
+            <p className="text-xl font-black font-headline text-primary-container">{formatLitersQuantity(totalLiters)} L</p>
           </div>
           <div className="bg-tertiary/10 border border-tertiary/20 rounded-2xl p-4 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Transactions</p>
@@ -201,7 +174,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
           </div>
           <div className="bg-[#003366]/10 border border-[#003366]/20 rounded-2xl p-4 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Total Spent</p>
-            <p className="text-xl font-black font-headline text-[#003366]">₱{totalSpent.toFixed(2)}</p>
+            <p className="text-xl font-black font-headline text-[#003366]">₱{totalSpent.toFixed(0)}</p>
           </div>
         </div>
 
@@ -211,34 +184,47 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
           </div>
         )}
 
-        {!loadingTransactions && Object.entries(grouped).map(([date, txs]) => (
-          <section key={date} className="space-y-3">
-            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
-              {date}
-            </p>
-            {txs.map((tx) => (
-              <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
+        {/* Grouped history */}
+        {!loadingTransactions &&
+          Object.entries(grouped).map(([date, txs]) => (
+            <section key={date} className="space-y-3">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+                {date}
+              </p>
+              {txs.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-white icon-fill text-[22px]">
+                      local_gas_station
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-on-surface leading-tight">
+                      {tx.stationName || "Unknown Station"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {formatDateLabel(tx.createdAt)} · {formatTimeLabel(tx.createdAt)}
+                    </p>
+                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                      {tx.fuelType}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-black text-on-surface leading-none">
+                      {formatLitersQuantity(tx.liters)} L
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
+                    <p className="text-sm font-black text-[#003366] mt-0.5">
+                      ₱{tx.totalPaid.toFixed(2)}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-on-surface leading-tight">{tx.stationName || "Unknown Station"}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {formatDateLabel(tx.createdAt)} · {formatTimeLabel(tx.createdAt)}
-                  </p>
-                  <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
-                    {tx.fuelType}
-                  </span>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter.toFixed(2)}/L</p>
-                  <p className="text-sm font-black text-[#003366] mt-0.5">₱{tx.totalPaid.toFixed(2)}</p>
-                </div>
-              </div>
-            ))}
-          </section>
-        ))}
+              ))}
+            </section>
+          ))}
 
         {!loadingTransactions && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
@@ -252,6 +238,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
         )}
       </main>
 
+      {/* Floating QR button */}
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
           type="button"

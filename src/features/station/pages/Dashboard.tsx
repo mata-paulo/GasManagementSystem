@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import {
   fetchStationTransactions,
+  setStationPresenceStatus,
   type DispenseTransaction,
   type StationAccount,
 } from "@/lib/data/agas";
 import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 function timeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -36,6 +38,7 @@ type DashboardOfficer = {
 type Transaction = {
   id: number; name: string; plate: string; vehicleType: string;
   date: string; time: string; liters: number; fuelType: string; pricePerLiter: number;
+  totalPaid: number;
 };
 
 type DashboardProps = {
@@ -46,6 +49,8 @@ type DashboardProps = {
   activeTab: string;
   onTabChange: (tab: string) => void;
   lastUpdated?: Date | null;
+  /** After presence is written to Firestore (manual Online/Offline). */
+  onPresenceSaved?: () => void;
 };
 
 const ORDERED_FUELS = [
@@ -86,6 +91,10 @@ function mapDispenseToTransaction(tx: DispenseTransaction, idx: number): Transac
   const d = tx.occurredAt ?? tx.createdAt;
   const dateStr = d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
   const timeStr = d ? d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "";
+  const totalPaid =
+    Number.isFinite(tx.totalPaid) && tx.totalPaid > 0
+      ? Math.round(tx.totalPaid * 100) / 100
+      : Math.round(tx.liters * tx.pricePerLiter * 100) / 100;
   return {
     id: idx,
     name: tx.residentName || "Unknown",
@@ -96,10 +105,20 @@ function mapDispenseToTransaction(tx: DispenseTransaction, idx: number): Transac
     liters: tx.liters,
     fuelType: tx.fuelType,
     pricePerLiter: tx.pricePerLiter,
+    totalPaid,
   };
 }
 
-export default function Dashboard({ officer, onScan, onEditFuels, onLogout, activeTab, onTabChange, lastUpdated }: DashboardProps) {
+export default function Dashboard({
+  officer,
+  onScan,
+  onEditFuels,
+  onLogout,
+  activeTab,
+  onTabChange,
+  lastUpdated,
+  onPresenceSaved,
+}: DashboardProps) {
   const [lastUpdateLabel, setLastUpdateLabel] = useState("Never");
   const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
@@ -167,8 +186,20 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
   const sortedTx = [...recentTransactions].sort(
     (a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime()
   );
-  const totalRevenue   = recentTransactions.reduce((sum, tx) => sum + tx.liters * tx.pricePerLiter, 0);
+  const totalRevenue   = recentTransactions.reduce((sum, tx) => sum + tx.totalPaid, 0);
   const totalDispensed = recentTransactions.reduce((sum, tx) => sum + tx.liters, 0);
+
+  const persistPresence = (next: "online" | "offline") => {
+    const uid = typeof officer?.uid === "string" ? officer.uid : "";
+    if (!uid) return;
+    void setStationPresenceStatus(uid, next)
+      .then(() => {
+        setStationStatus(next);
+        setShowStatusMenu(false);
+        onPresenceSaved?.();
+      })
+      .catch((err) => console.error("[Dashboard] Failed to update presence:", err));
+  };
 
   // ── Status dropdown (shared between mobile + desktop) ──────────────────────
   const StatusBadge = ({ dark = false }: { dark?: boolean }) => (
@@ -203,7 +234,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
           <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden min-w-[120px]">
-            <button type="button" onClick={() => { setStationStatus("online"); setShowStatusMenu(false); }}
+            <button type="button" onClick={() => persistPresence("online")}
               className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 transition-colors">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -212,7 +243,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
               <span className="text-[11px] font-black uppercase tracking-wider text-emerald-600">Online</span>
               {stationStatus === "online" && <span className="material-symbols-outlined text-emerald-500 ml-auto" style={{ fontSize: "14px" }}>check</span>}
             </button>
-            <button type="button" onClick={() => { setStationStatus("offline"); setShowStatusMenu(false); }}
+            <button type="button" onClick={() => persistPresence("offline")}
               className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 transition-colors">
               <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
               <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Offline</span>
@@ -264,7 +295,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
             {[
               { label: "Total Capacity",    value: `${totalCapacity.toLocaleString()} L`, icon: "water_drop",      iconBg: "bg-blue-50",   iconColor: "text-blue-600",   valColor: "text-blue-700" },
               { label: "Total Transactions",value: `${recentTransactions.length}`,         icon: "receipt_long",    iconBg: "bg-amber-50",  iconColor: "text-amber-600",  valColor: "text-amber-700" },
-              { label: "Total Dispensed",   value: `${totalDispensed.toFixed(1)} L`,       icon: "local_gas_station",iconBg: "bg-green-50",  iconColor: "text-green-600",  valColor: "text-green-700" },
+              { label: "Total Dispensed",   value: `${formatLitersQuantity(totalDispensed)} L`,       icon: "local_gas_station",iconBg: "bg-green-50",  iconColor: "text-green-600",  valColor: "text-green-700" },
               { label: "Total Revenue",     value: `₱${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: "payments", iconBg: "bg-purple-50", iconColor: "text-purple-500", valColor: "text-purple-700" },
             ].map((s) => (
               <div key={s.label} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
@@ -338,7 +369,8 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
               <div className="space-y-3 flex-1">
                 {sortedTx.slice(0, MAX_DASHBOARD_TRANSACTIONS).map((tx) => {
                   const txTheme    = fuelTypeTheme(tx.fuelType);
-                  const totalPrice = Math.round(tx.liters * tx.pricePerLiter * 100) / 100;
+                  const totalPrice = tx.totalPaid;
+                  const litersLabel = `${formatLitersQuantity(tx.liters)} L`;
                   return (
                     <div key={tx.id} className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
@@ -351,7 +383,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                           style={{ background: txTheme.soft, color: txTheme.text }}>{tx.fuelType}</span>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
+                        <p className="text-sm font-black text-[#003366]">{litersLabel}</p>
                         <p className="text-[10px] text-slate-400">₱{totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
                     </div>
@@ -408,7 +440,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
                         <div className="absolute right-0 top-full mt-1.5 z-50 bg-[#0d2a5e] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[120px]">
-                          <button type="button" onClick={() => { setStationStatus("online"); setShowStatusMenu(false); }}
+                          <button type="button" onClick={() => persistPresence("online")}
                             className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors">
                             <span className="relative flex h-2 w-2">
                               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -417,7 +449,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                             <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">Online</span>
                             {stationStatus === "online" && <span className="material-symbols-outlined text-emerald-400 ml-auto" style={{ fontSize: "14px" }}>check</span>}
                           </button>
-                          <button type="button" onClick={() => { setStationStatus("offline"); setShowStatusMenu(false); }}
+                          <button type="button" onClick={() => persistPresence("offline")}
                             className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 transition-colors">
                             <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
                             <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Offline</span>
@@ -488,7 +520,8 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
               <div className="space-y-2">
                 {sortedTx.slice(0, MAX_DASHBOARD_TRANSACTIONS).map((tx) => {
                   const txTheme    = fuelTypeTheme(tx.fuelType);
-                  const totalPrice = Math.round(tx.liters * tx.pricePerLiter * 100) / 100;
+                  const totalPrice = tx.totalPaid;
+                  const litersLabel = `${formatLitersQuantity(tx.liters)} L`;
                   return (
                     <div key={tx.id} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm gap-3">
                       <div className="flex items-center gap-3 min-w-0">
@@ -503,7 +536,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
                         </div>
                       </div>
                       <div className="text-right shrink-0 max-w-[50%]">
-                        <p className="text-base font-black text-[#003366]">{tx.liters.toFixed(1)} L</p>
+                        <p className="text-base font-black text-[#003366]">{litersLabel}</p>
                         <p className="text-[10px] font-bold text-slate-500 mt-0.5">₱{tx.pricePerLiter.toFixed(2)}/L</p>
                         <p className="text-sm font-black text-[#003366] mt-1">₱{totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
