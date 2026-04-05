@@ -10,8 +10,21 @@ function formatTimestamp(iso: string) {
   });
 }
 
+/** First letter uppercase; if the first character is already uppercase, leave the string unchanged. */
+function formatVehicleTypeDisplay(raw: unknown): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  const first = s.charAt(0);
+  const isLatinLetter = /[A-Za-z]/.test(first);
+  if (isLatinLetter && first === first.toUpperCase()) return s;
+  if (isLatinLetter) return first.toLocaleUpperCase("en-US") + s.slice(1);
+  return s;
+}
+
 export default function QRDisplay({ resident, onDone }) {
   const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
+  const vehicleTypeDisplay = formatVehicleTypeDisplay(vehicleType);
   const qrNameLabel = formatQrIdentityLabel(firstName, lastName);
   const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
 
@@ -71,7 +84,7 @@ export default function QRDisplay({ resident, onDone }) {
             {[
               { label: "Name (QR)",   value: qrNameLabel },
               { label: "Plate No.",   value: plate },
-              { label: "Vehicle",     value: vehicleType },
+              { label: "Vehicle",     value: vehicleTypeDisplay },
               { label: "Barangay",    value: barangay },
               ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
               { label: "Registered",  value: formatTimestamp(registeredAt) },
@@ -97,7 +110,7 @@ export default function QRDisplay({ resident, onDone }) {
           {[
             { label: "Name (QR)", value: qrNameLabel },
             { label: "Plate No.", value: plate },
-            { label: "Vehicle",   value: vehicleType },
+            { label: "Vehicle",   value: vehicleTypeDisplay },
             { label: "Barangay",  value: barangay },
             ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
           ].map((d) => (
@@ -153,14 +166,20 @@ export default function QRDisplay({ resident, onDone }) {
                 {[
                   { label: "Name (QR)",  value: qrNameLabel },
                   { label: "Plate No.", value: plate },
-                  { label: "Vehicle",   value: vehicleType },
+                  { label: "Vehicle",   value: vehicleTypeDisplay },
                   { label: "Barangay",  value: barangay },
                   ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
                   { label: "Registered", value: formatTimestamp(registeredAt) },
                 ].map((d) => (
                   <div key={d.label} className="bg-slate-50 rounded-xl px-3 py-2">
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{d.label}</p>
-                    <p className="text-xs font-bold text-slate-800 leading-tight">{d.value}</p>
+                    <p
+                      className={`font-bold text-slate-800 leading-tight ${
+                        d.label === "Vehicle" ? "text-sm" : "text-xs"
+                      }`}
+                    >
+                      {d.value}
+                    </p>
                   </div>
                 ))}
               </div>

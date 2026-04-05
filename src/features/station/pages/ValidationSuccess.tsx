@@ -160,7 +160,12 @@ export default function ValidationSuccess({
       if (ln) setProfileLastName(ln);
       const reg = coerceFirestoreDate(d.registeredAt);
       if (reg && !isEpochDate(reg)) setProfileRegisteredAt(reg);
-      const gt = typeof d.gasType === "string" ? d.gasType.trim() : "";
+      const gt =
+        typeof d.gasType === "string"
+          ? d.gasType.trim()
+          : d.gasType != null
+            ? String(d.gasType).trim()
+            : "";
       if (gt) setAccountGasType(gt);
     };
 
@@ -196,10 +201,21 @@ export default function ValidationSuccess({
     ? ["Diesel", "Premium Diesel"]
     : ["Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"];
 
-  const [selectedFuelOption, setSelectedFuelOption] = useState<string>(() => {
-    if (gasTypeFromQR && fuelOptionButtons.includes(gasTypeFromQR)) return gasTypeFromQR;
-    return fuelOptionButtons[0] || "";
-  });
+  const [selectedFuelOption, setSelectedFuelOption] = useState<string>("Regular/Unleaded (91)");
+
+  /** UID-only QR has no gasType until Firestore loads; keep dispense tier aligned with account `gasType`. */
+  useEffect(() => {
+    const g = (accountGasType || scannedResident?.gasType || "").trim();
+    const diesel = g.toLowerCase().includes("diesel");
+    const options = diesel
+      ? (["Diesel", "Premium Diesel"] as const)
+      : (["Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"] as const);
+    let next: string = options[0];
+    if (g && (options as readonly string[]).includes(g)) next = g;
+    else if (diesel) next = "Diesel";
+    else if (g && ["gasoline", "regular"].includes(g.toLowerCase())) next = options[0];
+    setSelectedFuelOption((prev) => (prev === next ? prev : next));
+  }, [accountGasType, scannedResident?.gasType, scannedResident]);
 
   const pricePerLiter = useMemo(
     () => pricePerLiterFor(officer, selectedFuelOption),
@@ -340,11 +356,13 @@ export default function ValidationSuccess({
     setInputMode(mode);
     setActionError("");
   };
-  const displayFuelType = selectedFuelOption.toLowerCase().includes("diesel")
-    ? "Diesel"
-    : "Gasoline";
+  /** Pill label follows resident `gasType` (account or QR), not only the dispense sub-product. */
+  const displayFuelCategoryIsDiesel = gasTypeFromQR
+    ? isDieselType
+    : selectedFuelOption.toLowerCase().includes("diesel");
+  const displayFuelType = displayFuelCategoryIsDiesel ? "Diesel" : "Gasoline";
 
-  const fuelTypeTheme = selectedFuelOption.toLowerCase().includes("diesel")
+  const fuelTypeTheme = displayFuelCategoryIsDiesel
     ? { bgFrom: "#dcfce7", bgTo: "#bbf7d0", border: "#86efac", text: "#166534" }
     : selectedFuelOption.toLowerCase().includes("regular")
       ? { bgFrom: "#fee2e2", bgTo: "#fecaca", border: "#fca5a5", text: "#991b1b" }

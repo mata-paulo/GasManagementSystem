@@ -145,16 +145,16 @@ function BarangayPicker({ value, onChange }: { value: string; onChange: (b: stri
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-12 pr-10 text-sm text-left relative focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20">
+        className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-12 pr-10 text-left relative text-base focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20">
         <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl pointer-events-none">location_on</span>
-        <span className={value ? "text-on-surface" : "text-outline"}>{value || "Select your barangay…"}</span>
+        <span className={value ? "text-on-surface font-semibold" : "text-on-surface-variant"}>{value || "Select your barangay…"}</span>
         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline text-xl pointer-events-none">expand_more</span>
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end">
-          <div className="absolute inset-0 bg-black/50" onClick={close} />
-          <div className="relative w-full bg-white rounded-t-2xl shadow-2xl flex flex-col max-h-[75vh]">
+        <div className="fixed inset-0 z-50 flex items-end min-h-dvh">
+          <div className="absolute inset-0 bg-black/50" onClick={close} aria-hidden />
+          <div className="relative w-full bg-white rounded-t-2xl shadow-2xl flex flex-col max-h-[75vh] pb-[env(safe-area-inset-bottom,0px)]">
             <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="w-10 h-1 bg-gray-300 rounded-full" /></div>
             <div className="px-4 pb-3 shrink-0 border-b border-gray-100">
               <div className="flex items-center justify-between mb-3">
@@ -165,8 +165,17 @@ function BarangayPicker({ value, onChange }: { value: string; onChange: (b: stri
               </div>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg pointer-events-none">search</span>
-                <input type="text" placeholder="Search barangay..." value={search} onChange={(e) => setSearch(e.target.value)} autoFocus
-                  className="w-full border border-gray-200 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                <input
+                  type="search"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoComplete="off"
+                  placeholder="Search barangay..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  autoFocus
+                  className="w-full border border-gray-200 rounded-xl py-3 pl-10 pr-10 text-base focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
                 {search && (
                   <button type="button" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <span className="material-symbols-outlined text-base">cancel</span>
@@ -185,7 +194,7 @@ function BarangayPicker({ value, onChange }: { value: string; onChange: (b: stri
                 const sel = value === b;
                 return (
                   <button key={b} type="button" onClick={() => { onChange(b); close(); }}
-                    className={`w-full text-left px-4 py-3 rounded-xl flex items-center justify-between text-sm transition-colors active:scale-[0.98] ${sel ? "bg-blue-50 text-[#003366] font-semibold" : "text-gray-800 hover:bg-gray-50"}`}>
+                    className={`w-full text-left px-4 py-3 rounded-xl flex items-center justify-between text-base transition-colors active:scale-[0.98] ${sel ? "bg-blue-50 text-[#003366] font-semibold" : "text-gray-800 hover:bg-gray-50"}`}>
                     <div className="flex items-center gap-3">
                       <span className={`material-symbols-outlined text-base ${sel ? "text-[#003366]" : "text-gray-300"}`}>location_on</span>
                       {b}
