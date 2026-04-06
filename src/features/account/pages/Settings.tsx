@@ -202,14 +202,14 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Number</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span>{form.plate || plate}</span>
+                  <span>{plate}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vehicle Type</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span className="capitalize">{form.vehicleType || vehicleType}</span>
+                  <span className="capitalize">{vehicleType}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
@@ -217,7 +217,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
               <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                <span>{form.gasType || gasType}</span>
+                <span>{gasType}</span>
                 <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
               </div>
             </div>

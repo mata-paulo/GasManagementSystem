@@ -375,6 +375,7 @@ export default function App() {
       <RoleGuard requiredRole="resident" onDeny={() => setScreen("landing")}>
         <UserScanHistory
           resident={resident}
+          selectedVehicle={selectedVehicle}
           activeTab={activeTab}
           onTabChange={handleUserTabChange}
           onShowQR={() => setScreen("qr-display")}

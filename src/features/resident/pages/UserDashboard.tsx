@@ -61,8 +61,14 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
 
   const barangay = resident?.barangay || "Not set";
 
-  const weeklyAllocation = 20;
-  const usedLiters = 8;
+  const vehicleAllocations = [
+    { weeklyAllocation: 20, usedLiters: 8 },
+    { weeklyAllocation: 15, usedLiters: 13 },
+    { weeklyAllocation: 25, usedLiters: 3 },
+    { weeklyAllocation: 20, usedLiters: 17 },
+    { weeklyAllocation: 18, usedLiters: 5 },
+  ];
+  const { weeklyAllocation, usedLiters } = vehicleAllocations[selectedVehicle] ?? vehicleAllocations[0];
   const remainingLiters = Math.max(weeklyAllocation - usedLiters, 0);
   const usagePercent = Math.min((usedLiters / weeklyAllocation) * 100, 100);
   const pctLeft = Math.round((remainingLiters / weeklyAllocation) * 100);
@@ -101,11 +107,33 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
         };
 
-  const allTransactions = [
-    { id: 1, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
-    { id: 2, station: "Petron – Jones Ave",    date: "Mar 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
-    { id: 3, station: "Caltex – Mango Ave",    date: "Mar 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
+  const allTransactionsByVehicle = [
+    [
+      { id: 1, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
+      { id: 2, station: "Petron – Jones Ave",    date: "Mar 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
+      { id: 3, station: "Caltex – Mango Ave",    date: "Mar 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
+    ],
+    [
+      { id: 1, station: "Total – Lahug",         date: "Apr 1, 2026",  time: "07:15 AM", liters: 6.0, fuelType: "Diesel",  pricePerLiter: 56 },
+      { id: 2, station: "Petron – Mandaue",      date: "Mar 28, 2026", time: "11:30 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
+      { id: 3, station: "Shell – A.S. Fortuna",  date: "Mar 25, 2026", time: "02:00 PM", liters: 2.0, fuelType: "Regular", pricePerLiter: 62 },
+    ],
+    [
+      { id: 1, station: "Caltex – Colon St.",    date: "Apr 2, 2026",  time: "08:00 AM", liters: 3.0, fuelType: "Regular", pricePerLiter: 62 },
+      { id: 2, station: "Shell – Talisay",       date: "Mar 29, 2026", time: "03:45 PM", liters: 0.0, fuelType: "Regular", pricePerLiter: 62 },
+    ],
+    [
+      { id: 1, station: "Petron – Banilad",      date: "Apr 3, 2026",  time: "06:50 AM", liters: 5.0, fuelType: "Regular", pricePerLiter: 62 },
+      { id: 2, station: "Total – Mactan",        date: "Apr 1, 2026",  time: "10:00 AM", liters: 7.0, fuelType: "Regular", pricePerLiter: 62 },
+      { id: 3, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "01:20 PM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
+    ],
+    [
+      { id: 1, station: "Caltex – Urgello",      date: "Apr 4, 2026",  time: "09:10 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
+      { id: 2, station: "Petron – Hernan Cortes", date: "Apr 2, 2026", time: "04:30 PM", liters: 0.0, fuelType: "Diesel",  pricePerLiter: 56 },
+    ],
   ];
+
+  const allTransactions = allTransactionsByVehicle[selectedVehicle] ?? allTransactionsByVehicle[0];
 
   // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
   const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
@@ -210,7 +238,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             <button
               type="button"
               onClick={() => setShowVehiclePicker(true)}
-              className="rounded-2xl bg-surface-container-low p-3 space-y-1 text-left w-full active:scale-95 transition-all"
+              className="relative rounded-2xl bg-surface-container-low p-3 space-y-1 text-left w-full active:scale-95 transition-all"
             >
               <div className="flex items-center justify-between text-on-surface-variant">
                 <div className="flex items-center gap-1">
@@ -221,6 +249,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
               <p className="text-[9px] text-on-surface-variant capitalize">{vehicleType}</p>
+              <span className="material-symbols-outlined absolute bottom-2 right-2 text-[14px] text-primary-container">add_circle</span>
             </button>
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
               <div className="flex items-center gap-1 text-on-surface-variant">

@@ -8,10 +8,30 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-const history = [
-  { id: 1, station: "Shell – Fuente Osmeña", date: "March 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-  { id: 2, station: "Petron – Jones Ave",    date: "March 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-  { id: 3, station: "Caltex – Mango Ave",    date: "March 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+const historyByVehicle = [
+  [
+    { id: 1, station: "Shell – Fuente Osmeña", date: "March 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Petron – Jones Ave",    date: "March 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 3, station: "Caltex – Mango Ave",    date: "March 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Total – Lahug",          date: "April 1, 2026",  time: "07:15 AM", liters: 6.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 2, station: "Petron – Mandaue",        date: "March 28, 2026", time: "11:30 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 3, station: "Shell – A.S. Fortuna",    date: "March 25, 2026", time: "02:00 PM", liters: 2.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Caltex – Colon St.",      date: "April 2, 2026",  time: "08:00 AM", liters: 3.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Shell – Talisay",          date: "March 29, 2026", time: "03:45 PM", liters: 0.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Petron – Banilad",         date: "April 3, 2026",  time: "06:50 AM", liters: 5.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Total – Mactan",            date: "April 1, 2026",  time: "10:00 AM", liters: 7.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 3, station: "Shell – Fuente Osmeña",    date: "March 30, 2026", time: "01:20 PM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Caltex – Urgello",         date: "April 4, 2026",  time: "09:10 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 2, station: "Petron – Hernan Cortes",   date: "April 2, 2026",  time: "04:30 PM", liters: 0.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
 ];
 
 const FILTERS = [
@@ -26,11 +46,16 @@ function parseTxDate(dateStr: string): Date {
   return new Date(dateStr);
 }
 
-export default function UserScanHistory({ activeTab, onTabChange, resident, onShowQR }) {
+export default function UserScanHistory({ activeTab, onTabChange, resident, onShowQR, selectedVehicle = 0 }) {
   const [filter, setFilter] = useState("all");
 
+  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0];
+  const activeGasType = activeVehicle?.gasType || resident?.gasType || "";
+  const history = historyByVehicle[selectedVehicle] ?? historyByVehicle[0];
+
   // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
-  const residentFuelType = resident?.gasType === "Diesel" ? "Diesel" : "Regular";
+  const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -51,7 +76,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
       }
       return true;
     });
-  }, [filter]);
+  }, [filter, history, residentFuelType]);
 
   const grouped = filtered.reduce((acc, tx) => {
     if (!acc[tx.date]) acc[tx.date] = [];
