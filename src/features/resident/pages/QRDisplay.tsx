@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
-import { encodeQR, formatQrIdentityLabel } from "@/lib/qr/qrCodec";
+import { encodeQR } from "@/lib/qr/qrCodec";
 
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -10,10 +10,13 @@ function formatTimestamp(iso: string) {
   });
 }
 
-export default function QRDisplay({ resident, onDone }) {
-  const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
-  const qrNameLabel = formatQrIdentityLabel(firstName, lastName);
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
+export default function QRDisplay({ resident, activeVehicle = null, onDone }) {
+  const { firstName, lastName, barangay, registeredAt } = resident;
+  const plate       = activeVehicle?.plate       ?? resident.plate;
+  const vehicleType = activeVehicle?.vehicleType ?? resident.vehicleType;
+  const gasType     = activeVehicle?.gasType     ?? resident.gasType;
+  const fullName = `${firstName} ${lastName}`;
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -66,10 +69,10 @@ export default function QRDisplay({ resident, onDone }) {
         </div>
         {/* QR + info */}
         <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-          <QRCodeSVG value={qrData} size={280} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
+          <QRCodeSVG value={qrData} size={280} level="M" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
             {[
-              { label: "Name (QR)",   value: qrNameLabel },
+              { label: "Full Name",   value: fullName },
               { label: "Plate No.",   value: plate },
               { label: "Vehicle",     value: vehicleType },
               { label: "Barangay",    value: barangay },
@@ -92,10 +95,10 @@ export default function QRDisplay({ resident, onDone }) {
       {/* ── Hidden print-only card ── */}
       <div className="print-card bg-white p-8 flex flex-col items-center gap-4">
         <p style={{ fontWeight: 900, fontSize: 22, letterSpacing: 4, color: "#001e40" }}>{plate}</p>
-        <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
+        <QRCodeSVG value={qrData} size={300} level="M" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, width: "100%" }}>
           {[
-            { label: "Name (QR)", value: qrNameLabel },
+            { label: "Full Name", value: fullName },
             { label: "Plate No.", value: plate },
             { label: "Vehicle",   value: vehicleType },
             { label: "Barangay",  value: barangay },
@@ -140,7 +143,7 @@ export default function QRDisplay({ resident, onDone }) {
               <QRCodeSVG
                 value={qrData}
                 size={Math.min(window.innerWidth - 16, 380)}
-                level="H"
+                level="M"
                 marginSize={1}
                 fgColor="#001e40"
                 bgColor="#ffffff"
@@ -151,7 +154,7 @@ export default function QRDisplay({ resident, onDone }) {
             <div className="px-4 pb-3 flex flex-col gap-2">
               <div className="w-full grid grid-cols-2 gap-2">
                 {[
-                  { label: "Name (QR)",  value: qrNameLabel },
+                  { label: "Full Name",  value: fullName },
                   { label: "Plate No.", value: plate },
                   { label: "Vehicle",   value: vehicleType },
                   { label: "Barangay",  value: barangay },

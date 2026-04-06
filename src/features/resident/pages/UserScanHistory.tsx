@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
-import {
-  fetchResidentTransactions,
-  type DispenseTransaction,
-  type ResidentAccount,
-} from "@/lib/data/agas";
-import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -14,118 +8,84 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
+const historyByVehicle = [
+  [
+    { id: 1, station: "Shell – Fuente Osmeña", date: "March 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Petron – Jones Ave",    date: "March 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 3, station: "Caltex – Mango Ave",    date: "March 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Total – Lahug",          date: "April 1, 2026",  time: "07:15 AM", liters: 6.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 2, station: "Petron – Mandaue",        date: "March 28, 2026", time: "11:30 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 3, station: "Shell – A.S. Fortuna",    date: "March 25, 2026", time: "02:00 PM", liters: 2.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Caltex – Colon St.",      date: "April 2, 2026",  time: "08:00 AM", liters: 3.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Shell – Talisay",          date: "March 29, 2026", time: "03:45 PM", liters: 0.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Petron – Banilad",         date: "April 3, 2026",  time: "06:50 AM", liters: 5.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 2, station: "Total – Mactan",            date: "April 1, 2026",  time: "10:00 AM", liters: 7.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
+    { id: 3, station: "Shell – Fuente Osmeña",    date: "March 30, 2026", time: "01:20 PM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
+  [
+    { id: 1, station: "Caltex – Urgello",         date: "April 4, 2026",  time: "09:10 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+    { id: 2, station: "Petron – Hernan Cortes",   date: "April 2, 2026",  time: "04:30 PM", liters: 0.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
+  ],
+];
+
 const FILTERS = [
-  { id: "all", label: "All" },
+  { id: "all",   label: "All" },
   { id: "today", label: "Today" },
-  { id: "week", label: "Week" },
+  { id: "week",  label: "Week" },
   { id: "month", label: "Month" },
 ];
 
-function residentFuelTypeLabel(resident: ResidentAccount | null): "Diesel" | "Regular" {
-  return resident?.gasType === "Diesel" ? "Diesel" : "Regular";
+// Parse "Month DD, YYYY" date strings used in the mock data
+function parseTxDate(dateStr: string): Date {
+  return new Date(dateStr);
 }
 
-function formatDateLabel(value: Date | null): string {
-  if (!value) return "Unknown date";
-  return value.toLocaleDateString("en-PH", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatTimeLabel(value: Date | null): string {
-  if (!value) return "--:--";
-  return value.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-function matchesFilter(date: Date | null, filter: string): boolean {
-  if (!date || filter === "all") return true;
-
-  const now = new Date();
-  if (filter === "today") {
-    return date.toDateString() === now.toDateString();
-  }
-
-  if (filter === "week") {
-    const weekAgo = new Date(now);
-    weekAgo.setDate(now.getDate() - 7);
-    return date >= weekAgo;
-  }
-
-  if (filter === "month") {
-    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  }
-
-  return true;
-}
-
-type UserScanHistoryProps = {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-  resident: ResidentAccount | null;
-  onShowQR: () => void;
-};
-
-export default function UserScanHistory({ activeTab, onTabChange, resident, onShowQR }: UserScanHistoryProps) {
+export default function UserScanHistory({ activeTab, onTabChange, resident, onShowQR, selectedVehicle = 0 }) {
   const [filter, setFilter] = useState("all");
-  const [transactions, setTransactions] = useState<DispenseTransaction[]>([]);
-  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
-  useEffect(() => {
-    if (!resident?.uid) {
-      setTransactions([]);
-      return;
-    }
+  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0];
+  const activeGasType = activeVehicle?.gasType || resident?.gasType || "";
+  const history = historyByVehicle[selectedVehicle] ?? historyByVehicle[0];
 
-    let cancelled = false;
-    setLoadingTransactions(true);
+  // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
+  const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
 
-    void fetchResidentTransactions(resident.uid)
-      .then((items) => {
-        if (!cancelled) {
-          setTransactions(items);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setTransactions([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingTransactions(false);
-        }
-      });
+  const filtered = useMemo(() => {
+    const now = new Date();
+    return history.filter((tx) => {
+      if (tx.fuelType !== residentFuelType) return false;
+      if (filter === "all") return true;
+      const d = parseTxDate(tx.date);
+      if (filter === "today") {
+        return d.toDateString() === now.toDateString();
+      }
+      if (filter === "week") {
+        const weekAgo = new Date(now);
+        weekAgo.setDate(now.getDate() - 7);
+        return d >= weekAgo;
+      }
+      if (filter === "month") {
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      }
+      return true;
+    });
+  }, [filter, history, residentFuelType]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [resident?.uid]);
-
-  const fuelType = residentFuelTypeLabel(resident);
-
-  const filtered = useMemo(
-    () =>
-      transactions.filter(
-        (tx) => tx.fuelType === fuelType && matchesFilter(tx.createdAt, filter),
-      ),
-    [filter, fuelType, transactions],
-  );
-
-  const grouped = useMemo(() => filtered.reduce((acc, tx) => {
-    const label = formatDateLabel(tx.createdAt);
-    if (!acc[label]) acc[label] = [];
-    acc[label].push(tx);
+  const grouped = filtered.reduce((acc, tx) => {
+    if (!acc[tx.date]) acc[tx.date] = [];
+    acc[tx.date].push(tx);
     return acc;
-  }, {} as Record<string, DispenseTransaction[]>), [filtered]);
+  }, {} as Record<string, typeof history>);
 
   const totalLiters = filtered.reduce((sum, tx) => sum + tx.liters, 0);
-  const totalSpent = filtered.reduce((sum, tx) => sum + tx.totalPaid, 0);
+  const totalSpent  = filtered.reduce((sum, tx) => sum + tx.liters * tx.pricePerLiter, 0);
 
   return (
     <div className="flex flex-col min-h-dvh bg-background">
@@ -166,7 +126,7 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-primary-container/10 border border-primary-container/20 rounded-2xl p-4 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Dispensed</p>
-            <p className="text-xl font-black font-headline text-primary-container">{formatLitersQuantity(totalLiters)} L</p>
+            <p className="text-xl font-black font-headline text-primary-container">{totalLiters.toFixed(1)} L</p>
           </div>
           <div className="bg-tertiary/10 border border-tertiary/20 rounded-2xl p-4 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Transactions</p>
@@ -178,55 +138,38 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
           </div>
         </div>
 
-        {loadingTransactions && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-outline-variant/10 text-sm text-slate-400">
-            Loading your live transactions...
-          </div>
-        )}
-
         {/* Grouped history */}
-        {!loadingTransactions &&
-          Object.entries(grouped).map(([date, txs]) => (
-            <section key={date} className="space-y-3">
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
-                {date}
-              </p>
-              {txs.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3"
-                >
+        {Object.entries(grouped).map(([date, txs]) => (
+          <section key={date} className="space-y-3">
+            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+              {date}
+            </p>
+            {txs.map((tx) => {
+              const total = tx.liters * tx.pricePerLiter;
+              return (
+                <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-white icon-fill text-[22px]">
-                      local_gas_station
-                    </span>
+                    <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-on-surface leading-tight">
-                      {tx.stationName || "Unknown Station"}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {formatDateLabel(tx.createdAt)} · {formatTimeLabel(tx.createdAt)}
-                    </p>
+                    <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
                     <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
                       {tx.fuelType}
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-base font-black text-on-surface leading-none">
-                      {formatLitersQuantity(tx.liters)} L
-                    </p>
+                    <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
-                    <p className="text-sm font-black text-[#003366] mt-0.5">
-                      ₱{tx.totalPaid.toFixed(2)}
-                    </p>
+                    <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
                   </div>
                 </div>
-              ))}
-            </section>
-          ))}
+              );
+            })}
+          </section>
+        ))}
 
-        {!loadingTransactions && filtered.length === 0 && (
+        {filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
             <span className="material-symbols-outlined text-outline text-[48px]">
               receipt_long
