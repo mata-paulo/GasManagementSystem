@@ -129,6 +129,10 @@ npm run typecheck
 npm run build
 ```
 
+## Registration UI (mobile)
+
+On phone-sized layouts, **Barangay** opens a searchable bottom sheet instead of a long native dropdown. The sheet’s **search** field and the field **trigger** use **16px** minimum font size so **iOS Safari** does not zoom the viewport when the user focuses search (a common issue with `font-size` under 16px on inputs). Desktop (`lg+`) still uses a standard `<select>`.
+
 ## Deployment Shape
 
 - Frontend is built into `dist/`

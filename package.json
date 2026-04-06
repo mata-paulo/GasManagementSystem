@@ -20,6 +20,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "firebase": "^12.11.0",
+    "fold-to-ascii": "^5.0.1",
     "html2canvas": "^1.4.1",
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",

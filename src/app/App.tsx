@@ -6,6 +6,7 @@ import {
   fetchStationAccount,
   saveStationFuelSettings,
 } from "@/lib/data/agas";
+import { syncResidentFuelCycleCallable } from "@/lib/firebase/syncResidentFuelCycle";
 import ChangePassword from "@/features/account/pages/ChangePassword";
 import Settings from "@/features/account/pages/Settings";
 import AdminDashboard from "@/features/admin/pages/AdminDashboard";
@@ -93,6 +94,7 @@ export default function App() {
     }
 
     if (auth.role === "resident") {
+      await syncResidentFuelCycleCallable().catch(() => undefined);
       const nextResident = await fetchResidentAccount(uid);
       if (nextResident) {
         setResident(nextResident);

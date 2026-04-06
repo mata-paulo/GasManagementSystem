@@ -1,5 +1,6 @@
 import { useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import { formatVehicleTypeDisplayLabel } from "@/utils/vehicleTypeDisplay";
 
 const APP_VERSION = "V 1.0.0";
 
@@ -110,6 +111,10 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
   const name        = officer ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim() : "Station Officer";
   const plate       = officer?.plate       || "N/A";
   const vehicleType = officer?.vehicleType || "N/A";
+  const vehicleTypeLabel =
+    officer?.vehicleType != null && String(officer.vehicleType).trim()
+      ? formatVehicleTypeDisplayLabel(officer.vehicleType) || String(officer.vehicleType).trim()
+      : "N/A";
   const barangay    = officer?.barangay    || "N/A";
   const gasType     = officer?.gasType     || "N/A";
   const initials    = `${officer?.firstName?.[0] ?? ""}${officer?.lastName?.[0] ?? ""}`.toUpperCase() || "?";
@@ -205,7 +210,11 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vehicle Type</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span>{form.vehicleType || vehicleType}</span>
+                  <span>
+                    {form.vehicleType
+                      ? formatVehicleTypeDisplayLabel(form.vehicleType) || form.vehicleType
+                      : vehicleTypeLabel}
+                  </span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
@@ -310,7 +319,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           <div className="grid grid-cols-2 border-t border-white/10">
             {[
               { icon: "directions_car",    label: "Plate No.",  value: plate },
-              { icon: "commute",           label: "Vehicle",    value: vehicleType },
+              { icon: "commute",           label: "Vehicle",    value: vehicleTypeLabel },
               { icon: "location_on",       label: "Barangay",   value: barangay },
               { icon: "local_gas_station", label: "Fuel Type",  value: gasType },
             ].map((d, i, arr) => (

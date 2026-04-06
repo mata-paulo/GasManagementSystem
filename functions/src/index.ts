@@ -20,3 +20,4 @@ setGlobalOptions({maxInstances: 10});
 
 export {registerResident} from "./auth/registerResident";
 export {assignStationUser} from "./auth/assignStationUser";
+export {syncResidentFuelCycle} from "./auth/syncResidentFuelCycle";

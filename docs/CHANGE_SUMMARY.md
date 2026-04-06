@@ -114,6 +114,40 @@ Documentation files updated:
 - `README.md`
 - `docs/ARCHITECTURE.md`
 - `docs/SETUP.md`
+- `docs/CHANGE_SUMMARY.md`
+- `docs/TROUBLESHOOTING.md`
+
+## Recent UX and validation updates
+
+These updates improve mobile registration, QR labels, and station validation accuracy when using **UID-only** QR codes.
+
+### Registration (mobile)
+
+- **Barangay** on small screens uses a bottom sheet with search.
+- Trigger, search field, and list rows use **16px** (`text-base`) typography so **iOS Safari** does not auto-zoom when the search input is focused.
+- Sheet layout includes **safe-area** bottom padding for notched devices.
+
+### Resident QR card (`QRDisplay`)
+
+- **Vehicle** on the QR card uses a display helper: uppercase the first character when it is lowercase; if the first character is already uppercase, the string is left as-is.
+- QR **encode** still uses the raw **`vehicleType`** from the account.
+
+### Station validation (`ValidationSuccess`)
+
+- After **`accounts/{uid}`** loads, resident **`gasType`** (with tolerant parsing if stored as a non-string) drives:
+  - the **Diesel** vs **Gasoline** summary label and styling, and
+  - the default **dispense product tier** (diesel vs gasoline price SKUs), fixing cases where UID-only QRs had no embedded fuel type.
+
+### Station resident portal (`ResidentWebPortal`)
+
+- **Vehicle type** labels are title-cased for display across portal cards and headers.
+
+### Files touched (this batch)
+
+- `src/features/auth/pages/Register.tsx`
+- `src/features/resident/pages/QRDisplay.tsx`
+- `src/features/station/pages/ValidationSuccess.tsx`
+- `src/features/station/pages/ResidentWebPortal.tsx`
 
 ## Deployment Notes
 

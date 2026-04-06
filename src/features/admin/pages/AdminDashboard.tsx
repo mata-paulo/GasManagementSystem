@@ -13,7 +13,7 @@ import {
 import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 /* ─── Mock Data ─── */
-const STATIC_STATIONS = [
+/*const STATIC_STATIONS = [
   // ── Shell (13) ──
   { id:  1, name: "Shell Robinsons Mobility Station",  brand: "Shell",    barangay: "Ermita",          officer: "Ricardo Santos",   capacity: 180000, dispensed: 5420, lat: 10.3025851, lng: 123.9110295, status: "Online"  },
   { id:  2, name: "Shell – Osmeña Blvd / Jones Ave",   brand: "Shell",    barangay: "Lorega",          officer: "Gemma Reyes",      capacity: 150000, dispensed: 4610, lat: 10.3039010, lng: 123.8950550, status: "Online"  },
@@ -76,7 +76,7 @@ const STATIC_STATIONS = [
   { id: 52, name: "Aura Fuels Inc",                    brand: "Other",    barangay: "Luz",             officer: "Roy Sy",           capacity:  60000, dispensed: 1100, lat: 10.3213223, lng: 123.8840814, status: "Online"  },
   { id: 53, name: "Light Fuels – North Reclamation",   brand: "Other",    barangay: "NRA",             officer: "Kim Yap",          capacity:  65000, dispensed: 1240, lat: 10.3253554, lng: 123.9385335, status: "Online"  },
   { id: 54, name: "Oh My Gas Marketing",               brand: "Other",    barangay: "Talamban",        officer: "Len Po",           capacity:  60000, dispensed: 1060, lat: 10.3816738, lng: 123.9207148, status: "Online"  },
-];
+];*/
 
 const STATIC_RESIDENTS = [
   { id: 1,  name: "Rico Blanco",         plate: "GAE-1234", barangay: "Mabolo",      vehicle: "Car",        remaining: 5.0,  used: 15.0, status: "Active" },

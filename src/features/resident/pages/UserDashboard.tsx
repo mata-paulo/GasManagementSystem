@@ -9,6 +9,7 @@ import {
   WEEKLY_FUEL_LIMIT,
 } from "@/lib/data/agas";
 import { formatLitersQuantity } from "@/utils/fuelVolume";
+import { formatVehicleTypeDisplayLabel } from "@/utils/vehicleTypeDisplay";
 
 const DEFAULT_LAT = 10.3157;
 const DEFAULT_LON = 123.8854;
@@ -76,7 +77,8 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
 
   const plate = resident?.plate || "N/A";
   const barangay = resident?.barangay || "Not set";
-  const vehicleType = resident?.vehicleType || "car";
+  const vehicleTypeRaw = resident?.vehicleType || "car";
+  const vehicleTypeDisplay = formatVehicleTypeDisplayLabel(vehicleTypeRaw) || vehicleTypeRaw;
   const residentStatus = resident?.status || "Active";
   const fuelAllocation = liveFuelAllocation;
   const remainingLiters = Math.max(fuelAllocation - usedLiters, 0);
@@ -231,7 +233,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-headline font-bold text-[#003366] text-base leading-tight truncate">{fullName}</p>
-            <p className="text-xs text-slate-400 font-medium capitalize">{vehicleType} · Resident</p>
+            <p className="text-xs text-slate-400 font-medium">{vehicleTypeDisplay} · Resident</p>
           </div>
           <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
             <span className="material-symbols-outlined text-yellow-400 icon-fill text-[18px]">local_gas_station</span>
@@ -247,7 +249,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="text-[9px] font-bold uppercase tracking-tight">Vehicle</span>
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
-              <p className="text-[9px] text-on-surface-variant capitalize">{vehicleType}</p>
+              <p className="text-[9px] text-on-surface-variant">{vehicleTypeDisplay}</p>
             </div>
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
               <div className="flex items-center gap-1 text-on-surface-variant">

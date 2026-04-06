@@ -50,6 +50,7 @@ export function parseStoredSession(raw: string): StoredSession | null {
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
+import { syncResidentFuelCycleCallable } from "@/lib/firebase/syncResidentFuelCycle";
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
@@ -172,6 +173,14 @@ export async function login({ email, password }: { email: string; password: stri
       fuelWeekKey:
         typeof data.fuelWeekKey === "string" ? data.fuelWeekKey : undefined,
     };
+
+    if (role === "resident") {
+      const sync = await syncResidentFuelCycleCallable();
+      if (sync?.updated) {
+        user.fuelUsed = sync.fuelUsed;
+        user.fuelWeekKey = sync.fuelWeekKey;
+      }
+    }
 
     return { success: true, user, role };
   } catch (err: unknown) {

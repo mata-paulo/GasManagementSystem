@@ -21,10 +21,6 @@ const FILTERS = [
   { id: "month", label: "Month" },
 ];
 
-function residentFuelTypeLabel(resident: ResidentAccount | null): "Diesel" | "Regular" {
-  return resident?.gasType === "Diesel" ? "Diesel" : "Regular";
-}
-
 function formatDateLabel(value: Date | null): string {
   if (!value) return "Unknown date";
   return value.toLocaleDateString("en-PH", {
@@ -107,14 +103,9 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
     };
   }, [resident?.uid]);
 
-  const fuelType = residentFuelTypeLabel(resident);
-
   const filtered = useMemo(
-    () =>
-      transactions.filter(
-        (tx) => tx.fuelType === fuelType && matchesFilter(tx.createdAt, filter),
-      ),
-    [filter, fuelType, transactions],
+    () => transactions.filter((tx) => matchesFilter(tx.createdAt, filter)),
+    [filter, transactions],
   );
 
   const grouped = useMemo(() => filtered.reduce((acc, tx) => {

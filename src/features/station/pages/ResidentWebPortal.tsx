@@ -10,6 +10,7 @@ import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
 import { subscribeResidentAllocationSummary, WEEKLY_FUEL_LIMIT } from "@/lib/data/agas";
 import { formatLitersQuantity } from "@/utils/fuelVolume";
+import { formatVehicleTypeDisplayLabel } from "@/utils/vehicleTypeDisplay";
 import { encodeQR, formatQrIdentityLabel } from "@/lib/qr/qrCodec";
 import mapboxgl from "mapbox-gl";
 function formatTimestamp(iso: string) {
@@ -35,22 +36,6 @@ function formatTransactionTime(value: Date | null) {
     minute: "2-digit",
     hour12: true,
   });
-}
-
-/** Title-case each word for display (ASCII/Unicode-safe; avoids \b\w missing non‑Latin letters). */
-function formatVehicleTypeLabel(raw: unknown): string {
-  if (raw == null) return "";
-  const s = String(raw).trim();
-  if (!s) return "";
-  return s
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => {
-      const first = word.charAt(0).toLocaleUpperCase("en-US");
-      const rest = word.slice(1).toLocaleLowerCase("en-US");
-      return first + rest;
-    })
-    .join(" ");
 }
 
 function matchesTransactionFilter(date: Date | null, filter: string) {
@@ -209,7 +194,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
       : resident?.vehicleType != null && String(resident.vehicleType).trim()
         ? String(resident.vehicleType).trim()
         : "Car";
-  const vehicleTypeDisplay = formatVehicleTypeLabel(vehicleType) || vehicleType;
+  const vehicleTypeDisplay = formatVehicleTypeDisplayLabel(vehicleType) || vehicleType;
   const gasType      = resident?.gasType      || "Regular";
   const registeredAt = resident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
@@ -658,11 +643,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                           <span className="material-symbols-outlined text-[#003366] text-[18px] shrink-0">{d.icon}</span>
                           <div className="flex-1">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{d.label}</p>
-                            <p className="text-sm font-bold text-slate-800">
-                              {d.label === "Vehicle Type"
-                                ? formatVehicleTypeLabel(vehicleType) || vehicleType
-                                : d.value}
-                            </p>
+                            <p className="text-sm font-bold text-slate-800">{d.value}</p>
                           </div>
                         </div>
                       ))}
@@ -912,11 +893,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     <span className="material-symbols-outlined text-[#003366] text-[20px] shrink-0">{d.icon}</span>
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{d.label}</p>
-                      <p className="text-sm font-bold text-slate-800">
-                        {d.label === "Vehicle Type"
-                          ? formatVehicleTypeLabel(vehicleType) || vehicleType
-                          : d.value}
-                      </p>
+                      <p className="text-sm font-bold text-slate-800">{d.value}</p>
                     </div>
                   </div>
                 ))}

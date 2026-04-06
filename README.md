@@ -71,9 +71,11 @@ npm run seed:stations
 ## Resident And Station Flow
 
 - Resident QR codes now encode the resident Firebase Auth user ID.
-- Station QR validation fetches the resident account from Firestore using that UID instead of relying on mock or reconstructed QR fields.
+- Station QR validation fetches the resident account from Firestore using that UID instead of relying on mock or reconstructed QR fields. The live account’s **`gasType`** is used for diesel vs gasoline labeling and default dispense tiers once the document loads (UID-only payloads do not embed fuel type).
 - Resident dashboard allocation and station dispense validation both use the live resident account plus current-week transaction context.
 - Station dispense writes a live `transactions` record, updates station inventory, and advances the resident's current-week `fuelUsed`.
+- The resident **QR card** screen formats **`vehicleType`** for display (first-letter capitalisation when needed) without changing the encoded QR payload.
+- Mobile **registration** uses a barangay picker sheet with 16px inputs to avoid iOS Safari focus zoom; see [Setup](./docs/SETUP.md#registration-ui-mobile).
 
 ## Current Frontend Structure
 

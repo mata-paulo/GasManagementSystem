@@ -64,11 +64,14 @@ Admin-specific note:
 ## Resident Registration Flow
 
 1. Resident fills out the registration form.
-2. Frontend calls `registerResident`.
-3. Cloud Function validates payload and uniqueness.
-4. Admin SDK creates the auth user.
-5. Firestore account document is created with resident profile fields plus fuel tracking defaults such as `fuelAllocation: 20` and `fuelUsed: 0`.
-6. Frontend signs the new user in and stores the local session.
+2. On narrow viewports, **Barangay** uses a bottom-sheet picker with search; trigger and search field use at least **16px** text so **iOS Safari** does not auto-zoom on focus.
+3. Frontend calls `registerResident`.
+4. Cloud Function validates payload and uniqueness.
+5. Admin SDK creates the auth user.
+6. Firestore account document is created with resident profile fields plus fuel tracking defaults such as `fuelAllocation: 20` and `fuelUsed: 0`.
+7. Frontend signs the new user in and stores the local session.
+
+On large screens (`lg` and up), barangay selection uses a native `<select>` instead of the sheet.
 
 ## Firestore Data Model
 
@@ -157,11 +160,18 @@ This gives the app an automatic weekly reset without needing a scheduled batch j
 
 Station validation now uses a UID-based QR payload.
 
-1. Resident QR generation encodes the resident Firebase Auth UID.
+1. Resident QR generation encodes the resident Firebase Auth UID (payload does not carry `gasType` in UID-only form).
 2. Station scan decodes the UID.
 3. The app fetches `accounts/{uid}` from Firestore.
-4. Verified resident details shown to the station are taken from the live resident account.
-5. Dispense validation uses the fetched resident account, current-week quota state, and station inventory before writing the transaction.
+4. Verified resident details shown to the station are taken from the live resident account, including **`gasType`** (e.g. Diesel vs Gasoline).
+5. The station validation screen keeps the **dispense fuel tier** (diesel products vs gasoline grades) in sync with the account **`gasType`** after the fetch completes, and the prominent fuel-type label reflects the resident’s category—not a stale default.
+6. Dispense validation uses the fetched resident account, current-week quota state, and station inventory before writing the transaction.
+
+## Resident QR card display
+
+The resident **QR display** screen (`QRDisplay`) formats **`vehicleType`** for readability (capitalise the first letter when it is lowercase; leave strings that already start with an uppercase letter unchanged). The value embedded in the QR payload is unchanged; only on-screen and exported card copy uses the display form.
+
+The station **ResidentWebPortal** screen title-cases **`vehicleType`** per word for portal cards and headers so values like `motorcycle` read as **Motorcycle** while keeping stored data unchanged.
 
 ## Station Invite Flow
 

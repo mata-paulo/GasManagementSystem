@@ -57,6 +57,21 @@ Checks:
 2. Check Firebase Functions logs or emulator terminal output
 3. Verify `functions/src/auth/registerResident.ts`
 
+## iOS Safari zooms or jumps when opening Barangay on registration
+
+Cause:
+
+- Safari auto-zooms focused inputs when computed **font-size is below 16px**.
+
+Expected behavior:
+
+- the mobile barangay sheet uses **16px** (`text-base`) on the trigger and search field
+
+If you still see zoom after a custom theme change:
+
+1. Inspect the barangay trigger and search input computed font size in devtools
+2. Ensure no parent rule scales text below 16px on those controls
+
 ## Build Succeeds But Bundle Warning Appears
 
 Current behavior:
