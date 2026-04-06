@@ -1,6 +1,7 @@
 import {onRequest, HttpsError} from "firebase-functions/v2/https";
 import {logger} from "firebase-functions/logger";
 import * as admin from "firebase-admin";
+import {FieldValue} from "firebase-admin/firestore";
 import type {Request, Response} from "express";
 import {
   CORS,
@@ -123,8 +124,7 @@ export const registerResident = onRequest(
       }
 
       try {
-        const registeredAt = new Date();
-        await admin.firestore().collection("accounts").doc(uid).set({
+        const docData: Record<string, unknown> = {
           vehicleType: data.vehicleType,
           plate: normalizedPlate,
           gasType: data.gasType,
@@ -133,11 +133,20 @@ export const registerResident = onRequest(
           barangay: data.barangay,
           email: normalizedEmail,
           role: "resident",
-          fuelAllocation: 20,
-          fuelUsed: 0,
-          fuelWeekKey: `${uid}:0`,
-          registeredAt: admin.firestore.Timestamp.fromDate(registeredAt),
-        });
+          registeredAt: FieldValue.serverTimestamp(),
+        };
+        // Build vehicles array: prefer sent array, fallback to primary fields
+        const vehiclesArray = (data.vehicles && data.vehicles.length > 0)
+          ? data.vehicles.map((v) => ({ ...v, plate: v.plate.trim().toUpperCase() }))
+          : [{ type: data.vehicleType, plate: normalizedPlate, gasType: data.gasType }];
+        docData.vehicles = vehiclesArray;
+        // Keep legacy individual fields for backward compatibility
+        if (vehiclesArray.length > 1) {
+          docData.vehicle2Type = vehiclesArray[1].type;
+          docData.vehicle2Plate = vehiclesArray[1].plate;
+          docData.vehicle2GasType = vehiclesArray[1].gasType;
+        }
+        await admin.firestore().collection("accounts").doc(uid).set(docData);
       } catch (err: unknown) {
         const fsErr = err as {code?: string | number; message?: string};
         const host = process.env.FIRESTORE_EMULATOR_HOST;
