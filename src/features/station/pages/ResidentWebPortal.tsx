@@ -117,6 +117,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const [txFilter, setTxFilter]         = useState("All");
   const [brandFilter, setBrandFilter]           = useState("All");
   const [selectedStation, setSelectedStation]   = useState<typeof ALL_STATIONS[0] | null>(null);
+  const [selectedVehicle, setSelectedVehicle]   = useState(0);
   const mapRef                          = useRef<HTMLDivElement>(null);
   const mapInst                         = useRef<L.Map | null>(null);
   const markerEls                       = useRef<Record<number, HTMLElement>>({});
@@ -128,10 +129,12 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const firstName    = resident?.firstName || "Resident";
   const lastName     = resident?.lastName  || "";
   const fullName     = `${firstName} ${lastName}`.trim();
-  const plate        = resident?.plate        || "N/A";
+  const vehicles     = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "Car", plate: "N/A", gasType: "Regular" };
+  const plate        = activeVehicle.plate;
+  const vehicleType  = activeVehicle.type || "Car";
+  const gasType      = activeVehicle.gasType || "Regular";
   const barangay     = resident?.barangay     || "Not set";
-  const vehicleType  = resident?.vehicleType  || "Car";
-  const gasType      = resident?.gasType      || "Regular";
   const registeredAt = resident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 
@@ -490,6 +493,17 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   )}
                 </div>
                 <div className="flex items-center gap-3">
+                  {vehicles.length > 1 && (
+                    <div className="flex bg-white/10 rounded-xl p-1 gap-1">
+                      {vehicles.map((v, i) => (
+                        <button key={i} type="button"
+                          onClick={() => setSelectedVehicle(i)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${selectedVehicle === i ? "bg-white text-[#003366]" : "text-white/60 hover:text-white"}`}>
+                          V{i + 1}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <span className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1.5 rounded-full border border-green-400/30">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
                     Active · Verified
@@ -766,7 +780,18 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   <p className="text-white/60 text-sm mt-0.5">{plate} · {vehicleType}</p>
                   <p className="text-white/50 text-xs mt-0.5">{barangay} · {gasType}</p>
                 </div>
-                <div className="shrink-0 text-right">
+                <div className="shrink-0 flex flex-col items-end gap-2">
+                  {vehicles.length > 1 && (
+                    <div className="flex bg-white/10 rounded-xl p-1 gap-1">
+                      {vehicles.map((v, i) => (
+                        <button key={i} type="button"
+                          onClick={() => setSelectedVehicle(i)}
+                          className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${selectedVehicle === i ? "bg-white text-[#003366]" : "text-white/60 hover:text-white"}`}>
+                          V{i + 1}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <span className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1 rounded-full border border-green-400/30">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
                     Active

@@ -206,8 +206,8 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const ann = ANNOUNCEMENTS[announcementIdx];
 
   return (
-    <div className="flex flex-col min-h-dvh bg-background">
-      <main className="flex-1 pb-44 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col h-dvh bg-background overflow-hidden">
+      <main className="flex-1 overflow-y-auto pb-28 max-w-2xl mx-auto w-full">
 
         {/* Profile bar */}
         <div className="mx-4 mt-5 mb-4 flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm border border-outline-variant/20">
@@ -221,7 +221,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               onClick={() => setShowVehiclePicker(true)}
               className="flex items-center gap-1 text-xs text-slate-400 font-medium capitalize"
             >
-              <span>{vehicleType} · Resident</span>
+              <span>{vehicleType} · {resident?.status === "inactive" ? "Not Active" : "Active"}</span>
               <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
             </button>
           </div>
@@ -248,7 +248,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
-              <p className="text-[9px] text-on-surface-variant capitalize">{vehicleType}</p>
+              <p className="text-[9px] text-on-surface-variant capitalize">{activeGasType || vehicleType}</p>
               <span className="material-symbols-outlined absolute bottom-2 right-2 text-[14px] text-primary-container">add_circle</span>
             </button>
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
