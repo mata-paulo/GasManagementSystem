@@ -9,10 +9,31 @@ L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, 
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import { fetchStationDirectory } from "@/lib/data/agas";
 
 
 const DEFAULT_LAT = 10.3157;
 const DEFAULT_LON = 123.8854;
+
+const STATIC_STATION_COORDS = [
+  { lat: 10.3025851, lon: 123.9110295 }, { lat: 10.3039010, lon: 123.8950550 },
+  { lat: 10.3176340, lon: 123.8944090 }, { lat: 10.3203694, lon: 123.8994126 },
+  { lat: 10.3248960, lon: 123.9155940 }, { lat: 10.3446170, lon: 123.9121940 },
+  { lat: 10.3567474, lon: 123.9149518 }, { lat: 10.3004390, lon: 123.8746030 },
+  { lat: 10.2882290, lon: 123.8638870 }, { lat: 10.2875180, lon: 123.8792190 },
+  { lat: 10.3161410, lon: 123.9287640 }, { lat: 10.3097020, lon: 123.9080780 },
+  { lat: 10.3255071, lon: 123.9074359 }, { lat: 10.3176040, lon: 123.8965360 },
+  { lat: 10.3254869, lon: 123.9165870 }, { lat: 10.3156699, lon: 123.8842890 },
+  { lat: 10.3169054, lon: 123.8852611 }, { lat: 10.3083407, lon: 123.8893030 },
+  { lat: 10.2967202, lon: 123.8868959 }, { lat: 10.3131564, lon: 123.9127650 },
+  { lat: 10.3210638, lon: 123.9103713 }, { lat: 10.3021098, lon: 123.9064052 },
+  { lat: 10.2932211, lon: 123.8957413 }, { lat: 10.3150129, lon: 123.9015140 },
+  { lat: 10.3354793, lon: 123.9110667 }, { lat: 10.2895116, lon: 123.8781982 },
+  { lat: 10.2966476, lon: 123.8755522 }, { lat: 10.2987601, lon: 123.8938398 },
+  { lat: 10.3960743, lon: 123.9218555 }, { lat: 10.2743392, lon: 123.8568358 },
+  { lat: 10.2998279, lon: 123.8742939 }, { lat: 10.3011824, lon: 123.9001353 },
+  { lat: 10.3088927, lon: 123.9188045 }, { lat: 10.3306989, lon: 123.8978075 },
+];
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -155,7 +176,6 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   useEffect(() => {
     if (!mapPreviewRef.current || mapInstanceRef.current) return;
 
-    // Start map immediately with default center — don't wait for GPS
     const map = L.map(mapPreviewRef.current, {
       zoomControl: false,
       attributionControl: false,
@@ -169,21 +189,41 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
       fadeAnimation: true,
       zoomAnimation: true,
       markerZoomAnimation: false,
-    }).setView([DEFAULT_LAT, DEFAULT_LON], 13);
+    }).setView([DEFAULT_LAT, DEFAULT_LON], 15);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
       updateWhenIdle: false,
       updateWhenZooming: false,
       keepBuffer: 4,
     }).addTo(map);
 
-    const markerEl = document.createElement("div");
-    markerEl.style.cssText =
+    // User location marker
+    const userEl = document.createElement("div");
+    userEl.style.cssText =
       "width:14px;height:14px;border-radius:50%;background:#003366;border:2px solid #fff;box-shadow:0 0 0 3px rgba(0,51,102,0.25)";
-    const markerIcon = L.divIcon({ html: markerEl.outerHTML, className: "", iconSize: [14, 14], iconAnchor: [7, 7] });
-    const marker = L.marker([DEFAULT_LAT, DEFAULT_LON], { icon: markerIcon }).addTo(map);
+    const userIcon = L.divIcon({ html: userEl.outerHTML, className: "", iconSize: [14, 14], iconAnchor: [7, 7] });
+    const userMarker = L.marker([DEFAULT_LAT, DEFAULT_LON], { icon: userIcon }).addTo(map);
+
+    // Station markers helper
+    const addStationMarkers = (stations: Array<{ lat: number; lon: number }>) => {
+      stations.forEach((st) => {
+        const el = document.createElement("div");
+        el.style.cssText =
+          "width:22px;height:22px;border-radius:50%;background:#003366;border:2px solid #f9c23c;box-shadow:0 1px 4px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:11px;";
+        el.innerHTML = "⛽";
+        const icon = L.divIcon({ html: el.outerHTML, className: "", iconSize: [22, 22], iconAnchor: [11, 11] });
+        L.marker([st.lat, st.lon], { icon }).addTo(map);
+      });
+    };
+
+    // Fetch stations and plot them, fall back to static coords if directory is empty
+    void fetchStationDirectory().then((dirs) => {
+      const coords = dirs.length > 0
+        ? dirs.map((d) => ({ lat: d.lat, lon: d.lon }))
+        : STATIC_STATION_COORDS;
+      addStationMarkers(coords);
+    }).catch(() => { addStationMarkers(STATIC_STATION_COORDS); });
 
     mapInstanceRef.current = map;
 
@@ -192,8 +232,8 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude: lat, longitude: lon } = pos.coords;
-          map.setView([lat, lon], 13);
-          marker.setLatLng([lat, lon]);
+          map.setView([lat, lon], 14);
+          userMarker.setLatLng([lat, lon]);
         },
         () => {},
         { timeout: 5000, maximumAge: 60000 }
@@ -318,18 +358,18 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Map preview */}
-          <section className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate">
-            <div ref={mapPreviewRef} className="w-full h-full" />
-            <button
-              onClick={() => onTabChange("map")}
-              aria-label="View full map"
-              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-all"
-            >
+          {/* Map preview — tap to open full map */}
+          <section
+            className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate cursor-pointer active:opacity-90"
+            onClick={() => onTabChange("map")}
+          >
+            <div ref={mapPreviewRef} className="w-full h-full pointer-events-none" />
+            <div className="absolute inset-0 z-10" />
+            <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 bg-[#003366] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
               <span className="material-symbols-outlined text-[14px]">open_in_full</span>
               View Full Map
-            </button>
-            <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] font-bold text-[#003366] shadow">
+            </div>
+            <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] font-bold text-[#003366] shadow">
               Nearby Stations
             </div>
           </section>
