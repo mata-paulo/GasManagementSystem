@@ -248,23 +248,21 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
-              <p className="text-[9px] text-on-surface-variant capitalize">{activeGasType || vehicleType}</p>
               <span className="material-symbols-outlined absolute bottom-2 right-2 text-[14px] text-primary-container">add_circle</span>
             </button>
+            <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
+              <div className="flex items-center gap-1 text-on-surface-variant">
+                <span className="material-symbols-outlined text-[13px]">local_gas_station</span>
+                <span className="text-[9px] font-bold uppercase tracking-tight">Fuel Type</span>
+              </div>
+              <p className="text-sm font-black font-headline text-primary leading-tight capitalize">{activeGasType || "N/A"}</p>
+            </div>
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
               <div className="flex items-center gap-1 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[13px]">location_on</span>
                 <span className="text-[9px] font-bold uppercase tracking-tight">Barangay</span>
               </div>
               <p className="text-sm font-black font-headline text-primary leading-tight">{barangay}</p>
-            </div>
-            <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
-              <div className="flex items-center gap-1 text-on-surface-variant">
-                <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                <span className="text-[9px] font-bold uppercase tracking-tight">Status</span>
-              </div>
-              <p className="text-sm font-black font-headline text-green-700">Active</p>
-              <p className="text-[9px] text-on-surface-variant">Verified</p>
             </div>
           </section>
 
