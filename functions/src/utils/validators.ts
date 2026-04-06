@@ -123,6 +123,13 @@ export const registerResidentSchema = z.object({
     .trim()
     .refine((v) => GASES.includes(v), "Invalid fuel type.")
     .optional(),
+  vehicles: z.array(
+    z.object({
+      type: z.string().trim().refine((v) => VEHICLES.includes(v), "Invalid vehicle type."),
+      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`),
+      gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
+    })
+  ).min(1).max(5, "Maximum of 5 vehicles allowed.").optional(),
 });
 
 export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;

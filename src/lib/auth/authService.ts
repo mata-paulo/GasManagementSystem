@@ -17,6 +17,7 @@ export interface AuthUser {
   firstName?: string;
   lastName?: string;
   plate?: string;
+  vehicles?: Array<{ type: string; plate: string; gasType: string }>;
   [key: string]: unknown;
 }
 
@@ -115,6 +116,14 @@ export async function login({ email, password }: { email: string; password: stri
       vehicle2Type: data.vehicle2Type as string | undefined,
       vehicle2Plate: data.vehicle2Plate as string | undefined,
       vehicle2GasType: data.vehicle2GasType as string | undefined,
+      vehicles: (() => {
+        const arr = data.vehicles as Array<{ type: string; plate: string; gasType: string }> | undefined;
+        if (Array.isArray(arr) && arr.length > 0) return arr;
+        const result: Array<{ type: string; plate: string; gasType: string }> = [];
+        if (data.plate) result.push({ type: (data.vehicleType as string) || "car", plate: data.plate as string, gasType: (data.gasType as string) || "" });
+        if (data.vehicle2Plate) result.push({ type: (data.vehicle2Type as string) || "car", plate: data.vehicle2Plate as string, gasType: (data.vehicle2GasType as string) || "" });
+        return result;
+      })(),
       registeredAt,
       brand: data.brand as string | undefined,
       stationCode: data.stationCode as string | undefined,

@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 
 const APP_VERSION = "V 1.0.0";
@@ -110,20 +108,18 @@ function PickerSheet({ title, options, value, onSelect, onClose }: {
 
 export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, onUpdateProfile = undefined, tabs = USER_TABS, selectedVehicle: selectedVehicleProp = 1, onSelectVehicle = undefined }) {
   const name        = officer ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim() : "Station Officer";
-  const plate       = officer?.plate       || "N/A";
-  const vehicleType = officer?.vehicleType || "N/A";
+  const vehicles = (officer?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const selectedVehicle = selectedVehicleProp as number;
+  const setSelectedVehicle = (v: number) => onSelectVehicle?.(v);
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "N/A", plate: "N/A", gasType: "N/A" };
+  const plate       = activeVehicle.plate;
+  const vehicleType = activeVehicle.type;
+  const gasType     = activeVehicle.gasType;
   const barangay    = officer?.barangay    || "N/A";
-  const gasType     = officer?.gasType     || "N/A";
   const initials    = `${officer?.firstName?.[0] ?? ""}${officer?.lastName?.[0] ?? ""}`.toUpperCase() || "?";
 
   const [editing, setEditing] = useState(false);
   const [picker, setPicker] = useState<"vehicleType" | "barangay" | null>(null);
-  const selectedVehicle = selectedVehicleProp as 1 | 2;
-  const setSelectedVehicle = (v: 1 | 2) => onSelectVehicle?.(v);
-  const [addingVehicle, setAddingVehicle] = useState(false);
-  const [v2Form, setV2Form] = useState({ vehicle2Type: "car", vehicle2Plate: "", vehicle2GasType: "" });
-  const [v2Saving, setV2Saving] = useState(false);
-  const [v2Error, setV2Error] = useState("");
   const [form, setForm] = useState({
     firstName:   officer?.firstName   || "",
     lastName:    officer?.lastName    || "",
@@ -201,32 +197,19 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
 
           {/* Vehicle & Fuel */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-4 py-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
-              {officer?.vehicle2Plate && (
-                <div className="flex bg-slate-100 rounded-lg p-0.5">
-                  {([1, 2] as const).map((n) => (
-                    <button key={n} type="button"
-                      onClick={() => setSelectedVehicle(n)}
-                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${selectedVehicle === n ? "bg-white text-[#003366] shadow" : "text-slate-400"}`}>
-                      V{n}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <p className="text-[10px] font-bold text-[#003366] uppercase tracking-widest">Vehicle & Fuel</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Number</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span>{selectedVehicle === 2 ? (officer?.vehicle2Plate || "N/A") : (form.plate || plate)}</span>
+                  <span>{form.plate || plate}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vehicle Type</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span className="capitalize">{selectedVehicle === 2 ? (officer?.vehicle2Type || "N/A") : (form.vehicleType || vehicleType)}</span>
+                  <span className="capitalize">{form.vehicleType || vehicleType}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
@@ -234,20 +217,10 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
               <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                <span>{selectedVehicle === 2 ? (officer?.vehicle2GasType || "N/A") : (form.gasType || gasType)}</span>
+                <span>{form.gasType || gasType}</span>
                 <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
               </div>
             </div>
-            {!officer?.vehicle2Plate && (
-              <button
-                type="button"
-                onClick={() => setAddingVehicle(true)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 text-xs font-bold hover:border-[#003366]/40 hover:text-[#003366] transition-all active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[16px]">add_circle</span>
-                Add Vehicle
-              </button>
-            )}
           </div>
 
           {/* Location */}
@@ -302,115 +275,6 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           />
         )}
 
-        {/* Add Vehicle sheet — only accessible from Edit Profile */}
-        {addingVehicle && (
-          <div className="fixed inset-0 z-50 flex items-end">
-            <div className="absolute inset-0 bg-black/50" onClick={() => { setAddingVehicle(false); setV2Error(""); }} />
-            <div className="relative w-full bg-white rounded-t-2xl shadow-2xl px-5 pt-5 pb-10 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-headline font-bold text-[#003366] text-base">Add Vehicle</h3>
-                <button type="button" onClick={() => { setAddingVehicle(false); setV2Error(""); }} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500">
-                  <span className="material-symbols-outlined text-xl">close</span>
-                </button>
-              </div>
-
-              {/* Vehicle Type */}
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vehicle Type</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: "car", label: "Car", icon: "directions_car" },
-                    { id: "truck", label: "Truck", icon: "local_shipping" },
-                    { id: "motorcycle", label: "Motorcycle", icon: "two_wheeler" },
-                  ].map((v) => {
-                    const active = v2Form.vehicle2Type === v.id;
-                    return (
-                      <button key={v.id} type="button"
-                        onClick={() => setV2Form((f) => ({ ...f, vehicle2Type: v.id }))}
-                        className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 font-bold text-xs transition-all active:scale-95 ${active ? "bg-[#003366] border-[#003366] text-white shadow" : "bg-gray-50 border-gray-200 text-gray-500"}`}>
-                        <span className={`material-symbols-outlined text-[22px] ${active ? "icon-fill" : ""}`}>{v.icon}</span>
-                        {v.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Plate No. */}
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Plate No.</p>
-                <input
-                  type="text"
-                  value={v2Form.vehicle2Plate}
-                  onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: e.target.value.toUpperCase() }))}
-                  placeholder={v2Form.vehicle2Type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"}
-                  maxLength={10}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
-                />
-              </div>
-
-              {/* Fuel Type */}
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fuel Type</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { id: "Diesel", label: "Diesel", icon: "oil_barrel", active: "bg-emerald-700 border-emerald-700 text-white" },
-                    { id: "Gasoline", label: "Gasoline", icon: "local_gas_station", active: "bg-red-600 border-red-600 text-white" },
-                  ].map((g) => {
-                    const active = v2Form.vehicle2GasType === g.id;
-                    return (
-                      <button key={g.id} type="button"
-                        onClick={() => setV2Form((f) => ({ ...f, vehicle2GasType: g.id }))}
-                        className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95 ${active ? g.active : "bg-gray-50 border-gray-200 text-gray-500"}`}>
-                        <span className={`material-symbols-outlined text-[24px] ${active ? "icon-fill" : ""}`}>{g.icon}</span>
-                        {g.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {v2Error && (
-                <div className="flex items-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs">
-                  <span className="material-symbols-outlined text-base shrink-0">error</span>
-                  {v2Error}
-                </div>
-              )}
-
-              <button
-                type="button"
-                disabled={v2Saving}
-                onClick={async () => {
-                  if (!v2Form.vehicle2Plate.trim()) { setV2Error("Please enter the plate number."); return; }
-                  if (!v2Form.vehicle2GasType) { setV2Error("Please select a fuel type."); return; }
-                  if (!officer?.uid) { setV2Error("User session error. Please log out and log back in."); return; }
-                  setV2Saving(true);
-                  setV2Error("");
-                  try {
-                    const plate2 = v2Form.vehicle2Plate.trim().toUpperCase();
-                    await updateDoc(doc(db, "accounts", officer.uid as string), {
-                      vehicle2Type: v2Form.vehicle2Type,
-                      vehicle2Plate: plate2,
-                      vehicle2GasType: v2Form.vehicle2GasType,
-                    });
-                    onUpdateProfile?.({ vehicle2Type: v2Form.vehicle2Type, vehicle2Plate: plate2, vehicle2GasType: v2Form.vehicle2GasType });
-                    setAddingVehicle(false);
-                    setV2Form({ vehicle2Type: "car", vehicle2Plate: "", vehicle2GasType: "" });
-                  } catch {
-                    setV2Error("Failed to save. Please try again.");
-                  } finally {
-                    setV2Saving(false);
-                  }
-                }}
-                className="w-full bg-[#003366] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {v2Saving
-                  ? <><span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Saving…</>
-                  : <><span className="material-symbols-outlined text-[18px]">add_circle</span>Add Vehicle</>}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -450,43 +314,21 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
           {/* Info grid */}
           <div className="grid grid-cols-2 border-t border-white/10">
             {[
-              { icon: "directions_car",    label: "Plate No.",  value: selectedVehicle === 2 ? (officer?.vehicle2Plate || "N/A") : plate, isPlate: true },
-              { icon: "commute",           label: "Vehicle",    value: selectedVehicle === 2 ? (officer?.vehicle2Type  || "N/A") : vehicleType },
+              { icon: "directions_car",    label: "Plate No.",  value: plate },
+              { icon: "commute",           label: "Vehicle",    value: vehicleType },
               { icon: "location_on",       label: "Barangay",   value: barangay },
-              { icon: "local_gas_station", label: "Fuel Type",  value: selectedVehicle === 2 ? (officer?.vehicle2GasType || "N/A") : gasType },
-            ].map((d, i, arr) => {
-              const isSwappable = d.isPlate && !!officer?.vehicle2Plate;
-              const inner = (
-                <>
-                  <span className="material-symbols-outlined text-yellow-300 text-[18px] shrink-0"
-                    style={{ fontVariationSettings: "'FILL' 1" }}>{d.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">{d.label}</p>
-                      {isSwappable && (
-                        <span className="flex items-center gap-0.5 text-white/60">
-                          <span className="text-[8px] font-bold uppercase">V{selectedVehicle}</span>
-                          <span className="material-symbols-outlined text-[11px]">swap_vert</span>
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-white text-xs font-bold truncate capitalize">{d.value}</p>
-                  </div>
-                </>
-              );
-              return isSwappable ? (
-                <button key={d.label} type="button"
-                  onClick={() => setSelectedVehicle(selectedVehicle === 1 ? 2 : 1)}
-                  className={`flex items-center gap-3 px-5 py-3 active:bg-white/10 transition-colors w-full text-left ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}>
-                  {inner}
-                </button>
-              ) : (
-                <div key={d.label}
-                  className={`flex items-center gap-3 px-5 py-3 ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}>
-                  {inner}
+              { icon: "local_gas_station", label: "Fuel Type",  value: gasType },
+            ].map((d, i, arr) => (
+              <div key={d.label}
+                className={`flex items-center gap-3 px-5 py-3 ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}>
+                <span className="material-symbols-outlined text-yellow-300 text-[18px] shrink-0"
+                  style={{ fontVariationSettings: "'FILL' 1" }}>{d.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">{d.label}</p>
+                  <p className="text-white text-xs font-bold truncate capitalize">{d.value}</p>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
 

@@ -6,6 +6,8 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 
 
@@ -34,23 +36,28 @@ const ANNOUNCEMENTS = [
   },
 ];
 
-export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 1, onSelectVehicle }) {
+export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 1, onSelectVehicle, onUpdateResident = undefined }) {
   const mapPreviewRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
   const [showVehiclePicker, setShowVehiclePicker] = useState(false);
-  const setSelectedVehicle = (v: 1 | 2) => onSelectVehicle?.(v);
+  const [addingVehicle, setAddingVehicle] = useState(false);
+  const [v2Form, setV2Form] = useState({ vehicle2Type: "car", vehicle2Plate: "", vehicle2GasType: "" });
+  const [v2Saving, setV2Saving] = useState(false);
+  const [v2Error, setV2Error] = useState("");
+  const [confirmingVehicle, setConfirmingVehicle] = useState(false);
+  const setSelectedVehicle = (v: number) => onSelectVehicle?.(v);
 
   const fullName = resident
     ? `${resident.firstName || ""} ${resident.lastName || ""}`.trim()
     : "Resident User";
 
-  const hasVehicle2 = !!(resident?.vehicle2Plate && resident?.vehicle2Type);
-
-  // Active vehicle fields based on selection
-  const plate       = selectedVehicle === 2 ? (resident?.vehicle2Plate  || "N/A") : (resident?.plate       || "N/A");
-  const vehicleType = selectedVehicle === 2 ? (resident?.vehicle2Type   || "car") : (resident?.vehicleType || "car");
-  const activeGasType = selectedVehicle === 2 ? (resident?.vehicle2GasType || resident?.gasType) : resident?.gasType;
+  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "car", plate: "N/A", gasType: "" };
+  const plate = activeVehicle.plate || "N/A";
+  const vehicleType = activeVehicle.type || "car";
+  const activeGasType = activeVehicle.gasType || "";
+  const canAddVehicle = vehicles.length < 5;
 
   const barangay = resident?.barangay || "Not set";
 
@@ -183,11 +190,11 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             <p className="font-headline font-bold text-[#003366] text-base leading-tight truncate">{fullName}</p>
             <button
               type="button"
-              onClick={() => hasVehicle2 && setShowVehiclePicker(true)}
-              className={`flex items-center gap-1 text-xs text-slate-400 font-medium capitalize ${hasVehicle2 ? "cursor-pointer" : "cursor-default"}`}
+              onClick={() => setShowVehiclePicker(true)}
+              className="flex items-center gap-1 text-xs text-slate-400 font-medium capitalize"
             >
               <span>{vehicleType} · Resident</span>
-              {hasVehicle2 && <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>}
+              <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
             </button>
           </div>
           <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
@@ -202,17 +209,15 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           <section className="grid grid-cols-3 gap-3">
             <button
               type="button"
-              onClick={() => hasVehicle2 && setShowVehiclePicker(true)}
-              className={`rounded-2xl bg-surface-container-low p-3 space-y-1 text-left w-full active:scale-95 transition-all ${hasVehicle2 ? "cursor-pointer" : "cursor-default"}`}
+              onClick={() => setShowVehiclePicker(true)}
+              className="rounded-2xl bg-surface-container-low p-3 space-y-1 text-left w-full active:scale-95 transition-all"
             >
               <div className="flex items-center justify-between text-on-surface-variant">
                 <div className="flex items-center gap-1">
                   <span className="material-symbols-outlined text-[13px]">directions_car</span>
                   <span className="text-[9px] font-bold uppercase tracking-tight">Vehicle</span>
                 </div>
-                {hasVehicle2 && (
-                  <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
-                )}
+                <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
               <p className="text-[9px] text-on-surface-variant capitalize">{vehicleType}</p>
@@ -409,7 +414,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         </button>
       </div>
 
-      {/* Vehicle picker sheet — top-level so clicks are never blocked */}
+      {/* Vehicle picker sheet */}
       {showVehiclePicker && (
         <div className="fixed inset-0 z-50 flex items-end">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowVehiclePicker(false)} />
@@ -420,27 +425,212 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
             </div>
-            {[
-              { num: 1 as const, plate: resident?.plate, type: resident?.vehicleType, gas: resident?.gasType },
-              { num: 2 as const, plate: resident?.vehicle2Plate, type: resident?.vehicle2Type, gas: resident?.vehicle2GasType },
-            ].filter((v) => v.plate).map((v) => (
-              <button key={v.num} type="button"
-                onClick={() => { setSelectedVehicle(v.num); setShowVehiclePicker(false); }}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border-2 transition-all active:scale-[0.98] ${selectedVehicle === v.num ? "border-[#003366] bg-blue-50" : "border-gray-100 bg-gray-50 hover:border-gray-200"}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedVehicle === v.num ? "bg-[#003366]" : "bg-gray-200"}`}>
-                  <span className={`material-symbols-outlined text-[20px] icon-fill ${selectedVehicle === v.num ? "text-white" : "text-gray-500"}`}>
+            {vehicles.map((v, i) => (
+              <button key={i} type="button"
+                onClick={() => { setSelectedVehicle(i); setShowVehiclePicker(false); }}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border-2 transition-all active:scale-[0.98] ${selectedVehicle === i ? "border-[#003366] bg-blue-50" : "border-gray-100 bg-gray-50 hover:border-gray-200"}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedVehicle === i ? "bg-[#003366]" : "bg-gray-200"}`}>
+                  <span className={`material-symbols-outlined text-[20px] icon-fill ${selectedVehicle === i ? "text-white" : "text-gray-500"}`}>
                     {v.type === "motorcycle" ? "two_wheeler" : v.type === "truck" ? "local_shipping" : "directions_car"}
                   </span>
                 </div>
                 <div className="flex-1 text-left">
-                  <p className={`font-black font-headline uppercase tracking-wider text-base ${selectedVehicle === v.num ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
-                  <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gas}</p>
+                  <p className={`font-black font-headline uppercase tracking-wider text-base ${selectedVehicle === i ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
+                  <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gasType}</p>
                 </div>
-                {selectedVehicle === v.num && (
+                {selectedVehicle === i && (
                   <span className="material-symbols-outlined text-[#003366] text-[20px]">check_circle</span>
                 )}
               </button>
             ))}
+            {canAddVehicle && (
+              <button
+                type="button"
+                onClick={() => { setShowVehiclePicker(false); setAddingVehicle(true); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 text-sm font-bold hover:border-[#003366]/40 hover:text-[#003366] transition-all active:scale-95"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                Add Vehicle
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Vehicle sheet */}
+      {addingVehicle && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { setAddingVehicle(false); setV2Error(""); }} />
+          <div className="relative w-full bg-white rounded-t-2xl shadow-2xl px-5 pt-5 pb-28 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-headline font-bold text-[#003366] text-base">Add Vehicle</h3>
+              <button type="button" onClick={() => { setAddingVehicle(false); setV2Error(""); }} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500">
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Vehicle Type */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vehicle Type</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "car", label: "Car", icon: "directions_car" },
+                  { id: "truck", label: "Truck", icon: "local_shipping" },
+                  { id: "motorcycle", label: "Motorcycle", icon: "two_wheeler" },
+                ].map((v) => {
+                  const active = v2Form.vehicle2Type === v.id;
+                  return (
+                    <button key={v.id} type="button"
+                      onClick={() => setV2Form((f) => ({ ...f, vehicle2Type: v.id }))}
+                      className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 font-bold text-xs transition-all active:scale-95 ${active ? "bg-[#003366] border-[#003366] text-white shadow" : "bg-gray-50 border-gray-200 text-gray-500"}`}>
+                      <span className={`material-symbols-outlined text-[22px] ${active ? "icon-fill" : ""}`}>{v.icon}</span>
+                      {v.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Plate No. */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Plate No.</p>
+              <input
+                type="text"
+                value={v2Form.vehicle2Plate}
+                onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: e.target.value.toUpperCase() }))}
+                placeholder={v2Form.vehicle2Type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"}
+                maxLength={10}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
+              />
+            </div>
+
+            {/* Fuel Type */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fuel Type</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: "Diesel", label: "Diesel", icon: "oil_barrel", activeClass: "bg-emerald-700 border-emerald-700 text-white" },
+                  { id: "Gasoline", label: "Gasoline", icon: "local_gas_station", activeClass: "bg-red-600 border-red-600 text-white" },
+                ].map((g) => {
+                  const active = v2Form.vehicle2GasType === g.id;
+                  return (
+                    <button key={g.id} type="button"
+                      onClick={() => setV2Form((f) => ({ ...f, vehicle2GasType: g.id }))}
+                      className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95 ${active ? g.activeClass : "bg-gray-50 border-gray-200 text-gray-500"}`}>
+                      <span className={`material-symbols-outlined text-[24px] ${active ? "icon-fill" : ""}`}>{g.icon}</span>
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {v2Error && (
+              <div className="flex items-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs">
+                <span className="material-symbols-outlined text-base shrink-0">error</span>
+                {v2Error}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!v2Form.vehicle2Plate.trim()) { setV2Error("Please enter the plate number."); return; }
+                if (!v2Form.vehicle2GasType) { setV2Error("Please select a fuel type."); return; }
+                setV2Error("");
+                setConfirmingVehicle(true);
+              }}
+              className="w-full bg-[#003366] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_circle</span>
+              Add Vehicle
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Vehicle modal */}
+      {confirmingVehicle && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-6">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setConfirmingVehicle(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#003366] px-5 py-4 flex items-center gap-3">
+              <span className="material-symbols-outlined text-yellow-300 icon-fill text-[24px]">help</span>
+              <div>
+                <p className="text-white font-headline font-black text-sm leading-none">Confirm Vehicle</p>
+                <p className="text-white/60 text-[10px] mt-0.5">Please verify your vehicle details</p>
+              </div>
+            </div>
+            {/* Details */}
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-slate-500">Is this information correct?</p>
+              <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-2.5">
+                {[
+                  { label: "Vehicle Type", value: v2Form.vehicle2Type, icon: v2Form.vehicle2Type === "motorcycle" ? "two_wheeler" : v2Form.vehicle2Type === "truck" ? "local_shipping" : "directions_car" },
+                  { label: "Plate No.", value: v2Form.vehicle2Plate.trim().toUpperCase(), icon: "pin" },
+                  { label: "Fuel Type", value: v2Form.vehicle2GasType, icon: "local_gas_station" },
+                ].map((d) => (
+                  <div key={d.label} className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-[#003366] text-[18px] icon-fill shrink-0">{d.icon}</span>
+                    <div className="flex-1 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{d.label}</span>
+                      <span className="text-sm font-black text-[#003366] capitalize">{d.value}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {v2Error && (
+                <div className="flex items-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs">
+                  <span className="material-symbols-outlined text-base shrink-0">error</span>
+                  {v2Error}
+                </div>
+              )}
+            </div>
+            {/* Actions */}
+            <div className="flex gap-3 px-5 pb-5">
+              <button
+                type="button"
+                onClick={() => setConfirmingVehicle(false)}
+                className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl text-sm"
+              >
+                Go Back
+              </button>
+              <button
+                type="button"
+                disabled={v2Saving}
+                onClick={async () => {
+                  if (!resident?.uid) { setV2Error("Session error. Please log out and log back in."); return; }
+                  setV2Saving(true);
+                  setV2Error("");
+                  try {
+                    const plate2 = v2Form.vehicle2Plate.trim().toUpperCase();
+                    const newVehicles = [...vehicles, { type: v2Form.vehicle2Type, plate: plate2, gasType: v2Form.vehicle2GasType }];
+                    await updateDoc(doc(db, "accounts", resident.uid as string), {
+                      vehicles: newVehicles,
+                      ...(newVehicles.length === 2 && {
+                        vehicle2Type: v2Form.vehicle2Type,
+                        vehicle2Plate: plate2,
+                        vehicle2GasType: v2Form.vehicle2GasType,
+                      }),
+                    });
+                    onUpdateResident?.({ vehicles: newVehicles, vehicle2Type: v2Form.vehicle2Type, vehicle2Plate: plate2, vehicle2GasType: v2Form.vehicle2GasType });
+                    setConfirmingVehicle(false);
+                    setAddingVehicle(false);
+                    setV2Form({ vehicle2Type: "car", vehicle2Plate: "", vehicle2GasType: "" });
+                  } catch {
+                    setV2Error("Failed to save. Please try again.");
+                  } finally {
+                    setV2Saving(false);
+                  }
+                }}
+                className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {v2Saving
+                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Saving…</>
+                  : <><span className="material-symbols-outlined text-[16px]">check_circle</span>Confirm</>}
+              </button>
+            </div>
           </div>
         </div>
       )}

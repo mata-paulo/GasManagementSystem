@@ -50,7 +50,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [resident, setResident] = useState(null);
   const [activeVehicle, setActiveVehicle] = useState<{ plate?: string; vehicleType?: string; gasType?: string } | null>(null);
-  const [selectedVehicle, setSelectedVehicle] = useState<1 | 2>(1);
+  const [selectedVehicle, setSelectedVehicle] = useState<number>(0);
   const [scannedResident, setScannedResident] = useState(null);
   const [oobCode, setOobCode] = useState<string | null>(null);
 
@@ -401,6 +401,7 @@ export default function App() {
           selectedVehicle={selectedVehicle}
           onSelectVehicle={setSelectedVehicle}
           onShowQR={(v) => { setActiveVehicle(v ?? null); setScreen("qr-display"); }}
+          onUpdateResident={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
         />
       </RoleGuard>
     );
