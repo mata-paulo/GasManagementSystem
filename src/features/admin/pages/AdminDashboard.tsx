@@ -556,6 +556,12 @@ export default function AdminDashboard({ onLogout }) {
   const [userFormError, setUserFormError] = useState("");
   const [userFormSuccess, setUserFormSuccess] = useState("");
   const [assigningUser, setAssigningUser] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteModalStationId, setInviteModalStationId] = useState<number | null>(null);
+  const [inviteModalEmail, setInviteModalEmail] = useState("");
+  const [inviteModalError, setInviteModalError] = useState("");
+  const [inviteModalSuccess, setInviteModalSuccess] = useState("");
+  const [inviteModalSending, setInviteModalSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
     residents: [],
@@ -988,6 +994,53 @@ export default function AdminDashboard({ onLogout }) {
       setUserFormError(err instanceof Error ? err.message : "Failed to assign station user.");
     } finally {
       setAssigningUser(false);
+    }
+  }
+
+  async function handleInviteModalSend() {
+    const email = inviteModalEmail.trim().toLowerCase();
+    if (!email) {
+      setInviteModalError("Please enter an email address.");
+      return;
+    }
+    if (inviteModalStationId === null) {
+      setInviteModalError("Please select a station.");
+      return;
+    }
+    const station = STATIONS.find((s) => s.id === inviteModalStationId) ?? null;
+    const directory = station
+      ? findDirectoryStation(
+          dashboardData.stationDirectory,
+          station.name,
+          station.brand,
+          station.barangay,
+        )
+      : null;
+    if (!directory) {
+      setInviteModalError("Selected station is not linked to a directory record.");
+      return;
+    }
+    setInviteModalSending(true);
+    setInviteModalError("");
+    setInviteModalSuccess("");
+    try {
+      const result = await assignStationUser({ stationDirectoryId: directory.id, email });
+      setInviteModalEmail("");
+      if (result.assignmentStatus === "pending" && result.inviteEmailStatus === "sent") {
+        setInviteModalSuccess(`Invite sent to ${email} for ${station!.name}.`);
+      } else if (result.assignmentStatus === "pending") {
+        setInviteModalSuccess(`Invite created for ${email} — ${station!.name}.`);
+      } else {
+        setInviteModalSuccess(`User assigned to ${station!.name}.`);
+      }
+      try {
+        const refreshed = await fetchAdminDashboardData();
+        setDashboardData(refreshed);
+      } catch { /* non-critical */ }
+    } catch (err) {
+      setInviteModalError(err instanceof Error ? err.message : "Failed to send invite.");
+    } finally {
+      setInviteModalSending(false);
     }
   }
 
@@ -2024,6 +2077,20 @@ export default function AdminDashboard({ onLogout }) {
                       {sq ? `${stFiltered.length} result${stFiltered.length !== 1 ? "s" : ""} for "${stationSearch}"` : `${filteredStations.length} stations shown`}
                     </p>
                   </div>
+                  <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setInviteModalStationId(null);
+                      setInviteModalEmail("");
+                      setInviteModalError("");
+                      setInviteModalSuccess("");
+                      setInviteModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#003366] text-white text-[11px] font-black shadow-sm hover:bg-[#002244] transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">add_business</span>
+                    Invite Station
+                  </button>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
                     <input type="text" placeholder="Search station, brand, barangay…" value={stationSearch}
@@ -2035,6 +2102,7 @@ export default function AdminDashboard({ onLogout }) {
                         <span className="material-symbols-outlined text-[15px]">close</span>
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
                 <table className="w-full text-sm">
@@ -2947,6 +3015,60 @@ export default function AdminDashboard({ onLogout }) {
 
         </main>
       </div>
+
+      {/* ── Invite Station Modal ── */}
+      {inviteModalOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setInviteModalOpen(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden">
+              {/* Header */}
+              <div className="bg-[#003366] px-6 py-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-yellow-400 text-[20px]">add_business</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-white">Invite Station</p>
+                    <p className="text-[11px] text-white/60">Invite a new gas station to register</p>
+                  </div>
+                </div>
+                <button onClick={() => setInviteModalOpen(false)} className="text-white/60 hover:text-white transition-colors">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {/* Email */}
+                <div>
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Email</label>
+                  <input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={inviteModalEmail}
+                    onChange={(e) => setInviteModalEmail(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1.5">An invite email will be sent with a setup link for the new station to register and activate access.</p>
+                </div>
+                {inviteModalError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{inviteModalError}</div>
+                )}
+                {inviteModalSuccess && (
+                  <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{inviteModalSuccess}</div>
+                )}
+                <button
+                  onClick={() => void handleInviteModalSend()}
+                  disabled={inviteModalSending || !inviteModalEmail.trim()}
+                  className="w-full rounded-xl bg-[#003366] text-white font-black py-3 text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#002244] transition-all"
+                >
+                  {inviteModalSending ? "Sending Invite…" : "Send Invite"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {activePage === "stations" && selectedUserDrawerStation !== null && (
         <>
