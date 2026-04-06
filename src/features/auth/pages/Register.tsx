@@ -208,8 +208,12 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
   const [step, setStep] = useState<1 | 2>(1);
   const [vehicleType, setVehicleType] = useState("car");
   const [gasType, setGasType] = useState("");
+  const [showVehicle2, setShowVehicle2] = useState(false);
+  const [vehicle2Type, setVehicle2Type] = useState("car");
+  const [vehicle2GasType, setVehicle2GasType] = useState("");
   const [form, setForm] = useState({
     plate: "",
+    vehicle2Plate: "",
     lastName: "",
     firstName: "",
     barangay: "",
@@ -261,6 +265,12 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
       setError("Please fill in plate number and fuel type.");
       return;
     }
+    if (showVehicle2) {
+      if (!form.vehicle2Plate.trim() || !vehicle2GasType) {
+        setError("Please complete the second vehicle's plate and fuel type.");
+        return;
+      }
+    }
     if (!agreedToTerms) {
       setError("You must agree to the Terms and Conditions to register.");
       return;
@@ -276,7 +286,8 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
     const email = form.email.trim().toLowerCase();
     const plate = form.plate.trim().toUpperCase();
     try {
-      const data = await registerResidentHttp({
+      const vehicle2Plate = form.vehicle2Plate.trim().toUpperCase();
+      const payload: Record<string, unknown> = {
         vehicleType,
         plate,
         gasType,
@@ -285,7 +296,13 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
         barangay: form.barangay,
         email,
         password: form.password,
-      });
+      };
+      if (showVehicle2 && vehicle2Plate && vehicle2GasType) {
+        payload.vehicle2Type = vehicle2Type;
+        payload.vehicle2Plate = vehicle2Plate;
+        payload.vehicle2GasType = vehicle2GasType;
+      }
+      const data = await registerResidentHttp(payload);
       const cred = await signInWithEmailAndPassword(auth, email, form.password);
 
       const authUser: AuthUser = {
@@ -300,6 +317,11 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
         gasType,
         registeredAt: new Date().toISOString(),
         uid: data.uid ?? cred.user.uid,
+        ...(showVehicle2 && vehicle2Plate && vehicle2GasType && {
+          vehicle2Type,
+          vehicle2Plate,
+          vehicle2GasType,
+        }),
       };
       setShowConfirm(false);
       onSuccess({ ...authUser });
@@ -343,8 +365,19 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
           <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium text-gray-800 truncate max-w-[180px]">{form.email}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Barangay</span><span className="font-medium text-gray-800">{form.barangay}</span></div>
           <div className="h-px bg-gray-200 my-1" />
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Vehicle 1</p>
           <div className="flex justify-between"><span className="text-gray-500">Vehicle</span><span className="font-medium text-gray-800 capitalize">{vehicleType}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Plate</span><span className="font-medium text-gray-800">{form.plate.toUpperCase()}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Fuel Type</span><span className="font-medium text-gray-800">{gasType}</span></div>
+          {showVehicle2 && form.vehicle2Plate && vehicle2GasType && (
+            <>
+              <div className="h-px bg-gray-200 my-1" />
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Vehicle 2</p>
+              <div className="flex justify-between"><span className="text-gray-500">Vehicle</span><span className="font-medium text-gray-800 capitalize">{vehicle2Type}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Plate</span><span className="font-medium text-gray-800">{form.vehicle2Plate.toUpperCase()}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Fuel Type</span><span className="font-medium text-gray-800">{vehicle2GasType}</span></div>
+            </>
+          )}
         </div>
         {confirmError && (
           <div className="flex items-center gap-2 bg-error-container text-on-error-container px-4 py-3 rounded-xl text-sm mb-4">
@@ -507,6 +540,56 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Fuel Type</label>
                 <GasTypePicker value={gasType} onChange={(g) => { setGasType(g); setError(""); }} />
               </div>
+
+              {/* ── Vehicle 2 ── */}
+              {!showVehicle2 ? (
+                <button type="button" onClick={() => setShowVehicle2(true)}
+                  className="w-full border-2 border-dashed border-outline-variant text-on-surface-variant font-bold py-3 rounded-xl flex items-center justify-center gap-2 text-sm hover:border-primary-container/50 hover:text-primary-container transition-all active:scale-95">
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  Add Vehicle
+                </button>
+              ) : (
+                <div className="border border-outline-variant rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Vehicle 2</p>
+                    <button type="button" onClick={() => { setShowVehicle2(false); setVehicle2Type("car"); setVehicle2GasType(""); setForm((p) => ({ ...p, vehicle2Plate: "" })); setError(""); }}
+                      className="p-1 rounded-full hover:bg-error-container/20 text-error transition-colors">
+                      <span className="material-symbols-outlined text-[18px]">remove_circle</span>
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {VEHICLE_TYPES.map((v) => {
+                        const active = vehicle2Type === v.id;
+                        return (
+                          <button key={v.id} type="button" onClick={() => setVehicle2Type(v.id)}
+                            className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 font-headline font-bold text-xs transition-all active:scale-95 ${active ? "bg-primary-container border-primary-container text-white shadow" : "bg-surface-container-lowest border-outline-variant text-on-surface-variant hover:border-primary-container/40"}`}>
+                            <span className={`material-symbols-outlined text-[22px] ${active ? "icon-fill" : ""}`}>{v.icon}</span>
+                            {v.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Plate No.</label>
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl pointer-events-none">
+                        {vehicle2Type === "motorcycle" ? "two_wheeler" : vehicle2Type === "truck" ? "local_shipping" : "directions_car"}
+                      </span>
+                      <input type="text" name="vehicle2Plate" value={form.vehicle2Plate} onChange={handleChange}
+                        placeholder={vehicle2Type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"} maxLength={10}
+                        className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-12 pr-4 text-sm uppercase tracking-widest font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Fuel Type</label>
+                    <GasTypePicker value={vehicle2GasType} onChange={(g) => { setVehicle2GasType(g); setError(""); }} />
+                  </div>
+                </div>
+              )}
+
               {error && <div className="flex items-center gap-2 bg-error-container text-on-error-container px-4 py-3 rounded-xl text-sm"><span className="material-symbols-outlined text-base">error</span>{error}</div>}
               <div className="bg-tertiary-fixed/30 border-l-4 border-tertiary p-3 rounded-r-lg flex gap-3 text-xs text-on-tertiary-fixed-variant">
                 <span className="material-symbols-outlined text-tertiary text-base shrink-0">info</span>
@@ -677,6 +760,66 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                     })}
                   </div>
                 </div>
+
+                {/* ── Vehicle 2 (desktop) ── */}
+                {!showVehicle2 ? (
+                  <button type="button" onClick={() => setShowVehicle2(true)}
+                    className="w-full border-2 border-dashed border-gray-200 text-gray-400 font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm hover:border-[#003366]/40 hover:text-[#003366] transition-all active:scale-95">
+                    <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                    Add Vehicle
+                  </button>
+                ) : (
+                  <div className="border border-gray-200 rounded-xl p-4 space-y-4 bg-gray-50/50">
+                    <div className="flex items-center justify-between">
+                      <p className={labelCls}>Vehicle 2</p>
+                      <button type="button" onClick={() => { setShowVehicle2(false); setVehicle2Type("car"); setVehicle2GasType(""); setForm((p) => ({ ...p, vehicle2Plate: "" })); setError(""); }}
+                        className="text-xs text-red-500 font-semibold flex items-center gap-1 hover:text-red-700 transition-colors">
+                        <span className="material-symbols-outlined text-[15px]">remove_circle</span>Remove
+                      </button>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Vehicle Type</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {VEHICLE_TYPES.map((v) => {
+                          const active = vehicle2Type === v.id;
+                          return (
+                            <button key={v.id} type="button" onClick={() => setVehicle2Type(v.id)}
+                              className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border-2 font-bold text-xs transition-all active:scale-95 ${active ? "bg-[#003366] border-[#003366] text-white shadow" : "bg-white border-gray-200 text-gray-500 hover:border-[#003366]/30"}`}>
+                              <span className={`material-symbols-outlined text-[20px] ${active ? "icon-fill" : ""}`}>{v.icon}</span>
+                              {v.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Plate No.</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px] pointer-events-none">
+                          {vehicle2Type === "motorcycle" ? "two_wheeler" : vehicle2Type === "truck" ? "local_shipping" : "directions_car"}
+                        </span>
+                        <input type="text" name="vehicle2Plate" value={form.vehicle2Plate} onChange={handleChange}
+                          placeholder={vehicle2Type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"} maxLength={10}
+                          className={`${inputCls} pl-9 uppercase tracking-widest font-bold`} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Fuel Type</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {GAS_TYPES.map((g) => {
+                          const active = vehicle2GasType === g.id;
+                          return (
+                            <button key={g.id} type="button" onClick={() => { setVehicle2GasType(g.id); setError(""); }}
+                              className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 font-bold text-sm transition-all active:scale-95 ${active ? g.activeClass : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"}`}>
+                              <span className={`material-symbols-outlined text-[22px] ${active ? "icon-fill" : ""}`}>{g.icon}</span>
+                              {g.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {error && <div className="flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 px-3 py-2 rounded-lg text-xs"><span className="material-symbols-outlined text-base">error</span>{error}</div>}
 

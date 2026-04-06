@@ -49,6 +49,8 @@ export default function App() {
   const [officer, setOfficer] = useState(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [resident, setResident] = useState(null);
+  const [activeVehicle, setActiveVehicle] = useState<{ plate?: string; vehicleType?: string; gasType?: string } | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<1 | 2>(1);
   const [scannedResident, setScannedResident] = useState(null);
   const [oobCode, setOobCode] = useState<string | null>(null);
 
@@ -278,7 +280,8 @@ export default function App() {
       <RoleGuard requiredRole="resident" onDeny={() => setScreen("landing")}>
         <QRDisplay
           resident={resident}
-          onDone={() => setScreen("user-dashboard")}
+          activeVehicle={activeVehicle}
+          onDone={() => { setActiveVehicle(null); setScreen("user-dashboard"); }}
         />
       </RoleGuard>
     );
@@ -354,6 +357,8 @@ export default function App() {
           onShowQR={() => setScreen("qr-display")}
           onChangePassword={() => setScreen("change-password")}
           onUpdateProfile={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
+          selectedVehicle={selectedVehicle}
+          onSelectVehicle={setSelectedVehicle}
           tabs={[
             { id: "dashboard", icon: "dashboard", label: "Dashboard" },
             { id: "user-history", icon: "receipt_long", label: "Transactions" },
@@ -393,7 +398,9 @@ export default function App() {
           resident={resident}
           activeTab={activeTab}
           onTabChange={handleUserTabChange}
-          onShowQR={() => setScreen("qr-display")}
+          selectedVehicle={selectedVehicle}
+          onSelectVehicle={setSelectedVehicle}
+          onShowQR={(v) => { setActiveVehicle(v ?? null); setScreen("qr-display"); }}
         />
       </RoleGuard>
     );

@@ -34,18 +34,25 @@ const ANNOUNCEMENTS = [
   },
 ];
 
-export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR }) {
+export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 1, onSelectVehicle }) {
   const mapPreviewRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
+  const [showVehiclePicker, setShowVehiclePicker] = useState(false);
+  const setSelectedVehicle = (v: 1 | 2) => onSelectVehicle?.(v);
 
   const fullName = resident
     ? `${resident.firstName || ""} ${resident.lastName || ""}`.trim()
     : "Resident User";
 
-  const plate = resident?.plate || "N/A";
+  const hasVehicle2 = !!(resident?.vehicle2Plate && resident?.vehicle2Type);
+
+  // Active vehicle fields based on selection
+  const plate       = selectedVehicle === 2 ? (resident?.vehicle2Plate  || "N/A") : (resident?.plate       || "N/A");
+  const vehicleType = selectedVehicle === 2 ? (resident?.vehicle2Type   || "car") : (resident?.vehicleType || "car");
+  const activeGasType = selectedVehicle === 2 ? (resident?.vehicle2GasType || resident?.gasType) : resident?.gasType;
+
   const barangay = resident?.barangay || "Not set";
-  const vehicleType = resident?.vehicleType || "car";
 
   const weeklyAllocation = 20;
   const usedLiters = 8;
@@ -94,7 +101,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   ];
 
   // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
-  const residentFuelType = resident?.gasType === "Diesel" ? "Diesel" : "Regular";
+  const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
   const recentTransactions = allTransactions.filter((tx) => tx.fuelType === residentFuelType);
 
   const touchStartX = useRef(null);
@@ -174,7 +181,14 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-headline font-bold text-[#003366] text-base leading-tight truncate">{fullName}</p>
-            <p className="text-xs text-slate-400 font-medium capitalize">{vehicleType} · Resident</p>
+            <button
+              type="button"
+              onClick={() => hasVehicle2 && setShowVehiclePicker(true)}
+              className={`flex items-center gap-1 text-xs text-slate-400 font-medium capitalize ${hasVehicle2 ? "cursor-pointer" : "cursor-default"}`}
+            >
+              <span>{vehicleType} · Resident</span>
+              {hasVehicle2 && <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>}
+            </button>
           </div>
           <div className="shrink-0 flex flex-col items-center justify-center bg-[#003366] rounded-xl px-3 py-1.5 gap-0.5">
             <span className="material-symbols-outlined text-yellow-400 icon-fill text-[18px]">local_gas_station</span>
@@ -186,14 +200,23 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
 
           {/* User Details */}
           <section className="grid grid-cols-3 gap-3">
-            <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
-              <div className="flex items-center gap-1 text-on-surface-variant">
-                <span className="material-symbols-outlined text-[13px]">directions_car</span>
-                <span className="text-[9px] font-bold uppercase tracking-tight">Vehicle</span>
+            <button
+              type="button"
+              onClick={() => hasVehicle2 && setShowVehiclePicker(true)}
+              className={`rounded-2xl bg-surface-container-low p-3 space-y-1 text-left w-full active:scale-95 transition-all ${hasVehicle2 ? "cursor-pointer" : "cursor-default"}`}
+            >
+              <div className="flex items-center justify-between text-on-surface-variant">
+                <div className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">directions_car</span>
+                  <span className="text-[9px] font-bold uppercase tracking-tight">Vehicle</span>
+                </div>
+                {hasVehicle2 && (
+                  <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
+                )}
               </div>
               <p className="text-sm font-black font-headline text-primary uppercase">{plate}</p>
               <p className="text-[9px] text-on-surface-variant capitalize">{vehicleType}</p>
-            </div>
+            </button>
             <div className="rounded-2xl bg-surface-container-low p-3 space-y-1">
               <div className="flex items-center gap-1 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[13px]">location_on</span>
@@ -378,13 +401,49 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
       {/* Floating QR button */}
       <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
-          onClick={onShowQR}
+          onClick={() => onShowQR({ plate, vehicleType, gasType: activeGasType })}
           className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
         >
           <span className="material-symbols-outlined icon-fill">qr_code</span>
           View My QR Code
         </button>
       </div>
+
+      {/* Vehicle picker sheet — top-level so clicks are never blocked */}
+      {showVehiclePicker && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowVehiclePicker(false)} />
+          <div className="relative w-full bg-white rounded-t-2xl shadow-2xl px-5 pt-5 pb-28 space-y-3">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-headline font-bold text-[#003366] text-base">Select Vehicle</h3>
+              <button type="button" onClick={() => setShowVehiclePicker(false)} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500">
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+            {[
+              { num: 1 as const, plate: resident?.plate, type: resident?.vehicleType, gas: resident?.gasType },
+              { num: 2 as const, plate: resident?.vehicle2Plate, type: resident?.vehicle2Type, gas: resident?.vehicle2GasType },
+            ].filter((v) => v.plate).map((v) => (
+              <button key={v.num} type="button"
+                onClick={() => { setSelectedVehicle(v.num); setShowVehiclePicker(false); }}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border-2 transition-all active:scale-[0.98] ${selectedVehicle === v.num ? "border-[#003366] bg-blue-50" : "border-gray-100 bg-gray-50 hover:border-gray-200"}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedVehicle === v.num ? "bg-[#003366]" : "bg-gray-200"}`}>
+                  <span className={`material-symbols-outlined text-[20px] icon-fill ${selectedVehicle === v.num ? "text-white" : "text-gray-500"}`}>
+                    {v.type === "motorcycle" ? "two_wheeler" : v.type === "truck" ? "local_shipping" : "directions_car"}
+                  </span>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className={`font-black font-headline uppercase tracking-wider text-base ${selectedVehicle === v.num ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
+                  <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gas}</p>
+                </div>
+                {selectedVehicle === v.num && (
+                  <span className="material-symbols-outlined text-[#003366] text-[20px]">check_circle</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <BottomNav active={activeTab} onChange={onTabChange} tabs={USER_TABS} />
     </div>

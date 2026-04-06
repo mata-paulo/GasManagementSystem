@@ -500,10 +500,10 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               {/* Two-column */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Left — QR code */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col items-center gap-3 self-start">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Scan at participating stations</p>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col items-center gap-2 self-start">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan at participating stations</p>
                   <div ref={qrRef} className="bg-white rounded-2xl border border-slate-100 shadow-inner p-4">
-                    <QRCodeSVG value={qrData} size={200} level="H" marginSize={0} fgColor="#001e40" bgColor="#ffffff" />
+                    <QRCodeSVG value={qrData} size={200} level="M" marginSize={0} fgColor="#001e40" bgColor="#ffffff" />
                   </div>
                   <button
                     onClick={handleDownloadQR}

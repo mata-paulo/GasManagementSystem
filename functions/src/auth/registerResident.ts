@@ -124,7 +124,7 @@ export const registerResident = onRequest(
       }
 
       try {
-        await admin.firestore().collection("accounts").doc(uid).set({
+        const docData: Record<string, unknown> = {
           vehicleType: data.vehicleType,
           plate: normalizedPlate,
           gasType: data.gasType,
@@ -134,7 +134,13 @@ export const registerResident = onRequest(
           email: normalizedEmail,
           role: "resident",
           registeredAt: FieldValue.serverTimestamp(),
-        });
+        };
+        if (data.vehicle2Type && data.vehicle2Plate && data.vehicle2GasType) {
+          docData.vehicle2Type = data.vehicle2Type;
+          docData.vehicle2Plate = data.vehicle2Plate.trim().toUpperCase();
+          docData.vehicle2GasType = data.vehicle2GasType;
+        }
+        await admin.firestore().collection("accounts").doc(uid).set(docData);
       } catch (err: unknown) {
         const fsErr = err as {code?: string | number; message?: string};
         const host = process.env.FIRESTORE_EMULATOR_HOST;
