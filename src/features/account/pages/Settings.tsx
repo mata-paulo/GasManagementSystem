@@ -106,12 +106,16 @@ function PickerSheet({ title, options, value, onSelect, onClose }: {
   );
 }
 
-export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, onUpdateProfile = undefined, tabs = USER_TABS }) {
+export default function Settings({ officer, activeTab, onTabChange, onLogout, onShowQR = undefined, onChangePassword = undefined, onUpdateProfile = undefined, tabs = USER_TABS, selectedVehicle: selectedVehicleProp = 1, onSelectVehicle = undefined }) {
   const name        = officer ? `${officer.firstName || ""} ${officer.lastName || ""}`.trim() : "Station Officer";
-  const plate       = officer?.plate       || "N/A";
-  const vehicleType = officer?.vehicleType || "N/A";
+  const vehicles = (officer?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const selectedVehicle = selectedVehicleProp as number;
+  const setSelectedVehicle = (v: number) => onSelectVehicle?.(v);
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "N/A", plate: "N/A", gasType: "N/A" };
+  const plate       = activeVehicle.plate;
+  const vehicleType = activeVehicle.type;
+  const gasType     = activeVehicle.gasType;
   const barangay    = officer?.barangay    || "N/A";
-  const gasType     = officer?.gasType     || "N/A";
   const initials    = `${officer?.firstName?.[0] ?? ""}${officer?.lastName?.[0] ?? ""}`.toUpperCase() || "?";
 
   const [editing, setEditing] = useState(false);
@@ -198,14 +202,14 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Number</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span>{form.plate || plate}</span>
+                  <span>{plate}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vehicle Type</p>
                 <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                  <span>{form.vehicleType || vehicleType}</span>
+                  <span className="capitalize">{vehicleType}</span>
                   <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
                 </div>
               </div>
@@ -213,7 +217,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fuel Type</p>
               <div className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-400 font-medium bg-slate-100 flex items-center justify-between">
-                <span>{form.gasType || gasType}</span>
+                <span>{gasType}</span>
                 <span className="material-symbols-outlined text-slate-300 text-[16px]">lock</span>
               </div>
             </div>
@@ -270,6 +274,7 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
             onClose={() => setPicker(null)}
           />
         )}
+
       </div>
     );
   }
@@ -318,9 +323,9 @@ export default function Settings({ officer, activeTab, onTabChange, onLogout, on
                 className={`flex items-center gap-3 px-5 py-3 ${i % 2 === 0 ? "border-r border-white/10" : ""} ${i < arr.length - 2 ? "border-b border-white/10" : ""}`}>
                 <span className="material-symbols-outlined text-yellow-300 text-[18px] shrink-0"
                   style={{ fontVariationSettings: "'FILL' 1" }}>{d.icon}</span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">{d.label}</p>
-                  <p className="text-white text-xs font-bold truncate">{d.value}</p>
+                  <p className="text-white text-xs font-bold truncate capitalize">{d.value}</p>
                 </div>
               </div>
             ))}

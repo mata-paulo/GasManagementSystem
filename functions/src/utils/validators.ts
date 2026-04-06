@@ -52,7 +52,7 @@ const BARANGAYS = VALID_BARANGAYS as readonly string[];
  * Callable payload for `registerResident`.
  * Uses `plate` and `gasType` (same as the UI). Unknown keys rejected.
  */
-export const registerResidentSchema = z.strictObject({
+export const registerResidentSchema = z.object({
   vehicleType: z
     .string()
     .trim()
@@ -107,6 +107,29 @@ export const registerResidentSchema = z.strictObject({
       PASSWORD_MAX_LENGTH,
       `Password must be at most ${PASSWORD_MAX_LENGTH} characters.`
     ),
+  // Optional second vehicle
+  vehicle2Type: z
+    .string()
+    .trim()
+    .refine((v) => VEHICLES.includes(v), "Invalid vehicle type.")
+    .optional(),
+  vehicle2Plate: z
+    .string()
+    .trim()
+    .max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`)
+    .optional(),
+  vehicle2GasType: z
+    .string()
+    .trim()
+    .refine((v) => GASES.includes(v), "Invalid fuel type.")
+    .optional(),
+  vehicles: z.array(
+    z.object({
+      type: z.string().trim().refine((v) => VEHICLES.includes(v), "Invalid vehicle type."),
+      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`),
+      gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
+    })
+  ).min(1).max(5, "Maximum of 5 vehicles allowed.").optional(),
 });
 
 export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;

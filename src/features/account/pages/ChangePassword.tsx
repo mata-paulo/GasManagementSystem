@@ -196,7 +196,7 @@ export default function ChangePassword({ onSuccess, onBack }: ChangePasswordProp
         </div>
 
         {/* Card */}
-        <div className="flex-1 flex items-start justify-center px-4 pb-12">
+        <div className="flex-1 flex items-center justify-center px-4 pb-12">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md px-10 py-10">
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">

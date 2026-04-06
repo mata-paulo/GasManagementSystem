@@ -27,7 +27,8 @@ service cloud.firestore {
 
     match /accounts/{uid} {
       allow read: if isOwner(uid) || isAdmin() || (isStation() && resource.data.role in ["resident", "station"]);
-      allow update: if isOwner(uid) && isStation();
+      allow update: if (isOwner(uid) && isStation())
+        || (isOwner(uid) && isRole("resident") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vehicle2Type', 'vehicle2Plate', 'vehicle2GasType', 'vehicles']));
       allow create, delete: if false;
     }
 

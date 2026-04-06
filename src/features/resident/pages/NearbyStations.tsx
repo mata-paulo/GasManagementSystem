@@ -227,11 +227,15 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   const [routeInfo, setRouteInfo] = useState(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const PAGE_SIZE = 5;
 
   const drawerOpen = drawerHeight > PEEK_HEIGHT + 20;
   const drawerRef = useRef<HTMLDivElement>(null);
   const stationRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const stationListRef = useRef<HTMLDivElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
   const handleBarRef = useRef<HTMLDivElement>(null);
   const markerElsRef = useRef<Record<number, HTMLElement>>({});
 
@@ -343,6 +347,12 @@ export default function NearbyStations({ activeTab, onTabChange }) {
       ? stations
       : stations.filter((st) => normalizeBrandKey(st.brand) === normalizeBrandKey(activeFilter));
 
+  const totalPages = Math.ceil(filteredStations.length / PAGE_SIZE);
+  const paginatedStations = filteredStations.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  // Reset to first page when filter changes
+  useEffect(() => { setCurrentPage(0); }, [activeFilter]);
+
   // ── Markers ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -452,15 +462,14 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     setDrawerHeight(OPEN_HEIGHT);
     drawRoute(st);
     mapRef.current?.flyTo([st.lat, st.lon], 15);
-    setTimeout(() => {
-      const listEl = stationListRef.current;
-      const stationEl = stationRefs.current[st.id];
-      if (!listEl || !stationEl) return;
-      const listRect = listEl.getBoundingClientRect();
-      const stationRect = stationEl.getBoundingClientRect();
-      const offset = stationRect.top - listRect.top + listEl.scrollTop - 8;
-      listEl.scrollTo({ top: offset, behavior: "smooth" });
-    }, 320);
+    // Scroll carousel to the page containing this station
+    const stIdx = filteredStations.findIndex((s) => s.id === st.id);
+    if (stIdx >= 0) {
+      const page = Math.floor(stIdx / PAGE_SIZE);
+      setTimeout(() => {
+        carouselRef.current?.scrollTo({ left: page * (carouselRef.current?.offsetWidth ?? 0), behavior: "smooth" });
+      }, 320);
+    }
   };
 
   // ── Drawer drag ─────────────────────────────────────────────────────────────
@@ -594,7 +603,9 @@ export default function NearbyStations({ activeTab, onTabChange }) {
               <div>
                 <h2 className="text-sm font-headline font-bold text-[#003366]">Fuel Stations Nearby</h2>
                 {!loadingStations && filteredStations.length > 0 && (
-                  <p className="text-[10px] text-slate-400">{filteredStations.length} stations within 5 km</p>
+                  <p className="text-[10px] text-slate-400">
+                    {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, filteredStations.length)} of {filteredStations.length} stations · nearest first
+                  </p>
                 )}
               </div>
               <span
@@ -623,98 +634,120 @@ export default function NearbyStations({ activeTab, onTabChange }) {
             </div>
           )}
 
-          {/* Station list */}
-          <div ref={stationListRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4 space-y-2">
-            {loadingStations && [1, 2, 3].map((i) => (
-              <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
-            ))}
+          {/* Carousel — horizontal scroll, one page of 5 stations per slide */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {loadingStations && (
+              <div className="px-4 space-y-2 pt-2">
+                {[1, 2, 3].map((i) => <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />)}
+              </div>
+            )}
 
             {!loadingStations && filteredStations.length === 0 && (
               <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
                 <span className="material-symbols-outlined text-gray-300 text-[36px]">not_listed_location</span>
-                <p className="text-xs text-slate-400 font-medium">No stations found within 5 km.</p>
+                <p className="text-xs text-slate-400 font-medium">No stations found.</p>
               </div>
             )}
 
-            {!loadingStations && filteredStations.map((st, idx) => {
-              const isSelected = selectedStation?.id === st.id;
-              const isExpanded = expandedId === st.id;
-              const fuels = st.brandPrices?.length ? st.brandPrices : getBrandFuels(st.name, st.brand);
-
-              return (
+            {!loadingStations && filteredStations.length > 0 && (
+              <>
+                {/* Slides */}
                 <div
-                  key={st.id}
-                  ref={(el) => { stationRefs.current[st.id] = el; }}
-                  className={`rounded-xl border overflow-hidden transition-all ${
-                    isSelected ? "border-[#003366]" : "border-slate-100"
-                  }`}
+                  ref={carouselRef}
+                  className="flex-1 flex overflow-x-auto no-scrollbar"
+                  style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    const page = Math.round(el.scrollLeft / el.offsetWidth);
+                    setCurrentPage(page);
+                  }}
                 >
-                  {/* Station row */}
-                  <div className="flex items-center gap-3 p-3 bg-white">
-                    <button
-                      onClick={() => handleSelectStation(st)}
-                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                    >
-                      {(() => {
-                        const bl = BRAND_LOGO[st.brand] ?? BRAND_LOGO.Other;
-                        return (
-                          <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-headline font-black text-sm"
-                            style={{ background: bl.bg, color: bl.fg }}
-                          >
-                            {bl.abbr}
-                          </div>
-                        );
-                      })()}
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-bold truncate ${isSelected ? "text-[#003366]" : "text-slate-800"}`}>{st.name}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {formatDist(st.distance)}
-                          {isSelected && routeInfo && !loadingRoute && (
-                            <span> · {formatDuration(routeInfo.duration)} drive</span>
-                          )}
-                        </p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : st.id)}
-                      className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                        isExpanded ? "bg-[#003366] text-white" : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      <span
-                        className={`material-symbols-outlined transition-transform duration-200 icon-base ${isExpanded ? "rotate-180" : ""}`}
+                  {Array.from({ length: totalPages }).map((_, pageIdx) => {
+                    const pageStations = filteredStations.slice(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE);
+                    return (
+                      <div
+                        key={pageIdx}
+                        className="shrink-0 w-full overflow-y-auto no-scrollbar px-4 py-2 space-y-2"
+                        style={{ scrollSnapAlign: "start" }}
                       >
-                        expand_more
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Fuel list — expand/collapse */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 space-y-1.5">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Available Fuels</p>
-                      {fuels.map((fuel) => {
-                        const colors = FUEL_TYPE_COLORS[fuel.type] || FUEL_TYPE_COLORS.Gasoline;
-                        return (
-                          <div key={fuel.name} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg ${colors.bg}`}>
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${colors.dot}`} />
-                            <p className={`text-xs font-semibold flex-1 ${colors.text}`}>{fuel.name}</p>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 ${colors.text}`}>
-                              ₱{fuel.price ?? 0}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        {pageStations.map((st) => {
+                          const isSelected = selectedStation?.id === st.id;
+                          const isExpanded = expandedId === st.id;
+                          const fuels = st.brandPrices?.length ? st.brandPrices : getBrandFuels(st.name, st.brand);
+                          return (
+                            <div
+                              key={st.id}
+                              ref={(el) => { stationRefs.current[st.id] = el; }}
+                              className={`rounded-xl border overflow-hidden transition-all ${isSelected ? "border-[#003366]" : "border-slate-100"}`}
+                            >
+                              <div className="flex items-center gap-3 p-3 bg-white">
+                                <button onClick={() => handleSelectStation(st)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                  {(() => {
+                                    const bl = BRAND_LOGO[st.brand] ?? BRAND_LOGO.Other;
+                                    return (
+                                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-headline font-black text-sm" style={{ background: bl.bg, color: bl.fg }}>
+                                        {bl.abbr}
+                                      </div>
+                                    );
+                                  })()}
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`text-sm font-bold truncate ${isSelected ? "text-[#003366]" : "text-slate-800"}`}>{st.name}</p>
+                                    <p className="text-[10px] text-slate-400">
+                                      {formatDist(st.distance)}
+                                      {isSelected && routeInfo && !loadingRoute && <span> · {formatDuration(routeInfo.duration)} drive</span>}
+                                    </p>
+                                  </div>
+                                </button>
+                                <button
+                                  onClick={() => setExpandedId(isExpanded ? null : st.id)}
+                                  className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isExpanded ? "bg-[#003366] text-white" : "bg-slate-100 text-slate-500"}`}
+                                >
+                                  <span className={`material-symbols-outlined transition-transform duration-200 icon-base ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
+                                </button>
+                              </div>
+                              {isExpanded && (
+                                <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 space-y-1.5">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Available Fuels</p>
+                                  {fuels.map((fuel) => {
+                                    const colors = FUEL_TYPE_COLORS[fuel.type] || FUEL_TYPE_COLORS.Gasoline;
+                                    return (
+                                      <div key={fuel.name} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg ${colors.bg}`}>
+                                        <div className={`w-2 h-2 rounded-full shrink-0 ${colors.dot}`} />
+                                        <p className={`text-xs font-semibold flex-1 ${colors.text}`}>{fuel.name}</p>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 ${colors.text}`}>₱{fuel.price ?? 0}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+
+                {/* Dot indicators */}
+                {totalPages > 1 && (
+                  <div className="shrink-0 flex items-center justify-center gap-1.5 py-2">
+                    {Array.from({ length: totalPages }).map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => carouselRef.current?.scrollTo({ left: i * carouselRef.current.offsetWidth, behavior: "smooth" })}
+                        className={`rounded-full transition-all ${i === currentPage ? "w-4 h-1.5 bg-[#003366]" : "w-1.5 h-1.5 bg-slate-300"}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Spacer — reserves the fixed bottom nav's height in the flex layout so the map container stops above it */}
+      <div className="shrink-0 h-[100px]" />
       <BottomNav active={activeTab} onChange={onTabChange} tabs={USER_TABS} />
     </div>
   );

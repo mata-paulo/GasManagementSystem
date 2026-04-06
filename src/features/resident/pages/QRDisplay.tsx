@@ -10,8 +10,11 @@ function formatTimestamp(iso: string) {
   });
 }
 
-export default function QRDisplay({ resident, onDone }) {
-  const { firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt } = resident;
+export default function QRDisplay({ resident, activeVehicle = null, onDone }) {
+  const { firstName, lastName, barangay, registeredAt } = resident;
+  const plate       = activeVehicle?.plate       ?? resident.plate;
+  const vehicleType = activeVehicle?.vehicleType ?? resident.vehicleType;
+  const gasType     = activeVehicle?.gasType     ?? resident.gasType;
   const fullName = `${firstName} ${lastName}`;
   const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
 
@@ -66,7 +69,7 @@ export default function QRDisplay({ resident, onDone }) {
         </div>
         {/* QR + info */}
         <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-          <QRCodeSVG value={qrData} size={280} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
+          <QRCodeSVG value={qrData} size={280} level="M" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
             {[
               { label: "Full Name",   value: fullName },
@@ -92,7 +95,7 @@ export default function QRDisplay({ resident, onDone }) {
       {/* ── Hidden print-only card ── */}
       <div className="print-card bg-white p-8 flex flex-col items-center gap-4">
         <p style={{ fontWeight: 900, fontSize: 22, letterSpacing: 4, color: "#001e40" }}>{plate}</p>
-        <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
+        <QRCodeSVG value={qrData} size={300} level="M" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, width: "100%" }}>
           {[
             { label: "Full Name", value: fullName },
@@ -140,7 +143,7 @@ export default function QRDisplay({ resident, onDone }) {
               <QRCodeSVG
                 value={qrData}
                 size={Math.min(window.innerWidth - 16, 380)}
-                level="H"
+                level="M"
                 marginSize={1}
                 fgColor="#001e40"
                 bgColor="#ffffff"
