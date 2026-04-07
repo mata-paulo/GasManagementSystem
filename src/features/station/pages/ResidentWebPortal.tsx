@@ -17,6 +17,69 @@ function formatTimestamp(iso: string) {
   });
 }
 
+function formatTransactionDate(value: Date | null) {
+  if (!value) return "Unknown date";
+  return value.toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTransactionTime(value: Date | null) {
+  if (!value) return "--:--";
+  return value.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/** Title-case each word for display (ASCII/Unicode-safe; avoids \b\w missing non‑Latin letters). */
+function formatVehicleTypeLabel(raw: unknown): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  return s
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const first = word.charAt(0).toLocaleUpperCase("en-US");
+      const rest = word.slice(1).toLocaleLowerCase("en-US");
+      return first + rest;
+    })
+    .join(" ");
+}
+
+function matchesTransactionFilter(date: Date | null, filter: string) {
+  if (!date || filter === "All") return true;
+
+  const now = new Date();
+  if (filter === "Today") {
+    return date.toDateString() === now.toDateString();
+  }
+
+  if (filter === "Week") {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    return date >= weekAgo;
+  }
+
+  if (filter === "Month") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+
+  return true;
+}
+
+function toPortalTransaction(transaction) {
+  return {
+    ...transaction,
+    station: transaction.stationName || "Unknown Station",
+    date: formatTransactionDate(transaction.createdAt),
+    time: formatTransactionTime(transaction.createdAt),
+  };
+}
 
 const NAV_ITEMS = [
   { id: "overview",      icon: "dashboard",       label: "Overview"         },
@@ -135,6 +198,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const vehicleType  = activeVehicle.type || "Car";
   const gasType      = activeVehicle.gasType || "Regular";
   const barangay     = resident?.barangay     || "Not set";
+  const vehicleTypeDisplay = formatVehicleTypeLabel(vehicleType) || vehicleType;
   const registeredAt = resident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 
@@ -259,7 +323,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             {[
               { label: "Full Name",  value: fullName },
               { label: "Plate No.", value: plate },
-              { label: "Vehicle",   value: vehicleType },
+              { label: "Vehicle",   value: vehicleTypeDisplay },
               { label: "Barangay",  value: barangay },
               { label: "Fuel Type", value: gasType },
               { label: "Registered", value: formatTimestamp(registeredAt) },
@@ -304,7 +368,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-white text-sm font-bold leading-none truncate">{fullName}</p>
-              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} · {vehicleType}</p>
+              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} · {vehicleTypeDisplay}</p>
             </div>
           )}
         </div>
@@ -544,7 +608,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                       {[
                         { icon: "person",           label: "Full Name",    value: fullName    },
                         { icon: "directions_car",   label: "Plate No.",    value: plate       },
-                        { icon: "commute",          label: "Vehicle Type", value: vehicleType },
+                        { icon: "commute",          label: "Vehicle Type", value: vehicleTypeDisplay },
                         { icon: "location_on",      label: "Barangay",     value: barangay    },
                         { icon: "local_gas_station",label: "Fuel Type",    value: gasType     },
                       ].map((d) => (
@@ -552,7 +616,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                           <span className="material-symbols-outlined text-[#003366] text-[18px] shrink-0">{d.icon}</span>
                           <div className="flex-1">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{d.label}</p>
-                            <p className="text-sm font-bold text-slate-800">{d.value}</p>
+                            <p className="text-sm font-bold text-slate-800">
+                              {d.label === "Vehicle Type"
+                                ? formatVehicleTypeLabel(vehicleType) || vehicleType
+                                : d.value}
+                            </p>
                           </div>
                         </div>
                       ))}
@@ -777,7 +845,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-headline font-black text-xl leading-tight">{fullName}</p>
-                  <p className="text-white/60 text-sm mt-0.5">{plate} · {vehicleType}</p>
+                  <p className="text-white/60 text-sm mt-0.5">{plate} · {vehicleTypeDisplay}</p>
                   <p className="text-white/50 text-xs mt-0.5">{barangay} · {gasType}</p>
                 </div>
                 <div className="shrink-0 flex flex-col items-end gap-2">
@@ -805,7 +873,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   { label: "Full Name",    value: fullName,     icon: "person"         },
                   { label: "Plate No.",    value: plate,        icon: "directions_car"  },
                   { label: "Barangay",     value: barangay,     icon: "location_on"     },
-                  { label: "Vehicle Type", value: vehicleType,  icon: "commute"         },
+                  { label: "Vehicle Type", value: vehicleTypeDisplay,  icon: "commute"         },
                   { label: "Fuel Type",    value: gasType,      icon: "local_gas_station" },
                   { label: "Status",       value: "Active",     icon: "verified_user"   },
                 ].map((d) => (
@@ -813,7 +881,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     <span className="material-symbols-outlined text-[#003366] text-[20px] shrink-0">{d.icon}</span>
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{d.label}</p>
-                      <p className="text-sm font-bold text-slate-800">{d.value}</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {d.label === "Vehicle Type"
+                          ? formatVehicleTypeLabel(vehicleType) || vehicleType
+                          : d.value}
+                      </p>
                     </div>
                   </div>
                 ))}
