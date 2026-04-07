@@ -47,7 +47,6 @@ export const VALID_BARANGAYS = [
 /** Matches `GAS_TYPES` ids in `Register.tsx`. */
 export const VALID_GAS_TYPES = ["Diesel", "Gasoline"] as const;
 
-const VEHICLES = VALID_VEHICLE_TYPES as readonly string[];
 const GASES = VALID_GAS_TYPES as readonly string[];
 const BARANGAYS = VALID_BARANGAYS as readonly string[];
 

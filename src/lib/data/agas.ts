@@ -7,6 +7,7 @@ import {
   getDocs,
   limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -62,6 +63,8 @@ export interface StationAccount extends AuthUser {
   registeredAt?: string;
   updatedAt?: string;
   status?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface AdminAccount extends AuthUser {
@@ -408,6 +411,8 @@ function mapAccount(uid: string, data: Record<string, unknown>): AccountRecord |
       assignedAt: toIsoString(data.assignedAt),
       inviteAcceptedAt: toIsoString(data.inviteAcceptedAt),
       status: typeof data.status === "string" ? data.status : "online",
+      lat: asNumber(data.lat),
+      lon: asNumber(data.lon),
     };
   }
 
@@ -846,11 +851,54 @@ export async function fetchStationAccount(uid: string): Promise<StationAccount |
 }
 
 export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]> {
-  const snapshot = await getDocs(collection(db, "stationDirectory"));
-  return snapshot.docs
+  const [directorySnapshot, pinnedAccountsSnapshot] = await Promise.all([
+    getDocs(collection(db, "stationDirectory")),
+    getDocs(query(
+      collection(db, "accounts"),
+      where("role", "==", "station"),
+      where("lat", "!=", null),
+      orderBy("lat"),
+    )),
+  ]);
+
+  const directoryRecords = directorySnapshot.docs
     .map((item) => mapStationDirectoryRecord(item.id, item.data() as Record<string, unknown>))
-    .filter((item): item is StationDirectoryRecord => item != null)
-    .sort((a, b) => a.sourceId - b.sourceId);
+    .filter((item): item is StationDirectoryRecord => item != null);
+
+  // Build StationDirectoryRecord entries from station accounts that pinned their location
+  const pinnedRecords: StationDirectoryRecord[] = pinnedAccountsSnapshot.docs
+    .map((item, idx) => {
+      const data = item.data() as Record<string, unknown>;
+      const lat = asNumber(data.lat);
+      const lon = asNumber(data.lon);
+      if (lat == null || lon == null) return null;
+      const officerName = [data.officerFirstName, data.officerLastName].filter(Boolean).join(" ") || undefined;
+      return {
+        id: item.id,
+        sourceId: 90000 + idx, // high sourceId to sort after directory entries
+        name: (data.stationName as string | undefined) || [(data.brand as string), "Station –", (data.stationCode as string)].filter(Boolean).join(" "),
+        brand: (data.brand as string) || "",
+        address: (data.barangay as string) || "",
+        rating: null,
+        hours: "See station",
+        lat,
+        lon,
+        brandPrices: [],
+        barangay: data.barangay as string | undefined,
+        officer: officerName,
+        status: (data.status as string) || "online",
+      } satisfies StationDirectoryRecord;
+    })
+    .filter((r): r is StationDirectoryRecord => r !== null);
+
+  // Merge: pinned account records only added if their id isn't already in the directory
+  const directoryIds = new Set(directoryRecords.map((r) => r.id));
+  const merged = [
+    ...directoryRecords,
+    ...pinnedRecords.filter((r) => !directoryIds.has(r.id)),
+  ];
+
+  return merged.sort((a, b) => a.sourceId - b.sourceId);
 }
 
 export async function fetchResidentTransactions(uid: string): Promise<DispenseTransaction[]> {
