@@ -10,13 +10,23 @@ function formatTimestamp(iso: string) {
   });
 }
 
-export default function QRDisplay({ resident, activeVehicle = null, onDone }) {
-  const { firstName, lastName, barangay, registeredAt } = resident;
-  const plate       = activeVehicle?.plate       ?? resident.plate;
-  const vehicleType = activeVehicle?.vehicleType ?? resident.vehicleType;
-  const gasType     = activeVehicle?.gasType     ?? resident.gasType;
+/** First letter uppercase; if the first character is already uppercase, leave the string unchanged. */
+function formatVehicleTypeDisplay(raw: unknown): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  const first = s.charAt(0);
+  const isLatinLetter = /[A-Za-z]/.test(first);
+  if (isLatinLetter && first === first.toUpperCase()) return s;
+  if (isLatinLetter) return first.toLocaleUpperCase("en-US") + s.slice(1);
+  return s;
+}
+
+export default function QRDisplay({ resident, onDone }) {
+  const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
+  const vehicleTypeDisplay = formatVehicleTypeDisplay(vehicleType);
   const fullName = `${firstName} ${lastName}`;
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);

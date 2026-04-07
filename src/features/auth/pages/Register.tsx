@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { FirebaseError } from "firebase/app";
+import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth } from "@/lib/firebase/client";
@@ -99,9 +100,9 @@ const GAS_TYPES = [
 ];
 
 const VEHICLE_TYPES = [
-  { id: "car",        label: "Car",        icon: "directions_car" },
-  { id: "truck",      label: "Truck",      icon: "local_shipping" },
-  { id: "motorcycle", label: "Motorcycle", icon: "two_wheeler" },
+  { id: "2w",     label: "2 Wheelers",  icon: "two_wheeler"    },
+  { id: "4w",     label: "4 Wheelers",  icon: "directions_car" },
+  { id: "others", label: "Others",     icon: "commute"        },
 ];
 
 // ── Gas Type Picker ──────────────────────────────────────────────────────────
@@ -216,10 +217,10 @@ function BarangayPicker({ value, onChange }: { value: string; onChange: (b: stri
 export default function Register({ onBack, onSuccess }: { onBack: () => void; onSuccess: (data: Record<string, unknown>) => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const MAX_VEHICLES = 5;
-  const [vehicles, setVehicles] = useState([{ type: "car", plate: "", gasType: "" }]);
+  const [vehicles, setVehicles] = useState([{ type: "4w", plate: "", gasType: "" }]);
   const updateVehicle = (i: number, field: string, value: string) =>
     setVehicles((prev) => prev.map((v, idx) => idx === i ? { ...v, [field]: value } : v));
-  const addVehicle = () => setVehicles((prev) => [...prev, { type: "car", plate: "", gasType: "" }]);
+  const addVehicle = () => setVehicles((prev) => [...prev, { type: "4w", plate: "", gasType: "" }]);
   const removeVehicle = (i: number) => setVehicles((prev) => prev.filter((_, idx) => idx !== i));
   const [form, setForm] = useState({
     lastName: "",
@@ -270,7 +271,8 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
   const handleStep2 = (e: React.FormEvent) => {
     e.preventDefault();
     for (const v of vehicles) {
-      if (!v.plate.trim()) { setError("Please fill in all plate numbers."); return; }
+      if (!["2w", "4w"].includes(v.type) && isContainerType(v.type)) { setError("Container-type vehicles are not allowed in the AGAS program."); return; }
+      if (!v.plate.trim()) { setError(isGeneratorType(v.type) ? "Please fill in the serial number for your generator." : "Please fill in all plate numbers."); return; }
       if (!v.gasType) { setError("Please select a fuel type for each vehicle."); return; }
     }
     if (!agreedToTerms) {
@@ -515,12 +517,14 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">{i === 0 ? "Vehicle Type" : "Vehicle Type"}</label>
-                    <div className={`grid gap-3 ${i === 0 ? "grid-cols-3" : "grid-cols-3 gap-2"}`}>
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
+                    <div className="grid grid-cols-3 gap-3">
                       {VEHICLE_TYPES.map((vt) => {
-                        const active = v.type === vt.id;
+                        const isOthers = !["2w", "4w"].includes(v.type);
+                        const active = vt.id === "others" ? isOthers : v.type === vt.id;
                         return (
-                          <button key={vt.id} type="button" onClick={() => updateVehicle(i, "type", vt.id)}
+                          <button key={vt.id} type="button"
+                            onClick={() => updateVehicle(i, "type", vt.id === "others" ? "" : vt.id)}
                             className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border-2 font-headline font-bold text-sm transition-all active:scale-95 ${active ? "bg-primary-container border-primary-container text-white shadow-lg" : "bg-surface-container-lowest border-outline-variant text-on-surface-variant hover:border-primary-container/40"}`}>
                             <span className={`material-symbols-outlined text-[28px] ${active ? "icon-fill" : ""}`}>{vt.icon}</span>
                             {vt.label}
@@ -528,16 +532,35 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                         );
                       })}
                     </div>
+                    {!["2w", "4w"].includes(v.type) && (
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          value={v.type}
+                          onChange={(e) => updateVehicle(i, "type", e.target.value)}
+                          placeholder="e.g. Tricycle, Truck, Jeepney..."
+                          className={`w-full bg-surface-container-lowest border rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 transition-all ${isContainerType(v.type) ? "border-error focus:border-error focus:ring-error/20" : "border-outline-variant focus:border-primary-container focus:ring-primary-container/20"}`}
+                        />
+                        {isContainerType(v.type) && (
+                          <div className="flex items-start gap-2 bg-error-container/30 border border-error/30 text-error px-3 py-2 rounded-xl text-xs">
+                            <span className="material-symbols-outlined text-base shrink-0 mt-0.5">block</span>
+                            <span>Container-type vehicles are not allowed in the AGAS program.</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Plate No.</label>
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                      {isGeneratorType(v.type) ? "Serial No." : "Plate No."}
+                    </label>
                     <div className="relative">
                       <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl pointer-events-none">
-                        {v.type === "motorcycle" ? "two_wheeler" : v.type === "truck" ? "local_shipping" : "directions_car"}
+                        {v.type === "2w" ? "two_wheeler" : v.type === "4w" ? "directions_car" : "commute"}
                       </span>
                       <input type="text" value={v.plate}
                         onChange={(e) => { updateVehicle(i, "plate", e.target.value.toUpperCase()); setError(""); }}
-                        placeholder={v.type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"} maxLength={10}
+                        placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"} maxLength={10}
                         className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3.5 pl-12 pr-4 text-sm uppercase tracking-widest font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all" />
                     </div>
                   </div>
@@ -696,9 +719,11 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                       <label className={labelCls}>Vehicle Type</label>
                       <div className="grid grid-cols-3 gap-3">
                         {VEHICLE_TYPES.map((vt) => {
-                          const active = v.type === vt.id;
+                          const isOthers = !["2w", "4w"].includes(v.type);
+                          const active = vt.id === "others" ? isOthers : v.type === vt.id;
                           return (
-                            <button key={vt.id} type="button" onClick={() => updateVehicle(i, "type", vt.id)}
+                            <button key={vt.id} type="button"
+                              onClick={() => updateVehicle(i, "type", vt.id === "others" ? "" : vt.id)}
                               className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border-2 font-bold text-sm transition-all active:scale-95 ${active ? "bg-[#003366] border-[#003366] text-white shadow" : "bg-white border-gray-200 text-gray-500 hover:border-[#003366]/30"}`}>
                               <span className={`material-symbols-outlined text-[24px] ${active ? "icon-fill" : ""}`}>{vt.icon}</span>
                               {vt.label}
@@ -706,17 +731,34 @@ export default function Register({ onBack, onSuccess }: { onBack: () => void; on
                           );
                         })}
                       </div>
+                      {!["2w", "4w"].includes(v.type) && (
+                        <div className="mt-3 space-y-1.5">
+                          <input
+                            type="text"
+                            value={v.type}
+                            onChange={(e) => updateVehicle(i, "type", e.target.value)}
+                            placeholder="e.g. Tricycle, Truck, Jeepney..."
+                            className={`${inputCls} ${isContainerType(v.type) ? "!border-red-400 focus:!border-red-500 focus:!ring-red-100" : ""}`}
+                          />
+                          {isContainerType(v.type) && (
+                            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-xl text-xs">
+                              <span className="material-symbols-outlined text-base shrink-0 mt-0.5">block</span>
+                              <span>Container-type vehicles are not allowed in the AGAS program.</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {/* Plate */}
+                    {/* Plate / Serial */}
                     <div>
-                      <label className={labelCls}>Plate No.</label>
+                      <label className={labelCls}>{isGeneratorType(v.type) ? "Serial No." : "Plate No."}</label>
                       <div className="relative">
                         <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px] pointer-events-none">
-                          {v.type === "motorcycle" ? "two_wheeler" : v.type === "truck" ? "local_shipping" : "directions_car"}
+                          {v.type === "2w" ? "two_wheeler" : v.type === "4w" ? "directions_car" : "commute"}
                         </span>
                         <input type="text" value={v.plate}
                           onChange={(e) => { updateVehicle(i, "plate", e.target.value.toUpperCase()); setError(""); }}
-                          placeholder={v.type === "motorcycle" ? "e.g. 1234AB" : "e.g. ABC-1234"} maxLength={10}
+                          placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"} maxLength={10}
                           className={`${inputCls} pl-9 uppercase tracking-widest font-bold`} />
                       </div>
                     </div>

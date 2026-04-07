@@ -17,6 +17,69 @@ function formatTimestamp(iso: string) {
   });
 }
 
+function formatTransactionDate(value: Date | null) {
+  if (!value) return "Unknown date";
+  return value.toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTransactionTime(value: Date | null) {
+  if (!value) return "--:--";
+  return value.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/** Title-case each word for display (ASCII/Unicode-safe; avoids \b\w missing non‑Latin letters). */
+function formatVehicleTypeLabel(raw: unknown): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  return s
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const first = word.charAt(0).toLocaleUpperCase("en-US");
+      const rest = word.slice(1).toLocaleLowerCase("en-US");
+      return first + rest;
+    })
+    .join(" ");
+}
+
+function matchesTransactionFilter(date: Date | null, filter: string) {
+  if (!date || filter === "All") return true;
+
+  const now = new Date();
+  if (filter === "Today") {
+    return date.toDateString() === now.toDateString();
+  }
+
+  if (filter === "Week") {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    return date >= weekAgo;
+  }
+
+  if (filter === "Month") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+
+  return true;
+}
+
+function toPortalTransaction(transaction) {
+  return {
+    ...transaction,
+    station: transaction.stationName || "Unknown Station",
+    date: formatTransactionDate(transaction.createdAt),
+    time: formatTransactionTime(transaction.createdAt),
+  };
+}
 
 const NAV_ITEMS = [
   { id: "overview",      icon: "dashboard",       label: "Overview"         },
@@ -135,6 +198,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const vehicleType  = activeVehicle.type || "Car";
   const gasType      = activeVehicle.gasType || "Regular";
   const barangay     = resident?.barangay     || "Not set";
+  const vehicleTypeDisplay = formatVehicleTypeLabel(vehicleType) || vehicleType;
   const registeredAt = resident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 

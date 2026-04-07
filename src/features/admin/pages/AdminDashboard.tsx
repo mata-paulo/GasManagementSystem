@@ -306,9 +306,9 @@ function normalizeBrand(value: string | null | undefined): string {
 
 function formatVehicleLabel(value: string | null | undefined): string {
   const normalized = normalizeText(value);
-  if (normalized === "motorcycle") return "Motorcycle";
-  if (normalized === "truck") return "Truck";
-  if (normalized === "car") return "Car";
+  if (normalized === "2w" || normalized === "motorcycle") return "2 Wheelers";
+  if (normalized === "4w" || normalized === "car") return "4 Wheelers";
+  if (normalized === "others" || normalized === "truck") return "Others";
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown";
 }
 
