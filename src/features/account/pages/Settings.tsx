@@ -18,7 +18,7 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-const VEHICLE_TYPES = ["Car", "Motorcycle", "Truck"];
+const VEHICLE_TYPES = ["2w", "4w", "others"];
 const GAS_TYPES     = ["Regular", "Diesel", "Premium"];
 
 const BARANGAYS = [
