@@ -387,6 +387,7 @@ function SheetPicker({ value, onChange, options, placeholder, icon }: SheetPicke
 // ── Types ────────────────────────────────────────────────────────────────────
 type StationRegisterProps = {
   onBack: () => void;
+  onSignIn?: () => void;
   onSuccess: (payload: {
     barangay: string; brand: string; officerFirstName: string;
     officerLastName: string; googleEmail: string; password: string;
@@ -397,7 +398,7 @@ type StationRegisterProps = {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function StationRegister({ onBack, onSuccess }: StationRegisterProps) {
+export default function StationRegister({ onBack, onSuccess, onSignIn }: StationRegisterProps) {
   const [step, setStep] = useState(1);
   const [showPassword,        setShowPassword]        = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -723,6 +724,15 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
               </div>
             )}
           </form>
+
+          {onSignIn && (
+            <p className="text-center text-xs text-on-surface-variant mt-5">
+              Already have an account?{" "}
+              <button type="button" onClick={onSignIn} className="font-bold text-[#003366] underline underline-offset-2 active:opacity-70">
+                Sign In
+              </button>
+            </p>
+          )}
         </main>
       </div>
 
@@ -732,8 +742,8 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
         {/* Left branding panel */}
         <div className="w-[420px] shrink-0 bg-gradient-to-br from-[#001228] via-[#001e40] to-[#003366] flex flex-col px-10 py-10 relative overflow-hidden">
           {/* Decorative circles */}
-          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-white/[0.03]" />
-          <div className="absolute bottom-10 -right-16 w-72 h-72 rounded-full bg-white/[0.04]" />
+          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-white/[0.03] pointer-events-none" />
+          <div className="absolute bottom-10 -right-16 w-72 h-72 rounded-full bg-white/[0.04] pointer-events-none" />
 
           {/* Back */}
           <button onClick={onBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium group w-fit">
@@ -847,7 +857,15 @@ export default function StationRegister({ onBack, onSuccess }: StationRegisterPr
               </div>
             </div>
 
-            <p className="text-center text-slate-400 text-xs mt-4">© 2026 Mata Technologies Inc. · A.G.A.S</p>
+            {onSignIn && (
+              <p className="text-center text-slate-400 text-xs mt-4">
+                Already have an account?{" "}
+                <button type="button" onClick={onSignIn} className="font-semibold text-[#003366] hover:underline">
+                  Sign In
+                </button>
+              </p>
+            )}
+            <p className="text-center text-slate-400 text-xs mt-2">© 2026 Mata Technologies Inc. · A.G.A.S</p>
           </div>
         </div>
       </div>

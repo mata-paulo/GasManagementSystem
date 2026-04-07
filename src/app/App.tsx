@@ -48,6 +48,7 @@ export default function App() {
   const { auth, login, logout, loading } = useAuth();
 
   const [screen, setScreen] = useState(null);
+  const [prevScreen, setPrevScreen] = useState<string>("landing");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [officer, setOfficer] = useState(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -82,6 +83,7 @@ export default function App() {
     // Direct link support: ?screen=change-password → opens change password
     const params = new URLSearchParams(window.location.search);
     if (params.get("register") === "station") {
+      setPrevScreen("landing");
       setScreen("station-register");
       return;
     }
@@ -240,7 +242,7 @@ export default function App() {
     return (
       <AuthLanding
         onLogin={() => setScreen("login")}
-        onResidentRegister={() => setScreen("resident-register")}
+        onResidentRegister={() => { setPrevScreen("landing"); setScreen("resident-register"); }}
       />
     );
   }
@@ -250,7 +252,7 @@ export default function App() {
       <Login
         onBack={() => setScreen("landing")}
         onSuccess={handleLoginSuccess}
-        onRegister={() => setScreen("resident-register")}
+        onRegister={() => { setPrevScreen("login"); setScreen("resident-register"); }}
       />
     );
   }
@@ -258,8 +260,9 @@ export default function App() {
   if (screen === "station-register") {
     return (
       <StationRegister
-        onBack={() => setScreen("landing")}
+        onBack={() => setScreen(prevScreen)}
         onSuccess={handleStationRegisterSuccess}
+        onSignIn={() => setScreen("login")}
       />
     );
   }
@@ -275,8 +278,9 @@ export default function App() {
   if (screen === "resident-register") {
     return (
       <Register
-        onBack={() => setScreen("landing")}
+        onBack={() => setScreen(prevScreen)}
         onSuccess={handleResidentRegisterSuccess}
+        onSignIn={() => setScreen("login")}
       />
     );
   }
