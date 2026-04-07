@@ -54,23 +54,25 @@ type DashboardProps = {
 };
 
 const ORDERED_FUELS = [
-  "Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)",
+  "Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene",
 ] as const;
 
 const MAX_DASHBOARD_TRANSACTIONS = 3;
 
 function fuelTypeTheme(fuelType: string): FuelTheme {
-  const normalized = fuelType.toLowerCase();
-  if (normalized.includes("premium diesel")) return { soft: "#dcfce7", text: "#166534", gradient: "#16a34a" };
-  if (normalized.includes("diesel")) return { soft: "#f1f5f9", text: "#475569", gradient: "#64748b" };
-  if (normalized.includes("regular") || normalized.includes("unleaded")) return { soft: "#fefce8", text: "#854d0e", gradient: "#ca8a04" };
-  if (normalized.includes("super premium")) return { soft: "#eff6ff", text: "#1d4ed8", gradient: "#2563eb" };
-  if (normalized.includes("premium")) return { soft: "#fee2e2", text: "#991b1b", gradient: "#dc2626" };
-  return { soft: "#f1f5f9", text: "#475569", gradient: "#64748b" };
+  const n = fuelType.toLowerCase();
+  if (n.includes("kerosene"))       return { soft: "#f5f3ff", text: "#6d28d9", muted: "#7c3aed", gradient: "#8b5cf6" };
+  if (n.includes("premium diesel")) return { soft: "#dcfce7", text: "#166534", muted: "#15803d", gradient: "#16a34a" };
+  if (n.includes("diesel"))         return { soft: "#f1f5f9", text: "#475569", muted: "#64748b", gradient: "#64748b" };
+  if (n.includes("regular") || n.includes("unleaded")) return { soft: "#fefce8", text: "#854d0e", muted: "#a16207", gradient: "#ca8a04" };
+  if (n.includes("super premium"))  return { soft: "#eff6ff", text: "#1d4ed8", muted: "#2563eb", gradient: "#2563eb" };
+  if (n.includes("premium"))        return { soft: "#fee2e2", text: "#991b1b", muted: "#b91c1c", gradient: "#dc2626" };
+  return { soft: "#f1f5f9", text: "#475569", muted: "#64748b", gradient: "#64748b" };
 }
 
 function fuelBarColor(fuelType: string): string {
   const n = fuelType.toLowerCase();
+  if (n.includes("kerosene"))       return "bg-violet-500";
   if (n.includes("premium diesel")) return "bg-green-500";
   if (n.includes("diesel"))         return "bg-slate-500";
   if (n.includes("regular") || n.includes("unleaded")) return "bg-amber-500";
@@ -256,7 +258,7 @@ export default function Dashboard({
   );
 
   return (
-    <div className="flex min-h-dvh bg-[#eef2f7]">
+    <div className="flex h-dvh bg-[#eef2f7]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

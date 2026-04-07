@@ -223,7 +223,7 @@ export default function ScanHistory({
   );
 
   return (
-    <div className="flex min-h-dvh bg-[#eef2f7]">
+    <div className="flex h-dvh bg-[#eef2f7]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

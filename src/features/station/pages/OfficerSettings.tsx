@@ -15,9 +15,10 @@ const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
 };
 
 const OFFICER_TABS = [
-  { id: "dashboard", icon: "dashboard",    label: "Dashboard" },
-  { id: "history",   icon: "receipt_long", label: "Transaction" },
-  { id: "settings",  icon: "account_circle", label: "Account" },
+  { id: "dashboard",    icon: "dashboard",         label: "Dashboard"     },
+  { id: "history",      icon: "receipt_long",      label: "Transaction"   },
+  { id: "fuel-pricing", icon: "local_gas_station", label: "Fuel & Pricing"},
+  { id: "settings",     icon: "account_circle",    label: "Account"       },
 ];
 
 const menuItems = [
@@ -46,7 +47,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
   const sectionLabels: Record<string, string> = { main: "Account", support: "Support" };
 
   return (
-    <div className="flex min-h-dvh bg-[#f5f5f5]">
+    <div className="flex h-dvh bg-[#f5f5f5]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

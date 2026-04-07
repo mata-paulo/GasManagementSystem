@@ -1,9 +1,7 @@
-import { useRef, useState, useEffect, useCallback, type ChangeEvent } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import jsQR from "jsqr";
-import { decodeQR, formatDecodedDate, type DecodedQR } from "@/lib/qr/qrCodec";
+import { decodeQR, type DecodedQR } from "@/lib/qr/qrCodec";
 import Header from "@/shared/components/layout/Header";
-
-type ScannerMode = "camera" | "upload";
 
 interface QRScannerProps {
   onClose: () => void;
@@ -11,7 +9,6 @@ interface QRScannerProps {
 }
 
 export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -20,7 +17,6 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
 
   const [decoded, setDecoded] = useState<DecodedQR | null>(null);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState<ScannerMode>("camera");
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
 
@@ -102,17 +98,11 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
     };
   }, [cameraReady, decoded, stopCamera]);
 
-  
   useEffect(() => {
-    if (mode === "camera" && !decoded) {
-      startCamera();
-    } else {
-      stopCamera();
-    }
+    if (!decoded) startCamera();
     return () => stopCamera();
-  }, [mode]); 
+  }, []);
 
- 
   useEffect(() => {
     return () => stopCamera();
   }, [stopCamera]);
@@ -128,54 +118,6 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
     onClose();
   };
 
-  const handleConfirm = () => {
-    if (decoded) onSuccess(decoded);
-  };
-
-  const handleScanAnother = () => {
-    setDecoded(null);
-    setError("");
-  };
-
-  const switchMode = (next: ScannerMode) => {
-    stopCamera();
-    setMode(next);
-    setDecoded(null);
-    setError("");
-    setCameraError("");
-  };
-
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        setError("Could not read image. Please try another file.");
-        URL.revokeObjectURL(url);
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const result = jsQR(imageData.data, imageData.width, imageData.height);
-      URL.revokeObjectURL(url);
-      if (!result) {
-        setError("No QR code found in the image. Try a clearer photo.");
-        setDecoded(null);
-        return;
-      }
-      processCode(result.data);
-    };
-    img.src = url;
-    e.target.value = "";
-  };
-
   return (
     <div className="flex flex-col h-dvh bg-[#0a0f1e] overflow-hidden">
 
@@ -184,31 +126,11 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
         <Header onClose={handleClose} />
       </div>
 
-      {/* Mode tabs */}
-      <div className="flex gap-1 mx-4 mt-2 bg-white/10 rounded-xl p-1 shrink-0">
-        <button
-          onClick={() => switchMode("camera")}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-            mode === "camera" ? "bg-white text-[#003366]" : "text-white/60"
-          }`}
-        >
-          Camera
-        </button>
-        <button
-          onClick={() => switchMode("upload")}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-            mode === "upload" ? "bg-white text-[#003366]" : "text-white/60"
-          }`}
-        >
-          Upload Image
-        </button>
-      </div>
-
       {/* Main area */}
       <div className="flex-1 flex flex-col px-4 pt-4 pb-4 gap-4 overflow-y-auto">
 
-        {/* Camera mode */}
-        {mode === "camera" && !decoded && (
+        {/* Camera view */}
+        {!decoded && (
           <>
             <div className="relative rounded-2xl overflow-hidden bg-black aspect-square flex items-center justify-center">
               <video
@@ -288,7 +210,6 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
             </div>
           </>
         )}
-
         {/* Error */}
         {error && (
           <div className="flex items-center gap-2 bg-red-900/40 border border-red-500/30 px-4 py-3 rounded-xl text-red-300 text-sm">
@@ -314,4 +235,3 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
     </div>
   );
 }
-
