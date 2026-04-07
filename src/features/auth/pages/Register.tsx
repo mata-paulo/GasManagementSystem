@@ -613,7 +613,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
 
               {/* Card header */}
               <div className="bg-gradient-to-r from-[#001e40] to-[#003366] px-8 py-6">
-                <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">Resident Registration</p>
+                <p className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">Registration</p>
                 <h2 className="text-white font-headline font-black text-2xl">
                   {step === 1 ? "Personal Information" : "Vehicle Details"}
                 </h2>
@@ -650,7 +650,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
                       <button type="submit"
                         className="flex-[2] bg-[#003366] text-white font-headline font-bold py-4 rounded-xl shadow-lg hover:bg-[#002244] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
                         <span className="material-symbols-outlined icon-fill text-[18px]">how_to_reg</span>
-                        Create Resident Account
+                        Create Your Account
                       </button>
                     </div>
                   )}

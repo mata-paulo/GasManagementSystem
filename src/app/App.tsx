@@ -190,7 +190,6 @@ export default function App() {
         officerLastName:  stationData.officerLastName,
         brand:            stationData.brand,
         barangay:         stationData.barangay,
-        stationCode:      stationData.stationCode,
         availableFuels:   stationData.availableFuels,
         fuelCapacities:   stationData.fuelCapacities,
         assignmentStatus: "active",

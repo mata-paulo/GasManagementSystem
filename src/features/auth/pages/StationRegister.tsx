@@ -31,14 +31,59 @@ const CEBU_BARANGAYS = [
 const BRANDS = ["Default", "Shell", "Petron", "Caltex", "Phoenix"];
 
 const BRAND_FUELS = {
-  Default: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Caltex:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Petron:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
-  Shell:   ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"],
+  Default: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Caltex:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Petron:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Shell:   ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
 };
 
 type Brand = keyof typeof BRAND_FUELS;
+
+/** Solid header colors per fuel — aligned with station fuel inventory cards */
+function getFuelCardTheme(fuel: string): { card: string; iconWrap: string } {
+  const n = fuel.toLowerCase();
+  if (n.includes("kerosene")) {
+    return {
+      card: "bg-violet-600 border-violet-700/60 shadow-[0_4px_16px_rgba(124,58,237,0.35)]",
+      iconWrap: "bg-violet-500/35 ring-1 ring-white/20",
+    };
+  }
+  if (n.includes("super premium")) {
+    return {
+      card: "bg-blue-700 border-blue-800/60 shadow-[0_4px_16px_rgba(29,78,216,0.35)]",
+      iconWrap: "bg-blue-600/35 ring-1 ring-white/20",
+    };
+  }
+  if (n.includes("premium diesel")) {
+    return {
+      card: "bg-emerald-600 border-emerald-700/60 shadow-[0_4px_16px_rgba(5,150,105,0.35)]",
+      iconWrap: "bg-emerald-500/35 ring-1 ring-white/20",
+    };
+  }
+  if (n.includes("(95)") || n.includes("premium (95)")) {
+    return {
+      card: "bg-red-600 border-red-700/60 shadow-[0_4px_16px_rgba(220,38,38,0.35)]",
+      iconWrap: "bg-red-500/35 ring-1 ring-white/20",
+    };
+  }
+  if (n.includes("regular") || n.includes("unleaded")) {
+    return {
+      card: "bg-amber-600 border-amber-700/60 shadow-[0_4px_16px_rgba(217,119,6,0.35)]",
+      iconWrap: "bg-amber-500/35 ring-1 ring-white/25",
+    };
+  }
+  if (n.includes("diesel")) {
+    return {
+      card: "bg-[#546e7a] border-[#455a64]/80 shadow-[0_4px_16px_rgba(69,90,100,0.35)]",
+      iconWrap: "bg-white/15 ring-1 ring-white/20",
+    };
+  }
+  return {
+    card: "bg-slate-600 border-slate-700/60 shadow-md",
+    iconWrap: "bg-white/15 ring-1 ring-white/20",
+  };
+}
 
 type StationForm = {
   barangay: string;
@@ -48,7 +93,6 @@ type StationForm = {
   googleEmail: string;
   password: string;
   confirmPassword: string;
-  stationCode: string;
   lat: number | null;
   lon: number | null;
 };
@@ -392,7 +436,7 @@ type StationRegisterProps = {
     barangay: string; brand: string; officerFirstName: string;
     officerLastName: string; googleEmail: string; password: string;
     availableFuels: string[]; fuelCapacities: Record<string, number>;
-    stationCode: string; role: string; registeredAt: string;
+    role: string; registeredAt: string;
     lat?: number; lon?: number;
   }) => void;
 };
@@ -404,7 +448,7 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [form, setForm] = useState<StationForm>({
     barangay: "", brand: "", officerFirstName: "", officerLastName: "",
-    googleEmail: "", password: "", confirmPassword: "", stationCode: "",
+    googleEmail: "", password: "", confirmPassword: "",
     lat: null, lon: null,
   });
   const [fuelCapacities, setFuelCapacities] = useState<Record<string, string>>({});
@@ -432,11 +476,11 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   };
 
   const validateStepTwo = () => {
-    if (!form.stationCode.trim()) { setError("Please enter station number."); return false; }
-    if (!form.brand)              { setError("Please select a brand."); return false; }
+    if (!form.brand) { setError("Please select a brand."); return false; }
     if (activeFuels.length === 0) { setError("Please enable at least one fuel type."); return false; }
     if (activeFuels.some((f) => { const v = fuelCapacities[f]; return !v || Number(v) <= 0; })) {
-      setError("Please enter capacity for all enabled fuel types."); return false;
+      setError("Please enter capacity for all enabled fuel types.");
+      return false;
     }
     if (!agreedToTerms) { setError("You must agree to the Terms and Conditions to proceed."); return false; }
     return true;
@@ -450,7 +494,7 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   };
 
   const handleConfirm = () => {
-    const { barangay, brand, officerFirstName, officerLastName, googleEmail, password, stationCode, lat, lon } = form;
+    const { barangay, brand, officerFirstName, officerLastName, googleEmail, password, lat, lon } = form;
     setShowConfirm(false);
     onSuccess({
       barangay, brand,
@@ -460,7 +504,6 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
       password,
       availableFuels:   activeFuels,
       fuelCapacities:   Object.fromEntries(activeFuels.map((f) => [f, Number(fuelCapacities[f] || 0)])),
-      stationCode:      stationCode.trim().toUpperCase(),
       role: "station",
       registeredAt: new Date().toISOString(),
       ...(lat !== null && lon !== null ? { lat, lon } : {}),
@@ -511,22 +554,15 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
 
   const StepTwoFields = (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className={labelCls}>Station Number</label>
-          <input type="text" name="stationCode" value={form.stationCode} onChange={handleChange} placeholder="e.g. STF-001"
-            className={`${inputCls} uppercase`} />
-        </div>
-        <div className="space-y-1.5">
-          <label className={labelCls}>Brand</label>
-          <SheetPicker value={form.brand} onChange={(b) => {
+      <div className="space-y-1.5">
+        <label className={labelCls}>Brand</label>
+        <SheetPicker value={form.brand} onChange={(b) => {
             setForm((prev) => ({ ...prev, brand: b as Brand }));
             const fuels = BRAND_FUELS[b as Brand] || [];
             setFuelCapacities(Object.fromEntries(fuels.map((f) => [f, ""])));
             setEnabledFuels(new Set(fuels));
             setError("");
           }} options={BRANDS} placeholder="Select brand…" icon="local_gas_station" />
-        </div>
       </div>
       <div className="space-y-1.5">
         <label className={labelCls}>Barangay</label>
@@ -565,31 +601,89 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
 
       {selectedFuels.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <label className={labelCls}>Fuel Types &amp; Capacity</label>
-            <span className="text-[10px] text-slate-400 font-medium">{activeFuels.length} of {selectedFuels.length} enabled</span>
+            <span className="text-[10px] text-slate-400 font-medium shrink-0">{activeFuels.length} of {selectedFuels.length} enabled</span>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {selectedFuels.map((fuel) => {
-              const isEnabled = enabledFuels.has(fuel);
+              const isOn = enabledFuels.has(fuel);
+              const theme = getFuelCardTheme(fuel);
               return (
-                <div key={fuel} className={`rounded-xl border px-3 py-2.5 transition-all ${isEnabled ? "bg-surface-container-lowest border-outline-variant" : "bg-slate-50 border-slate-200 opacity-60"}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className={`text-xs font-semibold leading-tight ${isEnabled ? "text-on-surface-variant" : "text-slate-400"}`}>{fuel}</p>
-                    <button type="button" role="switch" aria-checked={isEnabled}
-                      onClick={() => { setEnabledFuels((prev) => { const next = new Set(prev); next.has(fuel) ? next.delete(fuel) : next.add(fuel); return next; }); setError(""); }}
-                      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${isEnabled ? "bg-[#003366]" : "bg-slate-300"}`}>
-                      <span className={`inline-block h-5 w-5 mt-0.5 rounded-full bg-white shadow transition-transform duration-200 ${isEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                <div
+                  key={fuel}
+                  className={`rounded-2xl border-2 overflow-hidden transition-all ${
+                    isOn ? theme.card : "bg-slate-100 border-slate-200 opacity-70 shadow-sm"
+                  }`}
+                >
+                  <div className={`flex items-center gap-3 p-3.5 ${isOn ? "" : "grayscale-[0.35]"}`}>
+                    <div
+                      className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${
+                        isOn ? theme.iconWrap : "bg-slate-300/80 ring-1 ring-slate-400/30"
+                      }`}
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[22px] ${isOn ? "text-white" : "text-slate-500"}`}
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        local_gas_station
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-headline font-bold text-sm leading-tight truncate ${isOn ? "text-white" : "text-slate-600"}`}>{fuel}</p>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isOn ? "text-white/75" : "text-slate-400"}`}>
+                        Max tank capacity
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isOn}
+                      onClick={() => {
+                        setEnabledFuels((prev) => {
+                          const next = new Set(prev);
+                          next.has(fuel) ? next.delete(fuel) : next.add(fuel);
+                          return next;
+                        });
+                        setError("");
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                        isOn ? "bg-white/35 focus-visible:ring-white/50" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 mt-0.5 rounded-full shadow transition-transform duration-200 ${
+                          isOn ? "translate-x-5 bg-white" : "translate-x-0.5 bg-white"
+                        }`}
+                      />
                     </button>
                   </div>
-                  {isEnabled && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Capacity</label>
-                      <div className="relative flex-1">
-                        <input type="number" min="0" step="0.1" value={fuelCapacities[fuel] || ""}
-                          onChange={(e) => { setFuelCapacities((prev) => ({ ...prev, [fuel]: e.target.value })); setError(""); }}
-                          placeholder="0" className="w-full bg-white border border-outline-variant rounded-lg py-2 pl-3 pr-7 text-sm text-right" />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-outline">L</span>
+                  {isOn && (
+                    <div className="px-3.5 pb-3.5 pt-0">
+                      <div className="rounded-xl bg-white/95 border border-white/50 p-3 shadow-inner">
+                        <div className="flex items-end justify-between gap-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            Capacity
+                          </label>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Liters</span>
+                        </div>
+                        <div className="relative mt-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={fuelCapacities[fuel] || ""}
+                            onChange={(e) => {
+                              setFuelCapacities((prev) => ({ ...prev, [fuel]: e.target.value }));
+                              setError("");
+                            }}
+                            placeholder="0"
+                            className="w-full bg-white border border-slate-200 rounded-lg py-2.5 pl-3 pr-8 text-sm font-black text-right text-[#003366] outline-none focus:border-[#003366] focus:ring-2 focus:ring-[#003366]/15"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
+                            L
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -651,7 +745,6 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
                   { label: "Brand",          value: form.brand },
                   { label: "Representative", value: `${form.officerFirstName} ${form.officerLastName}`.trim() },
                   { label: "Fuel Types",     value: `${activeFuels.length} enabled` },
-                  { label: "Station No.",    value: form.stationCode.toUpperCase() },
                 ].map((d) => (
                   <div key={d.label} className="flex justify-between">
                     <span className="text-slate-400 text-xs">{d.label}</span>
