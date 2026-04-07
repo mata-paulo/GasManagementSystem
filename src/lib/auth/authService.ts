@@ -120,8 +120,14 @@ export async function login({ email, password }: { email: string; password: stri
         const arr = data.vehicles as Array<{ type: string; plate: string; gasType: string }> | undefined;
         if (Array.isArray(arr) && arr.length > 0) return arr;
         const result: Array<{ type: string; plate: string; gasType: string }> = [];
-        if (data.plate) result.push({ type: (data.vehicleType as string) || "car", plate: data.plate as string, gasType: (data.gasType as string) || "" });
-        if (data.vehicle2Plate) result.push({ type: (data.vehicle2Type as string) || "car", plate: data.vehicle2Plate as string, gasType: (data.vehicle2GasType as string) || "" });
+        const migrateType = (t: string | undefined) => {
+          if (!t || t === "car") return "4w";
+          if (t === "motorcycle") return "2w";
+          if (t === "truck") return "others";
+          return t;
+        };
+        if (data.plate) result.push({ type: migrateType(data.vehicleType as string), plate: data.plate as string, gasType: (data.gasType as string) || "" });
+        if (data.vehicle2Plate) result.push({ type: migrateType(data.vehicle2Type as string), plate: data.vehicle2Plate as string, gasType: (data.vehicle2GasType as string) || "" });
         return result;
       })(),
       registeredAt,
