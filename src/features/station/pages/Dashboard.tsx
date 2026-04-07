@@ -44,13 +44,14 @@ type DashboardProps = {
 };
 
 const ORDERED_FUELS = [
-  "Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)",
+  "Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene",
 ] as const;
 
 const MAX_DASHBOARD_TRANSACTIONS = 3;
 
 function fuelTypeTheme(fuelType: string): FuelTheme {
   const n = fuelType.toLowerCase();
+  if (n.includes("kerosene"))       return { soft: "#fff7ed", text: "#c2410c", muted: "#ea580c", gradient: "#f97316" };
   if (n.includes("premium diesel")) return { soft: "#dcfce7", text: "#166534", muted: "#15803d", gradient: "#16a34a" };
   if (n.includes("diesel"))         return { soft: "#f1f5f9", text: "#475569", muted: "#64748b", gradient: "#64748b" };
   if (n.includes("regular") || n.includes("unleaded")) return { soft: "#fefce8", text: "#854d0e", muted: "#a16207", gradient: "#ca8a04" };
@@ -61,6 +62,7 @@ function fuelTypeTheme(fuelType: string): FuelTheme {
 
 function fuelBarColor(fuelType: string): string {
   const n = fuelType.toLowerCase();
+  if (n.includes("kerosene"))       return "bg-orange-500";
   if (n.includes("premium diesel")) return "bg-green-500";
   if (n.includes("diesel"))         return "bg-slate-500";
   if (n.includes("regular") || n.includes("unleaded")) return "bg-amber-500";
@@ -187,7 +189,7 @@ export default function Dashboard({ officer, onScan, onEditFuels, onLogout, acti
   );
 
   return (
-    <div className="flex min-h-dvh bg-[#eef2f7]">
+    <div className="flex h-dvh bg-[#eef2f7]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

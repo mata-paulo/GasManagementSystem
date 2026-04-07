@@ -1,9 +1,10 @@
 import { useStationSidebarCollapsed } from "@/shared/hooks/useStationSidebarCollapsed";
 
 const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard" },
-  { id: "history", label: "Transaction", icon: "receipt_long" },
-  { id: "settings", label: "Account", icon: "manage_accounts" },
+  { id: "dashboard",    label: "Dashboard",     icon: "dashboard"          },
+  { id: "history",      label: "Transaction",   icon: "receipt_long"       },
+  { id: "fuel-pricing", label: "Fuel & Pricing", icon: "local_gas_station" },
+  { id: "settings",     label: "Account",       icon: "manage_accounts"    },
 ] as const;
 
 type StationDesktopSidebarProps = {
@@ -21,7 +22,7 @@ export default function StationDesktopSidebar({
 
   return (
     <aside
-      className={`hidden md:flex flex-col shrink-0 sticky top-0 h-screen transition-[width] duration-300 ease-out ${
+      className={`hidden md:flex flex-col shrink-0 sticky top-0 h-dvh min-h-full z-20 transition-[width] duration-300 ease-out ${
         collapsed ? "w-[68px]" : "w-52 lg:w-60"
       }`}
       style={{ background: "linear-gradient(180deg, #0a1628 0%, #0d2a5e 100%)" }}

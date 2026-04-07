@@ -46,7 +46,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
   const sectionLabels: Record<string, string> = { main: "Account", support: "Support" };
 
   return (
-    <div className="flex min-h-dvh bg-[#f5f5f5]">
+    <div className="flex h-dvh bg-[#f5f5f5]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

@@ -88,7 +88,7 @@ export default function ScanHistory({ officer, activeTab, onTabChange, onScan, o
   }, {} as Record<string, typeof history>);
 
   return (
-    <div className="flex min-h-dvh bg-[#eef2f7]">
+    <div className="flex h-dvh bg-[#eef2f7]">
 
       <StationDesktopSidebar activeTab={activeTab} onTabChange={onTabChange} onLogout={onLogout} />
 

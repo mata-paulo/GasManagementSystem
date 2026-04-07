@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
 
 const STANDARD_FUELS = [
   "Diesel",
@@ -6,6 +7,7 @@ const STANDARD_FUELS = [
   "Regular/Unleaded (91)",
   "Premium (95)",
   "Super Premium (97)",
+  "Kerosene",
 ] as const;
 
 export type StationOfficer = {
@@ -18,13 +20,19 @@ export type StationOfficer = {
 };
 
 type StationFuelSetupProps = {
-  officer: StationOfficer | null;
-  onBack  : () => void;
-  onSave  : (payload: { fuelInventory: Record<string, number>; fuelCapacities: Record<string, number>; fuelPrices: Record<string, number> }) => void;
+  officer    : StationOfficer | null;
+  onBack     : () => void;
+  onSave     : (payload: { fuelInventory: Record<string, number>; fuelCapacities: Record<string, number>; fuelPrices: Record<string, number> }) => void;
+  activeTab  ?: string;
+  onTabChange?: (tab: string) => void;
+  onLogout   ?: () => void;
 };
 
 function fuelVisual(name: string) {
   const n = name.toLowerCase();
+  if (n.includes("kerosene")) {
+    return { gradient: "linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)", border: "#fb923c", text: "#c2410c" };
+  }
   if (n.includes("premium diesel")) {
     return { gradient: "linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)", border: "#86efac", text: "#166534" };
   }
@@ -43,7 +51,7 @@ function fuelVisual(name: string) {
   return { gradient: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)", border: "#e2e8f0", text: "#64748b" };
 }
 
-export default function StationFuelSetup({ officer, onBack, onSave }: StationFuelSetupProps) {
+export default function StationFuelSetup({ officer, onBack, onSave, activeTab = "fuel-pricing", onTabChange, onLogout }: StationFuelSetupProps) {
   // Always show all fuels so disabled ones can be re-enabled
   const fuelNames = useMemo(() => [...STANDARD_FUELS], []);
 
@@ -140,9 +148,20 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
   const brand = officer?.brand ? String(officer.brand) : "Station";
 
   return (
-    <div className="flex flex-col min-h-dvh bg-[#f5f7fb]">
+    <div className="flex h-dvh bg-[#f5f7fb]">
+      {/* Sidebar — desktop only */}
+      {onTabChange && onLogout && (
+        <StationDesktopSidebar
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          onLogout={onLogout}
+        />
+      )}
+
+      <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Header — shown on mobile, hidden on desktop */}
       <header
-        className="sticky top-0 z-30 flex items-center gap-3 px-4 py-3 shadow-md"
+        className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 shadow-md"
         style={{ background: "linear-gradient(135deg, #003366 0%, #001e40 100%)" }}
       >
         <button
@@ -169,7 +188,16 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
         </span>
       </header>
 
-      <main className="flex-1 px-4 py-5 pb-28 max-w-6xl mx-auto w-full space-y-4">
+      {/* Desktop top bar */}
+      <header className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shrink-0">
+        <div>
+          <h1 className="font-headline font-black text-[#003366] text-xl leading-none">Fuel &amp; Pricing</h1>
+          <p className="text-xs text-slate-400 mt-1">{brand} · Inventory &amp; Price per Liter</p>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-y-auto px-4 md:px-8 py-5 pb-28 flex flex-col items-center">
+        <div className="w-full max-w-5xl space-y-4">
         <div className="flex items-start justify-between gap-4">
           <p className="text-xs text-slate-500 leading-relaxed max-w-lg">
             Update current inventory and price per liter. Use <strong>Top Up</strong> to add incoming supply — it adds to the current stock up to the max capacity.
@@ -347,6 +375,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
             );
           })}
         </div>
+        </div>
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t border-slate-200 safe-area-pb">
@@ -367,6 +396,7 @@ export default function StationFuelSetup({ officer, onBack, onSave }: StationFue
             Save changes
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
