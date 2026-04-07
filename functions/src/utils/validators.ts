@@ -21,7 +21,7 @@ export const PASSWORD_MAX_LENGTH = 128;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const VALID_VEHICLE_TYPES = ["car", "truck", "motorcycle"] as const;
+export const VALID_VEHICLE_TYPES = ["2w", "4w", "others"] as const;
 
 /** Cebu City barangays — same whitelist as `Register.tsx` `CEBU_BARANGAYS`. */
 export const VALID_BARANGAYS = [
@@ -51,16 +51,15 @@ const VEHICLES = VALID_VEHICLE_TYPES as readonly string[];
 const GASES = VALID_GAS_TYPES as readonly string[];
 const BARANGAYS = VALID_BARANGAYS as readonly string[];
 
+// Vehicle type validation: accepts "2w", "4w", or any non-empty custom string (for "others" subtypes)
+const vehicleTypeSchema = z.string().trim().min(1, "Vehicle type is required.");
+
 /**
  * Callable payload for `registerResident`.
  * Uses `plate` and `gasType` (same as the UI). Unknown keys rejected.
  */
 export const registerResidentSchema = z.object({
-  vehicleType: z
-    .string()
-    .trim()
-    .min(1, "Vehicle type is required.")
-    .refine((v) => VEHICLES.includes(v), "Invalid vehicle type."),
+  vehicleType: vehicleTypeSchema,
   plate: z
     .string()
     .trim()
@@ -111,11 +110,7 @@ export const registerResidentSchema = z.object({
       `Password must be at most ${PASSWORD_MAX_LENGTH} characters.`
     ),
   // Optional second vehicle
-  vehicle2Type: z
-    .string()
-    .trim()
-    .refine((v) => VEHICLES.includes(v), "Invalid vehicle type.")
-    .optional(),
+  vehicle2Type: vehicleTypeSchema.optional(),
   vehicle2Plate: z
     .string()
     .trim()
@@ -128,7 +123,7 @@ export const registerResidentSchema = z.object({
     .optional(),
   vehicles: z.array(
     z.object({
-      type: z.string().trim().refine((v) => VEHICLES.includes(v), "Invalid vehicle type."),
+      type: vehicleTypeSchema,
       plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`),
       gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
     })
