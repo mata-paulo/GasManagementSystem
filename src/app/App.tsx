@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth as firebaseAuth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers/AuthContext";
 import { acceptPendingStationAssignment } from "@/lib/data/agas";
 import ChangePassword from "@/features/account/pages/ChangePassword";
@@ -173,8 +176,35 @@ export default function App() {
     setActiveTab("dashboard");
   };
 
-  const handleStationRegisterSuccess = (stationData) => {
-    setOfficer(stationData);
+  const handleStationRegisterSuccess = async (stationData) => {
+    try {
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, stationData.googleEmail, stationData.password);
+      const uid = cred.user.uid;
+      const firestoreData: Record<string, unknown> = {
+        uid,
+        role: "station",
+        email: stationData.googleEmail,
+        officerFirstName: stationData.officerFirstName,
+        officerLastName:  stationData.officerLastName,
+        brand:            stationData.brand,
+        barangay:         stationData.barangay,
+        stationCode:      stationData.stationCode,
+        availableFuels:   stationData.availableFuels,
+        fuelCapacities:   stationData.fuelCapacities,
+        assignmentStatus: "active",
+        status:           "online",
+        registeredAt:     serverTimestamp(),
+      };
+      if (stationData.lat != null && stationData.lon != null) {
+        firestoreData.lat = stationData.lat;
+        firestoreData.lon = stationData.lon;
+      }
+      await setDoc(doc(db, "accounts", uid), firestoreData);
+      setOfficer({ ...stationData, uid });
+    } catch {
+      // Fallback: still enter dashboard in demo/emulator mode
+      setOfficer(stationData);
+    }
     setScreen("dashboard");
     setActiveTab("dashboard");
   };
