@@ -304,11 +304,6 @@ export default function App() {
     setActiveTab("dashboard");
   };
 
-<<<<<<< HEAD
-  const handleStationRegisterSuccess = (stationData) => {
-    setOfficer(stationData);
-    navigateStation("dashboard", true);
-=======
   const handleStationRegisterSuccess = async (stationData) => {
     try {
       const cred = await createUserWithEmailAndPassword(firebaseAuth, stationData.googleEmail, stationData.password);
@@ -338,9 +333,7 @@ export default function App() {
       // Fallback: still enter dashboard in demo/emulator mode
       setOfficer(stationData);
     }
-    setScreen("dashboard");
-    setActiveTab("dashboard");
->>>>>>> upstream/master
+    navigateStation("dashboard", true);
   };
 
   // ─── Scanner ───────────────────────────────────────────────────────────────
