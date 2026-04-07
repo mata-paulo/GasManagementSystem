@@ -15,9 +15,10 @@ const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
 };
 
 const OFFICER_TABS = [
-  { id: "dashboard", icon: "dashboard",    label: "Dashboard" },
-  { id: "history",   icon: "receipt_long", label: "Transaction" },
-  { id: "settings",  icon: "account_circle", label: "Account" },
+  { id: "dashboard",    icon: "dashboard",         label: "Dashboard"     },
+  { id: "history",      icon: "receipt_long",      label: "Transaction"   },
+  { id: "fuel-pricing", icon: "local_gas_station", label: "Fuel & Pricing"},
+  { id: "settings",     icon: "account_circle",    label: "Account"       },
 ];
 
 const menuItems = [

@@ -31,7 +31,7 @@ type StationFuelSetupProps = {
 function fuelVisual(name: string) {
   const n = name.toLowerCase();
   if (n.includes("kerosene")) {
-    return { gradient: "linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)", border: "#fb923c", text: "#c2410c" };
+    return { gradient: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)", border: "#a78bfa", text: "#6d28d9" };
   }
   if (n.includes("premium diesel")) {
     return { gradient: "linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)", border: "#86efac", text: "#166534" };
