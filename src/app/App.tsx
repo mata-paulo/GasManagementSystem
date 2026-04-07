@@ -139,6 +139,7 @@ export default function App() {
     setActiveTab(tab);
     if (tab === "dashboard") setScreen("dashboard");
     else if (tab === "history") setScreen("history");
+    else if (tab === "fuel-pricing") setScreen("fuel-setup");
     else if (tab === "settings") setScreen("settings");
   };
 
@@ -446,6 +447,9 @@ export default function App() {
       <RoleGuard requiredRole="station" onDeny={() => setScreen("landing")}>
         <StationFuelSetup
           officer={officer}
+          activeTab={activeTab}
+          onTabChange={handleOfficerTabChange}
+          onLogout={handleLogout}
           onBack={() => {
             setScreen("dashboard");
             setActiveTab("dashboard");
@@ -477,7 +481,7 @@ export default function App() {
       <Dashboard
         officer={officer}
         onScan={handleScan}
-        onEditFuels={() => setScreen("fuel-setup")}
+        onEditFuels={() => { setScreen("fuel-setup"); setActiveTab("fuel-pricing"); }}
         activeTab={activeTab}
         onTabChange={handleOfficerTabChange}
         lastUpdated={lastUpdated}
