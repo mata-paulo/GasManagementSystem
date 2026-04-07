@@ -27,9 +27,24 @@ service cloud.firestore {
 
     match /accounts/{uid} {
       allow read: if isOwner(uid) || isAdmin() || (isStation() && resource.data.role in ["resident", "station"]);
-      allow update: if (isOwner(uid) && isStation())
+      allow create: if isOwner(uid)
+        && request.resource.data.role == "station"
+        && request.resource.data.email is string
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.brand is string
+        && request.resource.data.barangay is string
+        // Prevent clients from setting server-managed fields.
+        && !("fuelInventory" in request.resource.data)
+        && !("fuelPrices" in request.resource.data)
+        && !("assignedAt" in request.resource.data)
+        && !("inviteAcceptedAt" in request.resource.data)
+        && !("lastSeenAt" in request.resource.data);
+      allow update: if (isOwner(uid) && isStation()
+        // Fuel settings live in `stationDirectory` now.
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["availableFuels", "fuelCapacities", "fuelInventory", "fuelPrices"]))
         || (isOwner(uid) && isRole("resident") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vehicle2Type', 'vehicle2Plate', 'vehicle2GasType', 'vehicles']));
-      allow create, delete: if false;
+      allow delete: if false;
     }
 
     match /transactions/{transactionId} {
@@ -42,7 +57,20 @@ service cloud.firestore {
 
     match /stationDirectory/{stationId} {
       allow read: if signedIn();
-      allow write: if false;
+      allow create: if signedIn()
+        && request.auth.uid == stationId
+        && request.resource.data.accountUid == stationId
+        && request.resource.data.name is string
+        && request.resource.data.brand is string
+        && request.resource.data.address is string
+        && request.resource.data.hours is string
+        && request.resource.data.lat is number
+        && request.resource.data.lon is number
+        && request.resource.data.fuels is list;
+      allow update: if signedIn()
+        && request.auth.uid == stationId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fuels", "updatedAt"]);
+      allow delete: if false;
     }
 
     match /stationInvites/{inviteId} {

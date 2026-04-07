@@ -11,23 +11,6 @@ import {
   type AssignStationUserInput,
 } from "../utils/validators";
 
-type BrandPrice = {
-  label: string;
-  price: number;
-};
-
-type StationDirectoryRecord = {
-  sourceId?: number;
-  name?: string;
-  brand?: string;
-  barangay?: string;
-  brandPrices?: BrandPrice[];
-  capacity?: number;
-  status?: string;
-  /** When false, station has real operational data — invite uses password-only activation (no fuel form). */
-  hasMockData?: boolean;
-};
-
 type StationInviteStatus = "pending" | "accepted";
 
 type InviteEmailStatus = "queued" | "sent" | "failed" | "not-applicable";
@@ -44,12 +27,17 @@ type PendingInviteResponse = {
   brand: string;
   barangay: string;
   status: StationInviteStatus;
+  acceptUrl: string;
   deliveryMethod: string;
   emailStatus: InviteEmailStatus;
   invitedAt: string;
   inviteSentAt?: string;
+  expiresAt?: string;
   emailError?: string | null;
 };
+
+// Invite expiry window. Change this to adjust station invite validity.
+const STATION_INVITE_TTL_DAYS = 30;
 
 function sendHttpsError(res: Response, err: HttpsError): void {
   const statusMap: Record<string, number> = {
@@ -140,64 +128,7 @@ function buildStationCode(sourceId: number | undefined): string {
   return `STN-${String(sourceId).padStart(3, "0")}`;
 }
 
-function asBrandPrices(value: unknown): BrandPrice[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const label = typeof (entry as {label?: unknown}).label === "string" ?
-        (entry as {label: string}).label.trim() : "";
-      const price = Number((entry as {price?: unknown}).price);
-      return label && Number.isFinite(price) ? {label, price} : null;
-    })
-    .filter((entry): entry is BrandPrice => entry != null);
-}
-
-function splitCapacity(totalCapacity: number, labels: string[]): Record<string, number> {
-  if (!Number.isFinite(totalCapacity) || totalCapacity <= 0 || labels.length === 0) {
-    return {};
-  }
-
-  const base = Math.floor(totalCapacity / labels.length);
-  let remainder = totalCapacity - base * labels.length;
-
-  return Object.fromEntries(
-    labels.map((label) => {
-      const next = base + (remainder > 0 ? 1 : 0);
-      remainder = Math.max(remainder - 1, 0);
-      return [label, next];
-    })
-  );
-}
-
-async function findUserByEmail(normalizedEmail: string): Promise<admin.auth.UserRecord | null> {
-  try {
-    return await admin.auth().getUserByEmail(normalizedEmail);
-  } catch (err: unknown) {
-    const code = (err as {code?: string}).code;
-    if (code === "auth/user-not-found") return null;
-    throw err;
-  }
-}
-
-async function createUserIfNeeded(
-  normalizedEmail: string,
-  password: string,
-  displayName: string,
-): Promise<{userRecord: admin.auth.UserRecord; created: boolean}> {
-  const existing = await findUserByEmail(normalizedEmail);
-  if (existing) {
-    await admin.auth().updateUser(existing.uid, {displayName});
-    return {userRecord: existing, created: false};
-  }
-
-  const userRecord = await admin.auth().createUser({
-    email: normalizedEmail,
-    password,
-    displayName,
-  });
-  return {userRecord, created: true};
-}
+// Generic station invites do not use stationDirectory fuel templates.
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -356,243 +287,135 @@ export const assignStationUser = onRequest(
         data.firstName,
         data.lastName,
       );
-      const displayName = `${firstName} ${lastName}`.trim();
       const db = admin.firestore();
 
-      const stationSnap = await db.collection("stationDirectory").doc(data.stationDirectoryId).get();
-      if (!stationSnap.exists) {
-        throw new HttpsError("not-found", "Selected station was not found.");
-      }
-
-      const station = stationSnap.data() as StationDirectoryRecord;
-      /** `hasMockData !== false` → template/mock row: full StationRegister invite. `false` → real station: password-only link. */
-      const stationHasMockTemplate = station.hasMockData !== false;
-      const inviteFlow = stationHasMockTemplate ? "full" : "password";
-      const brandPrices = asBrandPrices(station.brandPrices);
-      const fuelLabels = brandPrices.map((entry) => entry.label);
-      const totalCapacity = Number.isFinite(station.capacity) ? Number(station.capacity) : 0;
-      const fuelCapacities = splitCapacity(totalCapacity, fuelLabels);
-      const fuelInventory = Object.fromEntries(
-        Object.entries(fuelCapacities).map(([label, value]) => [label, value])
-      );
-      const fuelPrices = Object.fromEntries(
-        brandPrices.map((entry) => [entry.label, entry.price])
-      );
-
-      const generatedPassword = randomBytes(18).toString("base64url");
-      const {userRecord, created} = await createUserIfNeeded(
-        normalizedEmail,
-        generatedPassword,
-        displayName,
-      );
-      const accountRef = db.collection("accounts").doc(userRecord.uid);
-      const inviteRef = db.collection("stationInvites").doc(userRecord.uid);
-      const accountSnap = await accountRef.get();
-      const existing = accountSnap.data() as Record<string, unknown> | undefined;
-
-      if (existing?.role === "admin") {
-        throw new HttpsError(
-          "failed-precondition",
-          "Admin accounts cannot be reassigned into station role.",
-        );
-      }
-
-      const existingStationDirectoryId =
-        typeof existing?.stationDirectoryId === "string" ? existing.stationDirectoryId : null;
-      if (
-        existingStationDirectoryId &&
-        existingStationDirectoryId !== data.stationDirectoryId
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "This user is already assigned to another station.",
-        );
-      }
-
-      const stationSourceId = Number.isFinite(station.sourceId) ? Number(station.sourceId) : 0;
-      const stationName = typeof station.name === "string" ? station.name : "Station";
-      const brand = typeof station.brand === "string" ? station.brand : "Other";
-      const barangay = typeof station.barangay === "string" ? station.barangay : "Unknown";
+      // New flow (generic station invites):
+      // - Admin enters station manager email
+      // - We create a station invite record + email a registration link
+      // - Station manager completes StationRegister themselves (creates Auth user + Firestore account)
+      const inviteId = randomBytes(16).toString("hex");
+      const inviteRef = db.collection("stationInvites").doc(inviteId);
+      const stationDirectoryId = "generic";
+      const stationSourceId = 0;
+      const stationName = "Station Registration";
+      const brand = "";
+      const barangay = "";
       const inviteCreatedAtIso = new Date().toISOString();
-      const stationCode =
-        typeof existing?.stationCode === "string" && existing.stationCode.trim()
-          ? existing.stationCode
-          : buildStationCode(stationSourceId);
-      const stationStatus =
-        typeof existing?.status === "string" && existing.status.trim()
-          ? existing.status
-          : typeof station.status === "string" && station.status.toLowerCase() === "offline"
-            ? "offline"
-            : "online";
-      const assignmentStatus =
-        existing?.role === "station" &&
-        existingStationDirectoryId === data.stationDirectoryId &&
-        existing?.assignmentStatus === "active"
-          ? "active"
-          : "pending";
       const baseUrl = getAppBaseUrl().replace(/\/$/, "");
       const inviteContinue = new URLSearchParams({
+        register: "station",
         stationInvite: "1",
-        inviteFlow,
         inviteEmail: normalizedEmail,
-        prefillBrand: brand,
-        prefillBarangay: barangay,
-        prefillFirst: firstName,
-        prefillLast: lastName,
-        prefillStationCode: stationCode,
+        inviteId,
       });
-      const acceptUrl = await admin.auth().generatePasswordResetLink(normalizedEmail, {
-        url: `${baseUrl}/?${inviteContinue.toString()}`,
-      });
-      let inviteEmailStatus: InviteEmailStatus =
-        assignmentStatus === "pending" ? "queued" : "not-applicable";
+      const acceptUrl = `${baseUrl}/?${inviteContinue.toString()}`;
+      const expiresAtDate = new Date(Date.now() + STATION_INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+      let inviteEmailStatus: InviteEmailStatus = "queued";
       let inviteEmailError: string | null = null;
       let pendingInvite: PendingInviteResponse | null = null;
 
-      const batch = db.batch();
-      batch.set(accountRef, {
+      await inviteRef.set({
+        uid: inviteId,
         email: normalizedEmail,
         firstName,
         lastName,
-        officerFirstName: firstName,
-        officerLastName: lastName,
-        role: "station",
-        stationDirectoryId: data.stationDirectoryId,
+        stationDirectoryId,
         stationSourceId,
         stationName,
-        stationCode,
         brand,
         barangay,
-        availableFuels: fuelLabels,
-        fuelPrices,
-        fuelCapacities:
-          Object.keys((existing?.fuelCapacities as Record<string, unknown> | undefined) ?? {}).length > 0
-            ? existing?.fuelCapacities
-            : fuelCapacities,
-        fuelInventory:
-          Object.keys((existing?.fuelInventory as Record<string, unknown> | undefined) ?? {}).length > 0
-            ? existing?.fuelInventory
-            : fuelInventory,
-        status: stationStatus,
-        assignmentStatus,
-        assignedByUid: adminUid,
-        assignedAt: FieldValue.serverTimestamp(),
-        inviteAcceptedAt: assignmentStatus === "active" ? existing?.inviteAcceptedAt ?? FieldValue.serverTimestamp() : null,
+        status: "pending" as StationInviteStatus,
+        acceptUrl,
+        deliveryMethod: "smtp-html",
+        emailStatus: "queued" as InviteEmailStatus,
+        invitedByUid: adminUid,
+        invitedAt: FieldValue.serverTimestamp(),
+        inviteSentAt: null,
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
+        acceptedAt: null,
+        emailError: null,
         updatedAt: FieldValue.serverTimestamp(),
-        registeredAt: existing?.registeredAt ?? FieldValue.serverTimestamp(),
       }, {merge: true});
 
-      if (assignmentStatus === "pending") {
-        batch.set(inviteRef, {
-          uid: userRecord.uid,
+      pendingInvite = {
+        id: inviteId,
+        uid: inviteId,
+        email: normalizedEmail,
+        firstName,
+        lastName,
+        stationDirectoryId,
+        stationSourceId,
+        stationName,
+        brand,
+        barangay,
+        status: "pending",
+        acceptUrl,
+        deliveryMethod: "smtp-html",
+        emailStatus: "queued",
+        invitedAt: inviteCreatedAtIso,
+        expiresAt: expiresAtDate.toISOString(),
+        emailError: null,
+      };
+
+      try {
+        await sendStationInviteEmail({
           email: normalizedEmail,
           firstName,
-          lastName,
-          stationDirectoryId: data.stationDirectoryId,
-          stationSourceId,
           stationName,
           brand,
           barangay,
-          status: "pending" as StationInviteStatus,
           acceptUrl,
-          deliveryMethod: "smtp-html",
-          emailStatus: "queued" as InviteEmailStatus,
-          invitedByUid: adminUid,
-          invitedAt: FieldValue.serverTimestamp(),
-          inviteSentAt: null,
-          acceptedAt: null,
+        });
+
+        inviteEmailStatus = "sent";
+        pendingInvite = {
+          ...pendingInvite,
+          emailStatus: "sent",
+          inviteSentAt: new Date().toISOString(),
+          emailError: null,
+        };
+        await inviteRef.set({
+          emailStatus: "sent" as InviteEmailStatus,
+          inviteSentAt: FieldValue.serverTimestamp(),
           emailError: null,
           updatedAt: FieldValue.serverTimestamp(),
         }, {merge: true});
-
+      } catch (emailErr: unknown) {
+        inviteEmailStatus = "failed";
+        inviteEmailError = emailErr instanceof Error ? emailErr.message : "Failed to send invite email.";
         pendingInvite = {
-          id: userRecord.uid,
-          uid: userRecord.uid,
-          email: normalizedEmail,
-          firstName,
-          lastName,
-          stationDirectoryId: data.stationDirectoryId,
-          stationSourceId,
-          stationName,
-          brand,
-          barangay,
-          status: "pending",
-          deliveryMethod: "smtp-html",
-          emailStatus: "queued",
-          invitedAt: inviteCreatedAtIso,
-          emailError: null,
+          ...pendingInvite,
+          emailStatus: "failed",
+          emailError: inviteEmailError,
         };
+        logger.error("assignStationUser: invite email failed", {
+          email: normalizedEmail,
+          inviteId,
+          message: inviteEmailError,
+        });
+        await inviteRef.set({
+          emailStatus: "failed" as InviteEmailStatus,
+          inviteSentAt: null,
+          emailError: inviteEmailError,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
       }
-
-      await batch.commit();
-
-      if (assignmentStatus === "pending") {
-        try {
-          await sendStationInviteEmail({
-            email: normalizedEmail,
-            firstName,
-            stationName,
-            brand,
-            barangay,
-            acceptUrl,
-          });
-
-          inviteEmailStatus = "sent";
-          pendingInvite = pendingInvite ? {
-            ...pendingInvite,
-            emailStatus: "sent",
-            inviteSentAt: new Date().toISOString(),
-            emailError: null,
-          } : pendingInvite;
-          await inviteRef.set({
-            emailStatus: "sent" as InviteEmailStatus,
-            inviteSentAt: FieldValue.serverTimestamp(),
-            emailError: null,
-            updatedAt: FieldValue.serverTimestamp(),
-          }, {merge: true});
-        } catch (emailErr: unknown) {
-          inviteEmailStatus = "failed";
-          inviteEmailError = emailErr instanceof Error ? emailErr.message : "Failed to send invite email.";
-          pendingInvite = pendingInvite ? {
-            ...pendingInvite,
-            emailStatus: "failed",
-            emailError: inviteEmailError,
-          } : pendingInvite;
-          logger.error("assignStationUser: invite email failed", {
-            email: normalizedEmail,
-            uid: userRecord.uid,
-            stationDirectoryId: data.stationDirectoryId,
-            message: inviteEmailError,
-          });
-          await inviteRef.set({
-            emailStatus: "failed" as InviteEmailStatus,
-            inviteSentAt: null,
-            emailError: inviteEmailError,
-            updatedAt: FieldValue.serverTimestamp(),
-          }, {merge: true});
-        }
-      }
-
-      const assignedCountSnapshot = await db.collection("accounts")
-        .where("role", "==", "station")
-        .where("stationDirectoryId", "==", data.stationDirectoryId)
-        .get();
 
       res.status(200).json({
-        uid: userRecord.uid,
+        uid: inviteId,
         email: normalizedEmail,
         firstName,
         lastName,
-        stationDirectoryId: data.stationDirectoryId,
+        stationDirectoryId,
         stationSourceId,
         stationName,
-        assignedUserCount: assignedCountSnapshot.size,
-        assignmentStatus,
-        inviteStatus: assignmentStatus,
+        assignedUserCount: 0,
+        assignmentStatus: "pending",
+        inviteStatus: "pending",
         inviteEmailStatus,
         inviteEmailError,
-        inviteDeliveryMethod: assignmentStatus === "pending" ? "smtp-html" : "none",
-        isNewUser: created,
+        inviteDeliveryMethod: "smtp-html",
+        isNewUser: true,
         pendingInvite,
       });
     } catch (err: unknown) {
@@ -606,7 +429,7 @@ export const assignStationUser = onRequest(
       });
       sendHttpsError(
         res,
-        new HttpsError("internal", "Failed to assign station user."),
+        new HttpsError("internal", "Failed to send station invite."),
       );
     }
   }

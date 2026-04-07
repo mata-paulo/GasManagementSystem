@@ -497,20 +497,11 @@ function getStationRowPriceEntries(
 }
 
 function findStaticStation(stationName: string, brand: string, barangay: string) {
-  const nameKey = normalizeText(stationName);
-  const brandKeyValue = normalizeBrand(brand);
-  const barangayKey = normalizeText(barangay);
-
-  return (
-    STATIC_STATIONS.find((item) => normalizeText(item.name) === nameKey) ??
-    STATIC_STATIONS.find(
-      (item) =>
-        normalizeBrand(item.brand) === brandKeyValue &&
-        normalizeText(item.barangay) === barangayKey,
-    ) ??
-    STATIC_STATIONS.find((item) => normalizeBrand(item.brand) === brandKeyValue) ??
-    null
-  );
+  // Static/mock station list was removed from this repo. Keep helper for legacy call sites.
+  void stationName;
+  void brand;
+  void barangay;
+  return null;
 }
 
 function findDirectoryStation(
@@ -598,6 +589,8 @@ export default function AdminDashboard({ onLogout }) {
   const [inviteModalError, setInviteModalError] = useState("");
   const [inviteModalSuccess, setInviteModalSuccess] = useState("");
   const [inviteModalSending, setInviteModalSending] = useState(false);
+  const [inviteModalLink, setInviteModalLink] = useState<string>("");
+  const [inviteModalExpiresAt, setInviteModalExpiresAt] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
     residents: [],
@@ -1065,7 +1058,7 @@ export default function AdminDashboard({ onLogout }) {
           : `The invite was saved as pending for ${email}, but the email could not be sent automatically.`
       );
     } catch (err) {
-      setUserFormError(err instanceof Error ? err.message : "Failed to assign station user.");
+      setUserFormError(err instanceof Error ? err.message : "Failed to send station invite.");
     } finally {
       setAssigningUser(false);
     }
@@ -1077,35 +1070,24 @@ export default function AdminDashboard({ onLogout }) {
       setInviteModalError("Please enter an email address.");
       return;
     }
-    if (inviteModalStationId === null) {
-      setInviteModalError("Please select a station.");
-      return;
-    }
-    const station = STATIONS.find((s) => s.id === inviteModalStationId) ?? null;
-    const directory = station
-      ? findDirectoryStation(
-          dashboardData.stationDirectory,
-          station.name,
-          station.brand,
-          station.barangay,
-        )
-      : null;
-    if (!directory) {
-      setInviteModalError("Selected station is not linked to a directory record.");
-      return;
-    }
     setInviteModalSending(true);
     setInviteModalError("");
     setInviteModalSuccess("");
+    setInviteModalLink("");
+    setInviteModalExpiresAt("");
     try {
-      const result = await assignStationUser({ stationDirectoryId: directory.id, email });
+      const result = await assignStationUser({ email });
       setInviteModalEmail("");
+      if (result.assignmentStatus === "pending" && result.pendingInvite?.acceptUrl) {
+        setInviteModalLink(result.pendingInvite.acceptUrl);
+        setInviteModalExpiresAt(result.pendingInvite.expiresAt ?? "");
+      }
       if (result.assignmentStatus === "pending" && result.inviteEmailStatus === "sent") {
-        setInviteModalSuccess(`Invite sent to ${email} for ${station!.name}.`);
+        setInviteModalSuccess(`Invite sent to ${email}.`);
       } else if (result.assignmentStatus === "pending") {
-        setInviteModalSuccess(`Invite created for ${email} — ${station!.name}.`);
+        setInviteModalSuccess(`Invite created for ${email}.`);
       } else {
-        setInviteModalSuccess(`User assigned to ${station!.name}.`);
+        setInviteModalSuccess(`User assigned to ${email}.`);
       }
       try {
         const refreshed = await fetchAdminDashboardData();
@@ -1115,6 +1097,24 @@ export default function AdminDashboard({ onLogout }) {
       setInviteModalError(err instanceof Error ? err.message : "Failed to send invite.");
     } finally {
       setInviteModalSending(false);
+    }
+  }
+
+  async function copyTextToClipboard(value: string) {
+    const text = value.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
     }
   }
 
@@ -3116,10 +3116,26 @@ export default function AdminDashboard({ onLogout }) {
                     type="email"
                     placeholder="user@example.com"
                     value={inviteModalEmail}
-                    onChange={(e) => setInviteModalEmail(e.target.value)}
+                    onChange={(e) => { setInviteModalEmail(e.target.value); setInviteModalLink(""); setInviteModalExpiresAt(""); }}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
                   />
                   <p className="text-[11px] text-slate-400 mt-1.5">An invite email will be sent with a setup link for the new station to register and activate access.</p>
+
+                  <div className="mt-3 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyTextToClipboard(inviteModalLink)}
+                      disabled={!inviteModalLink}
+                      className="w-full rounded-xl border border-slate-200 bg-white text-[#003366] font-black py-2.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-all"
+                    >
+                      Copy Invite Link
+                    </button>
+                    {inviteModalExpiresAt && (
+                      <p className="text-[11px] text-slate-500">
+                        Expires {new Date(inviteModalExpiresAt).toLocaleString("en-PH")}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 {inviteModalError && (
                   <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{inviteModalError}</div>
@@ -3226,7 +3242,10 @@ export default function AdminDashboard({ onLogout }) {
                       <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">
                         No pending invites for this station.
                       </div>
-                    ) : selectedPendingInvites.map((invite) => (
+                    ) : selectedPendingInvites.map((invite) => {
+                      const expiresAt = invite.expiresAt ? new Date(invite.expiresAt) : null;
+                      const isExpired = expiresAt && Number.isFinite(expiresAt.getTime()) && Date.now() > expiresAt.getTime();
+                      return (
                       <div key={invite.id} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -3237,6 +3256,11 @@ export default function AdminDashboard({ onLogout }) {
                             <p className="text-[11px] text-slate-500 mt-1">
                               Invited {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "just now"}
                             </p>
+                            {invite.expiresAt && (
+                              <p className={`text-[11px] mt-0.5 ${isExpired ? "text-red-600 font-bold" : "text-slate-500"}`}>
+                                {isExpired ? "Invite expired — resend to reset expiry" : `Expires ${new Date(invite.expiresAt).toLocaleString("en-PH")}`}
+                              </p>
+                            )}
                             {invite.emailError && (
                               <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
                             )}
@@ -3248,10 +3272,19 @@ export default function AdminDashboard({ onLogout }) {
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
                               {inviteEmailStatusLabel(invite.emailStatus)}
                             </span>
+                            {invite.acceptUrl && (
+                              <button
+                                type="button"
+                                onClick={() => void copyTextToClipboard(invite.acceptUrl ?? "")}
+                                className="text-[10px] font-black text-[#003366] hover:underline mt-1"
+                              >
+                                Copy link
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
 

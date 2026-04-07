@@ -1,7 +1,5 @@
 import { useCallback, useState, useEffect } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth as firebaseAuth, db } from "@/lib/firebase/client";
+import type { AuthUser } from "@/lib/auth/authService";
 import { useAuth } from "@/app/providers/AuthContext";
 import {
   acceptPendingStationAssignment,
@@ -36,8 +34,9 @@ import {
   type StationNavId,
 } from "@/shared/navigation/stationRoutes";
 
-function stationTabToScreen(tab: StationNavId): "dashboard" | "history" | "settings" {
+function stationTabToScreen(tab: StationNavId): "dashboard" | "history" | "settings" | "fuel-setup" {
   if (tab === "history") return "history";
+  if (tab === "fuel-pricing") return "fuel-setup";
   if (tab === "settings") return "settings";
   return "dashboard";
 }
@@ -259,7 +258,7 @@ export default function App() {
 
   // ─── Tab navigation ────────────────────────────────────────────────────────
   const handleOfficerTabChange = (tab) => {
-    if (tab === "dashboard" || tab === "history" || tab === "settings") {
+    if (tab === "dashboard" || tab === "history" || tab === "settings" || tab === "fuel-pricing") {
       navigateStation(tab);
     }
   };
@@ -307,33 +306,9 @@ export default function App() {
   };
 
   const handleStationRegisterSuccess = async (stationData) => {
-    try {
-      const cred = await createUserWithEmailAndPassword(firebaseAuth, stationData.googleEmail, stationData.password);
-      const uid = cred.user.uid;
-      const firestoreData: Record<string, unknown> = {
-        uid,
-        role: "station",
-        email: stationData.googleEmail,
-        officerFirstName: stationData.officerFirstName,
-        officerLastName:  stationData.officerLastName,
-        brand:            stationData.brand,
-        barangay:         stationData.barangay,
-        availableFuels:   stationData.availableFuels,
-        fuelCapacities:   stationData.fuelCapacities,
-        assignmentStatus: "active",
-        status:           "online",
-        registeredAt:     serverTimestamp(),
-      };
-      if (stationData.lat != null && stationData.lon != null) {
-        firestoreData.lat = stationData.lat;
-        firestoreData.lon = stationData.lon;
-      }
-      await setDoc(doc(db, "accounts", uid), firestoreData);
-      setOfficer({ ...stationData, uid });
-    } catch {
-      // Fallback: still enter dashboard in demo/emulator mode
-      setOfficer(stationData);
-    }
+    const stationUser = stationData as AuthUser;
+    login(stationUser, "station");
+    setOfficer(stationUser);
     navigateStation("dashboard", true);
   };
 

@@ -136,10 +136,12 @@ export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
  * Coerces `stationDirectoryId` so numeric IDs from the UI still validate.
  */
 export const assignStationUserSchema = z.object({
+  // Optional — admin can send a generic invite (station details completed later).
   stationDirectoryId: z
     .union([z.string(), z.number()])
     .transform((v) => String(v).trim())
-    .refine((s) => s.length > 0, "Station is required."),
+    .refine((s) => s.length > 0, "Station is required.")
+    .optional(),
   email: z
     .string()
     .trim()

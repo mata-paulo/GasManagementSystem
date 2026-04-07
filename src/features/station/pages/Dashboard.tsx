@@ -189,7 +189,15 @@ export default function Dashboard({
     (a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime()
   );
   const totalRevenue   = recentTransactions.reduce((sum, tx) => sum + tx.totalPaid, 0);
-  const totalDispensed = recentTransactions.reduce((sum, tx) => sum + tx.liters, 0);
+  const totalDispensedFromFuels =
+    typeof officer?.fuelTotalDispensed === "number"
+      ? officer.fuelTotalDispensed
+      : Object.values((officer as unknown as { fuelDispensed?: Record<string, number> })?.fuelDispensed ?? {})
+          .reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
+  const totalDispensed =
+    totalDispensedFromFuels > 0
+      ? totalDispensedFromFuels
+      : recentTransactions.reduce((sum, tx) => sum + tx.liters, 0);
 
   const persistPresence = (next: "online" | "offline") => {
     const uid = typeof officer?.uid === "string" ? officer.uid : "";

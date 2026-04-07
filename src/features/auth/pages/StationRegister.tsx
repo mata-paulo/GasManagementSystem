@@ -1,10 +1,15 @@
 import { useState, useMemo, useRef, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { FirebaseError } from "firebase/app";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import type { AuthUser } from "@/lib/auth/authService";
+import { auth, db } from "@/lib/firebase/client";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 
@@ -432,13 +437,7 @@ function SheetPicker({ value, onChange, options, placeholder, icon }: SheetPicke
 type StationRegisterProps = {
   onBack: () => void;
   onSignIn?: () => void;
-  onSuccess: (payload: {
-    barangay: string; brand: string; officerFirstName: string;
-    officerLastName: string; googleEmail: string; password: string;
-    availableFuels: string[]; fuelCapacities: Record<string, number>;
-    role: string; registeredAt: string;
-    lat?: number; lon?: number;
-  }) => void;
+  onSuccess: (user: AuthUser) => void;
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -456,6 +455,8 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   const [agreedToTerms,  setAgreedToTerms]  = useState(false);
   const [error,          setError]          = useState("");
   const [showConfirm,    setShowConfirm]    = useState(false);
+  const [confirmError,   setConfirmError]   = useState("");
+  const [registering,    setRegistering]    = useState(false);
 
   const selectedFuels = form.brand ? BRAND_FUELS[form.brand] : [];
   const activeFuels   = selectedFuels.filter((f) => enabledFuels.has(f));
@@ -477,6 +478,8 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
 
   const validateStepTwo = () => {
     if (!form.brand) { setError("Please select a brand."); return false; }
+    if (!form.barangay) { setError("Please select a barangay."); return false; }
+    if (form.lat === null || form.lon === null) { setError("Please pin your station location on the map."); return false; }
     if (activeFuels.length === 0) { setError("Please enable at least one fuel type."); return false; }
     if (activeFuels.some((f) => { const v = fuelCapacities[f]; return !v || Number(v) <= 0; })) {
       setError("Please enter capacity for all enabled fuel types.");
@@ -493,21 +496,92 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
     if (validateStepTwo()) setShowConfirm(true);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    setConfirmError("");
+    setRegistering(true);
     const { barangay, brand, officerFirstName, officerLastName, googleEmail, password, lat, lon } = form;
-    setShowConfirm(false);
-    onSuccess({
-      barangay, brand,
-      officerFirstName: officerFirstName.trim(),
-      officerLastName:  officerLastName.trim(),
-      googleEmail:      googleEmail.trim(),
-      password,
-      availableFuels:   activeFuels,
-      fuelCapacities:   Object.fromEntries(activeFuels.map((f) => [f, Number(fuelCapacities[f] || 0)])),
-      role: "station",
-      registeredAt: new Date().toISOString(),
-      ...(lat !== null && lon !== null ? { lat, lon } : {}),
-    });
+    const email = googleEmail.trim().toLowerCase();
+    const nextOfficerFirstName = officerFirstName.trim();
+    const nextOfficerLastName = officerLastName.trim();
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = cred.user.uid;
+
+      const fuelCapacityNumbers = Object.fromEntries(
+        activeFuels.map((f) => [f, Number(fuelCapacities[f] || 0)] as const),
+      );
+      const totalCapacity = Object.values(fuelCapacityNumbers).reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
+
+      const firestoreData: Record<string, unknown> = {
+        role: "station",
+        email,
+        firstName: nextOfficerFirstName,
+        lastName: nextOfficerLastName,
+        brand,
+        barangay,
+        assignmentStatus: "active",
+        status: "online",
+        registeredAt: serverTimestamp(),
+        stationDirectoryId: uid,
+      };
+      const stationDirectoryData: Record<string, unknown> = {
+        name: [(brand || "").trim(), "Station"].filter(Boolean).join(" "),
+        brand,
+        address: barangay,
+        hours: "See station",
+        lat,
+        lon,
+        fuels: activeFuels.map((label) => ({
+          label,
+          capacityLiters: fuelCapacityNumbers[label] ?? 0,
+          currentCapacity: fuelCapacityNumbers[label] ?? 0,
+          price: 0,
+          dispensed: 0,
+        })),
+        barangay,
+        officer: [nextOfficerFirstName, nextOfficerLastName].filter(Boolean).join(" ").trim(),
+        capacity: totalCapacity,
+        dispensed: 0,
+        status: "online",
+        accountUid: uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, "accounts", uid), firestoreData);
+      batch.set(doc(db, "stationDirectory", uid), stationDirectoryData);
+      await batch.commit();
+
+      const authUser: AuthUser = {
+        uid,
+        email,
+        role: "station",
+        loginAt: new Date().toISOString(),
+        firstName: nextOfficerFirstName,
+        lastName: nextOfficerLastName,
+        brand,
+        barangay,
+        assignmentStatus: "active",
+        status: "online",
+        registeredAt: new Date().toISOString(),
+        stationDirectoryId: uid,
+      };
+
+      setShowConfirm(false);
+      onSuccess(authUser);
+    } catch (err) {
+      if (err instanceof FirebaseError) {
+        setConfirmError(err.message || "Registration failed.");
+      } else if (err instanceof Error) {
+        setConfirmError(err.message || "Registration failed.");
+      } else {
+        setConfirmError("Registration failed. Please try again.");
+      }
+    } finally {
+      setRegistering(false);
+    }
   };
 
   // ── Shared form sections ──────────────────────────────────────────────────
@@ -753,14 +827,22 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
                 ))}
               </div>
             </div>
+            {confirmError && (
+              <div className="flex items-center gap-2 bg-error-container text-on-error-container px-5 py-3 text-sm">
+                <span className="material-symbols-outlined text-base shrink-0">error</span>
+                {confirmError}
+              </div>
+            )}
             <div className="flex gap-3 px-5 pb-5">
-              <button type="button" onClick={() => setShowConfirm(false)}
-                className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl text-sm active:scale-95 transition-all">
+              <button type="button" disabled={registering} onClick={() => setShowConfirm(false)}
+                className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl text-sm active:scale-95 transition-all disabled:opacity-50">
                 Go Back
               </button>
-              <button type="button" onClick={handleConfirm}
-                className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-xl text-sm active:scale-95 transition-all">
-                Confirm
+              <button type="button" disabled={registering} onClick={() => void handleConfirm()}
+                className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-xl text-sm active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+                {registering
+                  ? <><span className="material-symbols-outlined text-xl animate-spin">progress_activity</span>Registering…</>
+                  : "Confirm"}
               </button>
             </div>
           </div>

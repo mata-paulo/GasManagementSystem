@@ -54,6 +54,10 @@ export interface StationAccount extends AuthUser {
   availableFuels?: string[];
   fuelCapacities?: Record<string, number>;
   fuelInventory?: Record<string, number>;
+  /** Lifetime dispensed liters per fuel type (from stationDirectory.fuels[].dispensed). */
+  fuelDispensed?: Record<string, number>;
+  /** Sum of all `fuelDispensed` values (liters). */
+  fuelTotalDispensed?: number;
   fuelPrices?: Record<string, number>;
   assignmentStatus?: string;
   presenceStatus?: string;
@@ -121,7 +125,6 @@ export interface StationBrandColors {
 
 export interface StationDirectoryRecord {
   id: string;
-  sourceId: number;
   name: string;
   brand: string;
   address: string;
@@ -150,11 +153,13 @@ export interface StationInviteRecord {
   brand?: string;
   barangay?: string;
   status: "pending" | "accepted";
+  acceptUrl?: string;
   deliveryMethod?: string;
   emailStatus?: string;
   invitedByUid?: string;
   invitedAt?: string;
   inviteSentAt?: string;
+  expiresAt?: string;
   acceptedAt?: string;
   emailError?: string;
   updatedAt?: string;
@@ -168,13 +173,14 @@ export interface PendingInviteResponse extends StationInviteRecord {
   brand: string;
   barangay: string;
   status: "pending";
+  acceptUrl: string;
   deliveryMethod: string;
   emailStatus: string;
   invitedAt: string;
 }
 
 export interface AssignStationUserInput {
-  stationDirectoryId: string;
+  stationDirectoryId?: string;
   email: string;
   /** Optional; if omitted, names are derived from the email local part on the server. */
   firstName?: string;
@@ -450,7 +456,6 @@ function mapTransaction(id: string, data: Record<string, unknown>): DispenseTran
 }
 
 function mapStationDirectoryRecord(id: string, data: Record<string, unknown>): StationDirectoryRecord | null {
-  const sourceId = asNumber(data.sourceId);
   const name = asString(data.name);
   const brand = asString(data.brand);
   const address = asString(data.address);
@@ -463,7 +468,6 @@ function mapStationDirectoryRecord(id: string, data: Record<string, unknown>): S
   const resolvedLon = lon ?? location?.longitude;
 
   if (
-    sourceId == null ||
     name == null ||
     brand == null ||
     address == null ||
@@ -476,7 +480,6 @@ function mapStationDirectoryRecord(id: string, data: Record<string, unknown>): S
 
   return {
     id,
-    sourceId,
     name,
     brand,
     address,
@@ -523,11 +526,13 @@ function mapStationInviteRecord(id: string, data: Record<string, unknown>): Stat
     brand: asString(data.brand),
     barangay: asString(data.barangay),
     status,
+    acceptUrl: asString(data.acceptUrl),
     deliveryMethod: asString(data.deliveryMethod),
     emailStatus: asString(data.emailStatus),
     invitedByUid: asString(data.invitedByUid),
     invitedAt: toIsoString(data.invitedAt),
     inviteSentAt: toIsoString(data.inviteSentAt),
+    expiresAt: toIsoString(data.expiresAt),
     acceptedAt: toIsoString(data.acceptedAt),
     emailError: asString(data.emailError),
     updatedAt: toIsoString(data.updatedAt),
@@ -749,6 +754,7 @@ async function recoverAssignedStationUserResult(
           brand: invite.brand ?? "",
           barangay: invite.barangay ?? "",
           status: "pending",
+          acceptUrl: invite.acceptUrl ?? "",
           deliveryMethod: invite.deliveryMethod ?? "unknown",
           emailStatus: invite.emailStatus ?? "queued",
           invitedAt: invite.invitedAt ?? new Date().toISOString(),
@@ -820,7 +826,7 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
   const stationDirectory = stationDirectorySnapshot.docs
     .map((item) => mapStationDirectoryRecord(item.id, item.data() as Record<string, unknown>))
     .filter((item): item is StationDirectoryRecord => item != null)
-    .sort((a, b) => a.sourceId - b.sourceId);
+    .sort((a, b) => a.name.localeCompare(b.name));
   const stationInvites = stationInvitesSnapshot.docs
     .map((item) => mapStationInviteRecord(item.id, item.data() as Record<string, unknown>))
     .filter((item): item is StationInviteRecord => item != null)
@@ -847,7 +853,78 @@ export async function fetchResidentAccount(uid: string): Promise<ResidentAccount
 
 export async function fetchStationAccount(uid: string): Promise<StationAccount | null> {
   const account = await fetchAccountByUid(uid);
-  return account?.role === "station" ? account : null;
+  if (account?.role !== "station") return null;
+
+  const directoryId = account.stationDirectoryId ?? account.uid;
+  try {
+    const snap = await getDoc(doc(db, "stationDirectory", directoryId));
+    if (!snap.exists()) return account;
+    const data = snap.data() as Record<string, unknown>;
+    const fuelsRaw = data.fuels;
+    const fuels = Array.isArray(fuelsRaw)
+      ? fuelsRaw
+          .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const label = typeof (item as { label?: unknown }).label === "string"
+              ? (item as { label: string }).label
+              : "";
+            const capacityLiters = asNumber((item as { capacityLiters?: unknown }).capacityLiters) ?? 0;
+            const price = asNumber((item as { price?: unknown }).price) ?? 0;
+            const hasCurrentCapacity = (item as { currentCapacity?: unknown }).currentCapacity != null;
+            // Backward-compat:
+            // - Old docs used `dispensed` as "current inventory"
+            // - New docs use `currentCapacity` as current inventory, and `dispensed` as lifetime total
+            const currentCapacity =
+              asNumber((item as { currentCapacity?: unknown }).currentCapacity) ??
+              asNumber((item as { dispensed?: unknown }).dispensed) ??
+              0;
+            const dispensed =
+              hasCurrentCapacity
+                ? (asNumber((item as { dispensed?: unknown }).dispensed) ?? 0)
+                : 0;
+            return label.trim()
+              ? { label: label.trim(), capacityLiters, price, currentCapacity, dispensed }
+              : null;
+          })
+          .filter((v): v is { label: string; capacityLiters: number; price: number; currentCapacity: number; dispensed: number } => v != null)
+      : [];
+
+    // If account no longer carries fuel definitions, derive from stationDirectory.fuels
+    const derivedAvailableFuels = fuels.map((f) => f.label);
+    const derivedFuelCapacities = Object.fromEntries(fuels.map((f) => [f.label, f.capacityLiters]));
+    const derivedFuelPrices = Object.fromEntries(fuels.map((f) => [f.label, f.price]));
+    const derivedFuelInventory = Object.fromEntries(fuels.map((f) => [f.label, f.currentCapacity]));
+    const derivedFuelDispensed = Object.fromEntries(fuels.map((f) => [f.label, f.dispensed]));
+    const derivedFuelTotalDispensed = fuels.reduce((sum, f) => sum + (Number.isFinite(f.dispensed) ? f.dispensed : 0), 0);
+
+    return {
+      ...account,
+      availableFuels:
+        Array.isArray(account.availableFuels) && account.availableFuels.length > 0
+          ? account.availableFuels
+          : derivedAvailableFuels,
+      fuelCapacities:
+        account.fuelCapacities && Object.keys(account.fuelCapacities).length > 0
+          ? account.fuelCapacities
+          : derivedFuelCapacities,
+      fuelPrices:
+        account.fuelPrices && Object.keys(account.fuelPrices).length > 0
+          ? account.fuelPrices
+          : derivedFuelPrices,
+      // Source of truth: stationDirectory.fuels[].currentCapacity
+      fuelInventory: derivedFuelInventory,
+      fuelDispensed:
+        account.fuelDispensed && Object.keys(account.fuelDispensed).length > 0
+          ? account.fuelDispensed
+          : derivedFuelDispensed,
+      fuelTotalDispensed:
+        typeof account.fuelTotalDispensed === "number"
+          ? account.fuelTotalDispensed
+          : derivedFuelTotalDispensed,
+    };
+  } catch {
+    return account;
+  }
 }
 
 export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]> {
@@ -875,7 +952,6 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
       const officerName = [data.officerFirstName, data.officerLastName].filter(Boolean).join(" ") || undefined;
       return {
         id: item.id,
-        sourceId: 90000 + idx, // high sourceId to sort after directory entries
         name: (data.stationName as string | undefined) || [(data.brand as string), "Station –", (data.stationCode as string)].filter(Boolean).join(" "),
         brand: (data.brand as string) || "",
         address: (data.barangay as string) || "",
@@ -889,7 +965,7 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
         status: (data.status as string) || "online",
       } satisfies StationDirectoryRecord;
     })
-    .filter((r): r is StationDirectoryRecord => r !== null);
+    .filter((r) => r !== null) as StationDirectoryRecord[];
 
   // Merge: pinned account records only added if their id isn't already in the directory
   const directoryIds = new Set(directoryRecords.map((r) => r.id));
@@ -898,7 +974,7 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
     ...pinnedRecords.filter((r) => !directoryIds.has(r.id)),
   ];
 
-  return merged.sort((a, b) => a.sourceId - b.sourceId);
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function fetchResidentTransactions(uid: string): Promise<DispenseTransaction[]> {
@@ -1049,11 +1125,33 @@ export async function saveStationFuelSettings(
     throw new Error("You must be signed in as this station user to update fuel settings.");
   }
 
-  await updateDoc(doc(db, "accounts", uid), {
-    availableFuels: Object.keys(input.fuelInventory),
-    fuelInventory: input.fuelInventory,
-    fuelCapacities: input.fuelCapacities,
-    fuelPrices: input.fuelPrices,
+  const directoryId = uid;
+  const prevSnap = await getDoc(doc(db, "stationDirectory", directoryId));
+  const prevDispensedByFuel: Record<string, number> = {};
+  if (prevSnap.exists()) {
+    const prevData = prevSnap.data() as Record<string, unknown>;
+    const prevFuels = Array.isArray(prevData.fuels) ? prevData.fuels : [];
+    for (const item of prevFuels) {
+      if (!item || typeof item !== "object") continue;
+      const label = typeof (item as { label?: unknown }).label === "string" ? (item as { label: string }).label : "";
+      if (!label.trim()) continue;
+      // Only treat `dispensed` as lifetime if the doc is already on the new shape.
+      const hasCurrentCapacity = (item as { currentCapacity?: unknown }).currentCapacity != null;
+      const lifetime = hasCurrentCapacity ? (asNumber((item as { dispensed?: unknown }).dispensed) ?? 0) : 0;
+      prevDispensedByFuel[label.trim()] = lifetime;
+    }
+  }
+
+  const fuels = Object.keys(input.fuelInventory).map((label) => ({
+    label,
+    capacityLiters: Number(input.fuelCapacities[label] ?? 0),
+    currentCapacity: Number(input.fuelInventory[label] ?? 0),
+    dispensed: Number(prevDispensedByFuel[label] ?? 0),
+    price: Number(input.fuelPrices[label] ?? 0),
+  }));
+
+  await updateDoc(doc(db, "stationDirectory", directoryId), {
+    fuels,
     updatedAt: serverTimestamp(),
   });
 
@@ -1151,6 +1249,7 @@ export async function recordDispenseTransaction(
   const transactionRef = doc(collection(db, "transactions"));
   const stationRef = doc(db, "accounts", station.uid);
   const residentRef = doc(db, "accounts", resident.uid);
+  const stationDirectoryRef = doc(db, "stationDirectory", station.stationDirectoryId ?? station.uid);
   const batch = writeBatch(db);
 
   batch.set(transactionRef, {
@@ -1179,6 +1278,49 @@ export async function recordDispenseTransaction(
     fuelInventory: nextFuelInventory,
     updatedAt: serverTimestamp(),
   });
+
+  // Update stationDirectory fuel stats (currentCapacity + lifetime dispensed).
+  const directorySnap = await getDoc(stationDirectoryRef);
+  if (directorySnap.exists()) {
+    const dirData = directorySnap.data() as Record<string, unknown>;
+    const fuelsRaw = Array.isArray(dirData.fuels) ? dirData.fuels : [];
+    const nextFuels = fuelsRaw
+      .map((item) => {
+        if (!item || typeof item !== "object") return item;
+        const label = typeof (item as { label?: unknown }).label === "string" ? (item as { label: string }).label.trim() : "";
+        if (!label) return item;
+
+        const hasCurrentCapacity = (item as { currentCapacity?: unknown }).currentCapacity != null;
+        const currentCapacity =
+          asNumber((item as { currentCapacity?: unknown }).currentCapacity) ??
+          asNumber((item as { dispensed?: unknown }).dispensed) ??
+          0;
+        const lifetimeDispensed =
+          hasCurrentCapacity
+            ? (asNumber((item as { dispensed?: unknown }).dispensed) ?? 0)
+            : 0;
+
+        if (label !== selectedFuel) {
+          // Normalize shape to include currentCapacity without changing semantics.
+          return {
+            ...item,
+            currentCapacity,
+            dispensed: lifetimeDispensed,
+          };
+        }
+
+        return {
+          ...item,
+          currentCapacity: roundLiters(Math.max(currentCapacity - liters, 0)),
+          dispensed: roundLiters(lifetimeDispensed + liters),
+        };
+      });
+
+    batch.update(stationDirectoryRef, {
+      fuels: nextFuels,
+      updatedAt: serverTimestamp(),
+    });
+  }
 
   batch.update(residentRef, {
     fuelUsed: nextFuelUsed,
@@ -1233,7 +1375,7 @@ export async function assignStationUser(
 ): Promise<AssignedStationUserResult> {
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    throw new Error("You must be signed in as an admin to assign station users.");
+    throw new Error("You must be signed in as an admin to send station invites.");
   }
 
   const token = await currentUser.getIdToken();
@@ -1251,11 +1393,11 @@ export async function assignStationUser(
     const message = payload?.error?.message;
     throw new Error(typeof message === "string" && message.trim()
       ? message
-      : "Failed to assign station user.");
+      : "Failed to send station invite.");
   }
 
   if (!payload || typeof payload !== "object") {
-    throw new Error("Assign station user returned an invalid response.");
+    throw new Error("Station invite returned an invalid response.");
   }
 
   const result = payload as Partial<AssignedStationUserResult>;
@@ -1303,7 +1445,13 @@ export async function assignStationUser(
     isNewUser: typeof result.isNewUser === "boolean" ? result.isNewUser : false,
     pendingInvite:
       result.pendingInvite && typeof result.pendingInvite === "object"
-        ? result.pendingInvite
+        ? {
+            ...(result.pendingInvite as unknown as Record<string, unknown>),
+            acceptUrl:
+              typeof (result.pendingInvite as {acceptUrl?: unknown}).acceptUrl === "string"
+                ? (result.pendingInvite as {acceptUrl: string}).acceptUrl
+                : "",
+          } as PendingInviteResponse
         : result.assignmentStatus === "pending"
           ? {
               id: result.uid,
@@ -1317,6 +1465,7 @@ export async function assignStationUser(
               brand: "",
               barangay: "",
               status: "pending",
+              acceptUrl: "",
               deliveryMethod:
                 typeof result.inviteDeliveryMethod === "string" ? result.inviteDeliveryMethod : "unknown",
               emailStatus:
@@ -1345,14 +1494,29 @@ export async function acceptPendingStationAssignment(uid: string): Promise<boole
     return false;
   }
 
+  const inviteRef = doc(db, "stationInvites", uid);
+  const inviteSnap = await getDoc(inviteRef);
+  if (inviteSnap.exists()) {
+    const inviteData = inviteSnap.data() as Record<string, unknown>;
+    const expiresAtRaw = inviteData.expiresAt;
+    const expiresAt =
+      expiresAtRaw instanceof Timestamp
+        ? expiresAtRaw.toDate()
+        : typeof expiresAtRaw === "string"
+          ? new Date(expiresAtRaw)
+          : null;
+    if (expiresAt && Number.isFinite(expiresAt.getTime()) && Date.now() > expiresAt.getTime()) {
+      // Invite expired — admin must resend to reset expiry.
+      return false;
+    }
+  }
+
   await updateDoc(accountRef, {
     assignmentStatus: "active",
     inviteAcceptedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  const inviteRef = doc(db, "stationInvites", uid);
-  const inviteSnap = await getDoc(inviteRef);
   if (inviteSnap.exists()) {
     await updateDoc(inviteRef, {
       status: "accepted",
