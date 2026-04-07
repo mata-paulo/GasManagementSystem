@@ -58,6 +58,20 @@
         }
       },
       {
+        "source": "/api/validateStationRegistrationToken",
+        "run": {
+          "serviceId": "validatestationregistrationtoken",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/api/finalizeStationRegistration",
+        "run": {
+          "serviceId": "finalizestationregistration",
+          "region": "asia-southeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
