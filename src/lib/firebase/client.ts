@@ -95,9 +95,9 @@ export const db = getFirestore(app);
 const useEmulator =
   envValue("VITE_USE_FIREBASE_EMULATORS", "VITE_PUBLIC_USE_EMULATOR") === "true";
 
-if (import.meta.env.DEV && useEmulator) {
+// `vite build` sets DEV=false; hosting emulator + `VITE_PUBLIC_USE_EMULATOR=true` still needs these hooks.
+if (useEmulator) {
   connectFunctionsEmulator(functions, "127.0.0.1", 5001);
-  // Your Functions/Firestore emulators usually run Auth on 9099.
   connectAuthEmulator(auth, "http://127.0.0.1:9099");
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
 }

@@ -198,16 +198,6 @@ const statusBadgeClass = (s: string) =>
   s === "Maxed" ? "badge-maxed" : s === "New" ? "badge-new"
   : s === "Online" ? "badge-online" : s === "Offline" ? "badge-offline" : "badge-active";
 
-const inviteEmailBadgeClass = (status?: string) =>
-  status === "sent"
-    ? "bg-green-100 text-green-700"
-    : status === "failed"
-      ? "bg-red-100 text-red-700"
-      : "bg-slate-100 text-slate-600";
-
-const inviteEmailStatusLabel = (status?: string) =>
-  status === "sent" ? "Email Sent" : status === "failed" ? "Email Failed" : "Email Queued";
-
 const brandBadgeClass = (brand: string) =>
   ({ Shell: "badge-brand-shell", Petron: "badge-brand-petron", Caltex: "badge-brand-caltex",
      Phoenix: "badge-brand-phoenix", "Sea Oil": "badge-brand-seaoil",
@@ -591,6 +581,8 @@ export default function AdminDashboard({ onLogout }) {
   const [inviteModalSending, setInviteModalSending] = useState(false);
   const [inviteModalLink, setInviteModalLink] = useState<string>("");
   const [inviteModalExpiresAt, setInviteModalExpiresAt] = useState<string>("");
+  const [inviteCopySnackbarOpen, setInviteCopySnackbarOpen] = useState(false);
+  const inviteCopySnackbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState<AdminDashboardData>({
     residents: [],
@@ -911,25 +903,11 @@ export default function AdminDashboard({ onLogout }) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [dashboardData.stationDirectory, dashboardData.stations, selectedUserDrawerStation]);
 
-  const selectedPendingInvites = useMemo(() => {
-    if (!selectedUserDrawerDirectory) return [];
-
-    return dashboardData.stationInvites
-      .filter((invite) =>
-        invite.stationDirectoryId === selectedUserDrawerDirectory.id &&
-        invite.status === "pending"
-      )
-      .sort((a, b) => (b.invitedAt ?? "").localeCompare(a.invitedAt ?? ""));
-  }, [dashboardData.stationInvites, selectedUserDrawerDirectory]);
+  // Pending invites removed: using token-based registration instead
 
   const STATION_USERS = useMemo<StationUserRow[]>(() => {
-    const inviteByUid = new Map(
-      dashboardData.stationInvites.map((invite) => [invite.uid, invite]),
-    );
-
     return dashboardData.stations
       .map((station) => {
-        const invite = inviteByUid.get(station.uid);
         const assignedStation =
           STATIONS.find((row) => stationAccountMatchesStationRow(station, row, dashboardData.stationDirectory)) ??
           null;
@@ -950,9 +928,9 @@ export default function AdminDashboard({ onLogout }) {
           stationDirectoryId: station.stationDirectoryId,
           stationSourceId: station.stationSourceId ?? assignedStation?.id,
           status: isStationUserOnline(station) ? "online" : "offline",
-          assignmentStatus: station.assignmentStatus ?? invite?.status ?? "active",
-          invitedAt: invite?.invitedAt,
-          acceptedAt: invite?.acceptedAt ?? station.inviteAcceptedAt,
+          assignmentStatus: station.assignmentStatus ?? "active",
+          invitedAt: station.createdAt,
+          acceptedAt: station.inviteAcceptedAt,
           todayTxns: todayTxns.length,
           todayLiters: todayTxns.reduce((sum, tx) => sum + tx.liters, 0),
           weekTxns: weekTxns.length,
@@ -962,12 +940,9 @@ export default function AdminDashboard({ onLogout }) {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [STATIONS, dashboardData.stationDirectory, dashboardData.stationInvites, dashboardData.stations, dashboardData.transactions]);
+  }, [STATIONS, dashboardData.stationDirectory, dashboardData.stations, dashboardData.transactions]);
 
-  const PENDING_INVITES = useMemo(
-    () => dashboardData.stationInvites.filter((invite) => invite.status === "pending"),
-    [dashboardData.stationInvites],
-  );
+  // Pending invites removed: using token-based registration instead of stationInvites collection
 
   useEffect(() => {
     setUserFormError("");
@@ -997,74 +972,41 @@ export default function AdminDashboard({ onLogout }) {
 
       setUserForm({ email: "" });
 
-      const optimisticInvite = result.pendingInvite ?? {
-        id: result.uid,
-        uid: result.uid,
-        email,
-        firstName: result.firstName,
-        lastName: result.lastName,
-        stationDirectoryId: selectedUserDrawerDirectory.id,
-        stationSourceId: result.stationSourceId,
-        stationName: result.stationName,
-        brand: selectedUserDrawerStation.brand,
-        barangay: selectedUserDrawerStation.barangay,
-        status: "pending" as const,
-        deliveryMethod: result.inviteDeliveryMethod,
-        emailStatus: result.inviteEmailStatus,
-        invitedAt: new Date().toISOString(),
-        inviteSentAt: result.inviteEmailStatus === "sent" ? new Date().toISOString() : undefined,
-        emailError: result.inviteEmailError ?? undefined,
-      };
-
       try {
         const refreshedData = await fetchAdminDashboardData();
-        if (
-          result.assignmentStatus === "pending" &&
-          !refreshedData.stationInvites.some((invite) => invite.id === result.uid)
-        ) {
-          setDashboardData({
-            ...refreshedData,
-            stationInvites: [optimisticInvite, ...refreshedData.stationInvites],
-          });
-        } else {
-          setDashboardData(refreshedData);
-        }
+        setDashboardData(refreshedData);
       } catch {
-        if (result.assignmentStatus === "pending") {
-          setDashboardData((prev) => ({
-            ...prev,
-            stationInvites: [
-              optimisticInvite,
-              ...prev.stationInvites.filter((invite) => invite.id !== result.uid),
-            ],
-          }));
-        }
+        // Non-critical if refresh fails
       }
 
-      if (result.assignmentStatus !== "pending") {
-        setUserFormSuccess(`User assigned to ${selectedUserDrawerStation.name}.`);
-        return;
+      if (result.emailStatus === "sent") {
+        setUserFormSuccess(`Registration link created and email sent to ${email}.`);
+      } else if (result.emailStatus === "failed") {
+        setUserFormSuccess(`Registration link created for ${email}, but email failed. You can copy and send manually.`);
+      } else {
+        setUserFormSuccess(`Registration link created for ${email}.`);
       }
-
-      if (result.inviteEmailStatus === "sent") {
-        setUserFormSuccess(`Invite created and email sent to ${email} for ${selectedUserDrawerStation.name}.`);
-        return;
-      }
-
-      setUserFormSuccess("");
-      setUserFormError(
-        result.inviteEmailError?.trim()
-          ? `The invite was saved as pending for ${email}, but the email could not be sent automatically. ${result.inviteEmailError}`
-          : `The invite was saved as pending for ${email}, but the email could not be sent automatically.`
-      );
     } catch (err) {
-      setUserFormError(err instanceof Error ? err.message : "Failed to send station invite.");
+      setUserFormError(err instanceof Error ? err.message : "Failed to generate registration link.");
     } finally {
       setAssigningUser(false);
     }
   }
 
-  async function handleInviteModalSend() {
+  function closeInviteModal() {
+    setInviteModalOpen(false);
+    setInviteModalLink("");
+    setInviteModalExpiresAt("");
+    setInviteModalError("");
+    setInviteModalSuccess("");
+    setInviteCopySnackbarOpen(false);
+    if (inviteCopySnackbarTimerRef.current) {
+      clearTimeout(inviteCopySnackbarTimerRef.current);
+      inviteCopySnackbarTimerRef.current = null;
+    }
+  }
+
+  async function submitInviteStationRequest(mode: "initial" | "regenerate") {
     const email = inviteModalEmail.trim().toLowerCase();
     if (!email) {
       setInviteModalError("Please enter an email address.");
@@ -1077,27 +1019,39 @@ export default function AdminDashboard({ onLogout }) {
     setInviteModalExpiresAt("");
     try {
       const result = await assignStationUser({ email });
-      setInviteModalEmail("");
-      if (result.assignmentStatus === "pending" && result.pendingInvite?.acceptUrl) {
-        setInviteModalLink(result.pendingInvite.acceptUrl);
-        setInviteModalExpiresAt(result.pendingInvite.expiresAt ?? "");
+      if (result.link) {
+        setInviteModalLink(result.link);
+        setInviteModalExpiresAt(result.expiresAt ?? "");
       }
-      if (result.assignmentStatus === "pending" && result.inviteEmailStatus === "sent") {
-        setInviteModalSuccess(`Invite sent to ${email}.`);
-      } else if (result.assignmentStatus === "pending") {
-        setInviteModalSuccess(`Invite created for ${email}.`);
+      const prefix = mode === "regenerate" ? "New " : "";
+      if (result.emailStatus === "sent") {
+        setInviteModalSuccess(`${prefix}Registration link sent to ${email}.`);
+      } else if (result.emailStatus === "failed") {
+        setInviteModalSuccess(
+          mode === "regenerate"
+            ? `New link generated; email failed — copy and send manually.`
+            : `Link generated but email failed. You can copy and send manually.`,
+        );
       } else {
-        setInviteModalSuccess(`User assigned to ${email}.`);
+        setInviteModalSuccess(`${prefix}Registration link created for ${email}.`);
       }
       try {
         const refreshed = await fetchAdminDashboardData();
         setDashboardData(refreshed);
       } catch { /* non-critical */ }
     } catch (err) {
-      setInviteModalError(err instanceof Error ? err.message : "Failed to send invite.");
+      setInviteModalError(err instanceof Error ? err.message : "Failed to generate registration link.");
     } finally {
       setInviteModalSending(false);
     }
+  }
+
+  function handleInviteModalSend() {
+    void submitInviteStationRequest("initial");
+  }
+
+  function handleInviteModalRegenerateLink() {
+    void submitInviteStationRequest("regenerate");
   }
 
   async function copyTextToClipboard(value: string) {
@@ -1117,6 +1071,27 @@ export default function AdminDashboard({ onLogout }) {
       document.body.removeChild(el);
     }
   }
+
+  async function handleCopyInviteModalLink() {
+    if (!inviteModalLink.trim()) return;
+    await copyTextToClipboard(inviteModalLink);
+    if (inviteCopySnackbarTimerRef.current) {
+      clearTimeout(inviteCopySnackbarTimerRef.current);
+    }
+    setInviteCopySnackbarOpen(true);
+    inviteCopySnackbarTimerRef.current = setTimeout(() => {
+      setInviteCopySnackbarOpen(false);
+      inviteCopySnackbarTimerRef.current = null;
+    }, 2800);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (inviteCopySnackbarTimerRef.current) {
+        clearTimeout(inviteCopySnackbarTimerRef.current);
+      }
+    };
+  }, []);
 
   const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
     const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -2154,6 +2129,8 @@ export default function AdminDashboard({ onLogout }) {
                       setInviteModalEmail("");
                       setInviteModalError("");
                       setInviteModalSuccess("");
+                      setInviteModalLink("");
+                      setInviteModalExpiresAt("");
                       setInviteModalOpen(true);
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#003366] text-white text-[11px] font-black shadow-sm hover:bg-[#002244] transition-all"
@@ -2948,7 +2925,6 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="grid grid-cols-5 gap-3">
                   {[
                     { label: "Assigned Users", value: STATION_USERS.length, colorClass: "text-[#003366]" },
-                    { label: "Pending Invites", value: PENDING_INVITES.length, colorClass: "text-[#c62828]" },
                     { label: "Active Today", value: todayActiveUsers, colorClass: "text-[#1565c0]" },
                     { label: "Active This Week", value: weekActiveUsers, colorClass: "text-[#2e7d32]" },
                     { label: "Active This Month", value: monthActiveUsers, colorClass: "text-[#7b1fa2]" },
@@ -2958,42 +2934,6 @@ export default function AdminDashboard({ onLogout }) {
                       <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{card.label}</p>
                     </div>
                   ))}
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-100">
-                    <p className="text-sm font-black text-[#003366]">Pending Invites</p>
-                    <p className="text-xs text-slate-400">Users who have been invited by email but have not accepted their station assignment yet.</p>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {PENDING_INVITES.length === 0 ? (
-                      <div className="px-5 py-10 text-center text-slate-400 text-sm">No pending invites.</div>
-                    ) : PENDING_INVITES.map((invite) => (
-                      <div key={invite.id} className="px-5 py-4 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-sm font-black text-slate-800 truncate">
-                            {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
-                          </p>
-                          <p className="text-xs text-slate-400 truncate">{invite.email}</p>
-                          <p className="text-[11px] text-slate-500 mt-1 truncate">{invite.stationName}</p>
-                          {invite.emailError && (
-                            <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
-                              {inviteEmailStatusLabel(invite.emailStatus)}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "Just now"}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -3089,7 +3029,7 @@ export default function AdminDashboard({ onLogout }) {
       {/* ── Invite Station Modal ── */}
       {inviteModalOpen && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setInviteModalOpen(false)} />
+          <div className="fixed inset-0 bg-black/40 z-50" onClick={closeInviteModal} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden">
               {/* Header */}
@@ -3103,7 +3043,7 @@ export default function AdminDashboard({ onLogout }) {
                     <p className="text-[11px] text-white/60">Invite a new gas station to register</p>
                   </div>
                 </div>
-                <button onClick={() => setInviteModalOpen(false)} className="text-white/60 hover:text-white transition-colors">
+                <button type="button" onClick={closeInviteModal} className="text-white/60 hover:text-white transition-colors">
                   <span className="material-symbols-outlined text-[20px]">close</span>
                 </button>
               </div>
@@ -3119,24 +3059,45 @@ export default function AdminDashboard({ onLogout }) {
                     onChange={(e) => { setInviteModalEmail(e.target.value); setInviteModalLink(""); setInviteModalExpiresAt(""); }}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:border-[#003366]/40 focus:ring-1 focus:ring-[#003366]/20"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1.5">An invite email will be sent with a setup link for the new station to register and activate access.</p>
+                  <p className="text-[11px] text-slate-400 mt-1.5">A registration email will be sent with a setup link for the new station officer to register and activate access.</p>
+                </div>
 
-                  <div className="mt-3 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => void copyTextToClipboard(inviteModalLink)}
-                      disabled={!inviteModalLink}
-                      className="w-full rounded-xl border border-slate-200 bg-white text-[#003366] font-black py-2.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-all"
-                    >
-                      Copy Invite Link
-                    </button>
+                {/* Generated Link */}
+                {inviteModalLink && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Registration Link</label>
+                      <button
+                        type="button"
+                        title="Generate a new link for this email (previous link will no longer work)"
+                        onClick={() => handleInviteModalRegenerateLink()}
+                        disabled={inviteModalSending || !inviteModalEmail.trim()}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-[#003366] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">refresh</span>
+                        New link
+                      </button>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl border border-slate-200 p-3">
+                      <p className="text-[12px] text-slate-600 break-all font-mono">{inviteModalLink}</p>
+                    </div>
                     {inviteModalExpiresAt && (
                       <p className="text-[11px] text-slate-500">
                         Expires {new Date(inviteModalExpiresAt).toLocaleString("en-PH")}
                       </p>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyInviteModalLink()}
+                      className="w-full rounded-xl border border-slate-200 bg-white text-[#003366] font-black py-2.5 text-xs hover:bg-slate-50 transition-all"
+                    >
+                      Copy Registration Link
+                    </button>
+                    <p className="text-[10px] text-slate-400 text-center">
+                      Closing this dialog clears the link here — generate again with the same email anytime.
+                    </p>
                   </div>
-                </div>
+                )}
                 {inviteModalError && (
                   <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{inviteModalError}</div>
                 )}
@@ -3144,7 +3105,8 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{inviteModalSuccess}</div>
                 )}
                 <button
-                  onClick={() => void handleInviteModalSend()}
+                  type="button"
+                  onClick={() => handleInviteModalSend()}
                   disabled={inviteModalSending || !inviteModalEmail.trim()}
                   className="w-full rounded-xl bg-[#003366] text-white font-black py-3 text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#002244] transition-all"
                 >
@@ -3230,63 +3192,6 @@ export default function AdminDashboard({ onLogout }) {
               </div>
 
               <div className="p-4">
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <p className="text-sm font-black text-[#003366]">Pending Invites</p>
-                      <p className="text-xs text-slate-400">{selectedPendingInvites.length} invite{selectedPendingInvites.length !== 1 ? "s" : ""} waiting for acceptance</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {selectedPendingInvites.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">
-                        No pending invites for this station.
-                      </div>
-                    ) : selectedPendingInvites.map((invite) => {
-                      const expiresAt = invite.expiresAt ? new Date(invite.expiresAt) : null;
-                      const isExpired = expiresAt && Number.isFinite(expiresAt.getTime()) && Date.now() > expiresAt.getTime();
-                      return (
-                      <div key={invite.id} className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-black text-slate-800 truncate">
-                              {[invite.firstName, invite.lastName].filter(Boolean).join(" ").trim() || invite.email}
-                            </p>
-                            <p className="text-xs text-slate-400 truncate">{invite.email}</p>
-                            <p className="text-[11px] text-slate-500 mt-1">
-                              Invited {invite.invitedAt ? new Date(invite.invitedAt).toLocaleString("en-PH") : "just now"}
-                            </p>
-                            {invite.expiresAt && (
-                              <p className={`text-[11px] mt-0.5 ${isExpired ? "text-red-600 font-bold" : "text-slate-500"}`}>
-                                {isExpired ? "Invite expired — resend to reset expiry" : `Expires ${new Date(invite.expiresAt).toLocaleString("en-PH")}`}
-                              </p>
-                            )}
-                            {invite.emailError && (
-                              <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{invite.emailError}</p>
-                            )}
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                              Pending
-                            </span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${inviteEmailBadgeClass(invite.emailStatus)}`}>
-                              {inviteEmailStatusLabel(invite.emailStatus)}
-                            </span>
-                            {invite.acceptUrl && (
-                              <button
-                                type="button"
-                                onClick={() => void copyTextToClipboard(invite.acceptUrl ?? "")}
-                                className="text-[10px] font-black text-[#003366] hover:underline mt-1"
-                              >
-                                Copy link
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )})}
-                  </div>
-                </div>
 
                 <div className="flex items-center justify-between mb-3">
                   <div>
@@ -3596,6 +3501,17 @@ export default function AdminDashboard({ onLogout }) {
         );
       })()}
 
+      {inviteCopySnackbarOpen && (
+        <div
+          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-lg ring-1 ring-white/10"
+          role="status"
+        >
+          <span className="material-symbols-outlined text-[18px] text-emerald-400" style={{ fontVariationSettings: "'FILL' 1" }}>
+            check_circle
+          </span>
+          Link copied to clipboard
+        </div>
+      )}
     </div>
   );
 }

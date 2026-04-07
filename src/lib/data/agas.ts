@@ -109,7 +109,6 @@ export interface AdminDashboardData {
   admins: AdminAccount[];
   transactions: DispenseTransaction[];
   stationDirectory: StationDirectoryRecord[];
-  stationInvites: StationInviteRecord[];
 }
 
 export interface StationBrandPrice {
@@ -141,44 +140,6 @@ export interface StationDirectoryRecord {
   status?: string;
 }
 
-export interface StationInviteRecord {
-  id: string;
-  uid: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  stationDirectoryId: string;
-  stationSourceId?: number;
-  stationName: string;
-  brand?: string;
-  barangay?: string;
-  status: "pending" | "accepted";
-  acceptUrl?: string;
-  deliveryMethod?: string;
-  emailStatus?: string;
-  invitedByUid?: string;
-  invitedAt?: string;
-  inviteSentAt?: string;
-  expiresAt?: string;
-  acceptedAt?: string;
-  emailError?: string;
-  updatedAt?: string;
-}
-
-export interface PendingInviteResponse extends StationInviteRecord {
-  firstName: string;
-  lastName: string;
-  stationSourceId: number;
-  stationName: string;
-  brand: string;
-  barangay: string;
-  status: "pending";
-  acceptUrl: string;
-  deliveryMethod: string;
-  emailStatus: string;
-  invitedAt: string;
-}
-
 export interface AssignStationUserInput {
   stationDirectoryId?: string;
   email: string;
@@ -203,6 +164,12 @@ export interface AssignedStationUserResult {
   inviteDeliveryMethod: string;
   isNewUser: boolean;
   pendingInvite?: PendingInviteResponse | null;
+  /** Token registration flow: URL to open Station Register (also emailed via SMTP). */
+  link?: string;
+  token?: string;
+  expiresAt?: string;
+  /** Alias for `inviteEmailStatus` in token flow; modals often read `emailStatus`. */
+  emailStatus?: "queued" | "sent" | "failed";
 }
 
 export interface ResidentAllocationSummary {
@@ -346,7 +313,8 @@ function getAssignStationUserUrl(): string {
     import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" ||
     import.meta.env.VITE_PUBLIC_USE_EMULATOR === "true";
 
-  if (import.meta.env.DEV && useEmulators) {
+  // Production `vite build` sets DEV=false; hosting emulator still needs direct Functions URLs when emulators are on.
+  if (useEmulators) {
     return `http://127.0.0.1:5001/${projectId}/${region}/assignStationUser`;
   }
 
@@ -355,6 +323,39 @@ function getAssignStationUserUrl(): string {
   }
 
   return "/api/assignStationUser";
+}
+
+function getValidateStationRegistrationTokenUrl(token: string): string {
+  const region = getFunctionsRegion();
+  const projectId = getProjectId();
+  const useEmulators =
+    import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" ||
+    import.meta.env.VITE_PUBLIC_USE_EMULATOR === "true";
+
+  const base = useEmulators
+    ? `http://127.0.0.1:5001/${projectId}/${region}/validateStationRegistrationToken`
+    : import.meta.env.DEV
+      ? `https://${region}-${projectId}.cloudfunctions.net/validateStationRegistrationToken`
+      : "/api/validateStationRegistrationToken";
+
+  const qs = new URLSearchParams({token});
+  return `${base}?${qs.toString()}`;
+}
+
+function getFinalizeStationRegistrationUrl(): string {
+  const region = getFunctionsRegion();
+  const projectId = getProjectId();
+  const useEmulators =
+    import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" ||
+    import.meta.env.VITE_PUBLIC_USE_EMULATOR === "true";
+
+  if (useEmulators) {
+    return `http://127.0.0.1:5001/${projectId}/${region}/finalizeStationRegistration`;
+  }
+  if (import.meta.env.DEV && projectId) {
+    return `https://${region}-${projectId}.cloudfunctions.net/finalizeStationRegistration`;
+  }
+  return "/api/finalizeStationRegistration";
 }
 
 function mapRole(value: unknown): AccountRole | null {
@@ -494,48 +495,6 @@ function mapStationDirectoryRecord(id: string, data: Record<string, unknown>): S
     capacity: asNumber(data.capacity),
     dispensed: asNumber(data.dispensed),
     status: asString(data.status),
-  };
-}
-
-function mapStationInviteRecord(id: string, data: Record<string, unknown>): StationInviteRecord | null {
-  const uid = asString(data.uid);
-  const email = asString(data.email);
-  const stationDirectoryId = asString(data.stationDirectoryId);
-  const stationName = asString(data.stationName);
-  const status = asString(data.status);
-
-  if (
-    uid == null ||
-    email == null ||
-    stationDirectoryId == null ||
-    stationName == null ||
-    (status !== "pending" && status !== "accepted")
-  ) {
-    return null;
-  }
-
-  return {
-    id,
-    uid,
-    email,
-    firstName: asString(data.firstName),
-    lastName: asString(data.lastName),
-    stationDirectoryId,
-    stationSourceId: asNumber(data.stationSourceId),
-    stationName,
-    brand: asString(data.brand),
-    barangay: asString(data.barangay),
-    status,
-    acceptUrl: asString(data.acceptUrl),
-    deliveryMethod: asString(data.deliveryMethod),
-    emailStatus: asString(data.emailStatus),
-    invitedByUid: asString(data.invitedByUid),
-    invitedAt: toIsoString(data.invitedAt),
-    inviteSentAt: toIsoString(data.inviteSentAt),
-    expiresAt: toIsoString(data.expiresAt),
-    acceptedAt: toIsoString(data.acceptedAt),
-    emailError: asString(data.emailError),
-    updatedAt: toIsoString(data.updatedAt),
   };
 }
 
@@ -722,7 +681,9 @@ async function recoverAssignedStationUserResult(
   const inviteSnapshot = await getDocs(query(
     collection(db, "stationInvites"),
     where("email", "==", normalizedEmail),
-    where("stationDirectoryId", "==", input.stationDirectoryId),
+    ...(typeof input.stationDirectoryId === "string" && input.stationDirectoryId.trim()
+      ? [where("stationDirectoryId", "==", input.stationDirectoryId)]
+      : []),
     limit(1),
   ));
 
@@ -766,17 +727,24 @@ async function recoverAssignedStationUserResult(
   const accountSnapshot = await getDocs(query(
     collection(db, "accounts"),
     where("email", "==", normalizedEmail),
-    where("stationDirectoryId", "==", input.stationDirectoryId),
-    limit(1),
+    ...(typeof input.stationDirectoryId === "string" && input.stationDirectoryId.trim()
+      ? [where("stationDirectoryId", "==", input.stationDirectoryId)]
+      : []),
+    limit(10),
   ));
 
-  const accountDoc = accountSnapshot.docs[0];
-  if (!accountDoc) {
-    return null;
-  }
+  const candidates = accountSnapshot.docs
+    .map((d) => mapAccount(d.id, d.data() as Record<string, unknown>))
+    .filter((a): a is StationAccount => a != null && a.role === "station");
 
-  const account = mapAccount(accountDoc.id, accountDoc.data() as Record<string, unknown>);
-  if (!account || account.role !== "station") {
+  const account =
+    (typeof input.stationDirectoryId === "string" && input.stationDirectoryId.trim()
+      ? candidates.find((a) => a.stationDirectoryId === input.stationDirectoryId)
+      : candidates.find((a) => a.assignmentStatus === "pending")) ??
+    candidates[0] ??
+    null;
+
+  if (!account) {
     return null;
   }
 
@@ -785,7 +753,7 @@ async function recoverAssignedStationUserResult(
     email: account.email ?? normalizedEmail,
     firstName: account.firstName ?? input.firstName,
     lastName: account.lastName ?? input.lastName,
-    stationDirectoryId: account.stationDirectoryId ?? input.stationDirectoryId,
+    stationDirectoryId: account.stationDirectoryId ?? input.stationDirectoryId ?? "",
     stationSourceId: account.stationSourceId ?? 0,
     stationName: account.stationName ?? "Station",
     assignedUserCount: 0,
@@ -800,11 +768,10 @@ async function recoverAssignedStationUserResult(
 }
 
 export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
-  const [accountsSnapshot, transactionsSnapshot, stationDirectorySnapshot, stationInvitesSnapshot] = await Promise.all([
+  const [accountsSnapshot, transactionsSnapshot, stationDirectorySnapshot] = await Promise.all([
     getDocs(collection(db, "accounts")),
     getDocs(query(collection(db, "transactions"), limit(1000))),
     getDocs(collection(db, "stationDirectory")),
-    getDocs(collection(db, "stationInvites")),
   ]);
 
   const accounts = accountsSnapshot.docs
@@ -827,12 +794,8 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
     .map((item) => mapStationDirectoryRecord(item.id, item.data() as Record<string, unknown>))
     .filter((item): item is StationDirectoryRecord => item != null)
     .sort((a, b) => a.name.localeCompare(b.name));
-  const stationInvites = stationInvitesSnapshot.docs
-    .map((item) => mapStationInviteRecord(item.id, item.data() as Record<string, unknown>))
-    .filter((item): item is StationInviteRecord => item != null)
-    .sort((a, b) => (b.invitedAt ?? "").localeCompare(a.invitedAt ?? ""));
 
-  return { residents, stations, admins, transactions, stationDirectory, stationInvites };
+  return { residents, stations, admins, transactions, stationDirectory };
 }
 
 export async function fetchAccountByUid(uid: string): Promise<AccountRecord | null> {
@@ -1400,6 +1363,42 @@ export async function assignStationUser(
     throw new Error("Station invite returned an invalid response.");
   }
 
+  const raw = payload as Record<string, unknown>;
+
+  // Token + link + SMTP status (current Cloud Function contract)
+  if (
+    typeof raw.link === "string" &&
+    typeof raw.token === "string" &&
+    typeof raw.email === "string"
+  ) {
+    const emailStatus =
+      raw.emailStatus === "sent" || raw.emailStatus === "failed" || raw.emailStatus === "queued"
+        ? raw.emailStatus
+        : "queued";
+    const uid = typeof raw.uid === "string" ? raw.uid : "";
+    return {
+      uid,
+      email: raw.email,
+      firstName: typeof raw.firstName === "string" ? raw.firstName : (input.firstName ?? ""),
+      lastName: typeof raw.lastName === "string" ? raw.lastName : (input.lastName ?? ""),
+      stationDirectoryId: "",
+      stationSourceId: 0,
+      stationName: "Station Registration",
+      assignedUserCount: 0,
+      assignmentStatus: "pending",
+      inviteStatus: "pending",
+      inviteEmailStatus: emailStatus,
+      inviteEmailError: typeof raw.emailError === "string" ? raw.emailError : null,
+      inviteDeliveryMethod: "smtp-html",
+      isNewUser: true,
+      pendingInvite: null,
+      link: raw.link,
+      token: raw.token,
+      expiresAt: typeof raw.expiresAt === "string" ? raw.expiresAt : undefined,
+      emailStatus,
+    };
+  }
+
   const result = payload as Partial<AssignedStationUserResult>;
   if (
     typeof result.uid !== "string" ||
@@ -1480,6 +1479,52 @@ export async function assignStationUser(
   };
 
   return normalized;
+}
+
+export async function validateStationRegistrationToken(token: string): Promise<{expiresAt: string}> {
+  const trimmed = token.trim();
+  if (!trimmed) throw new Error("No registration token provided.");
+
+  const response = await fetch(getValidateStationRegistrationTokenUrl(trimmed), {method: "GET"});
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error?.message;
+    throw new Error(typeof message === "string" && message.trim() ? message : "Token validation failed.");
+  }
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Token validation returned an invalid response.");
+  }
+  if ((payload as {valid?: unknown}).valid === true) {
+    const expiresAt = (payload as {expiresAt?: unknown}).expiresAt;
+    if (typeof expiresAt !== "string" || !expiresAt.trim()) {
+      throw new Error("Token validation returned an invalid expiry.");
+    }
+    return {expiresAt};
+  }
+  const reason = (payload as {reason?: unknown}).reason;
+  throw new Error(typeof reason === "string" && reason.trim()
+    ? reason
+    : "Invalid registration token.");
+}
+
+export async function finalizeStationRegistrationToken(registrationToken: string): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("You must be signed in to finalize registration.");
+  const token = await currentUser.getIdToken();
+
+  const response = await fetch(getFinalizeStationRegistrationUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({token: registrationToken}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error?.message;
+    throw new Error(typeof message === "string" && message.trim() ? message : "Failed to finalize registration.");
+  }
 }
 
 export async function acceptPendingStationAssignment(uid: string): Promise<boolean> {

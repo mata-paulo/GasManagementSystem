@@ -39,7 +39,12 @@ service cloud.firestore {
         && !("fuelPrices" in request.resource.data)
         && !("assignedAt" in request.resource.data)
         && !("inviteAcceptedAt" in request.resource.data)
-        && !("lastSeenAt" in request.resource.data);
+        && !("lastSeenAt" in request.resource.data)
+        // Allow registrationToken to be set during station registration
+        && (request.resource.data.registrationToken == null || (
+          request.resource.data.registrationToken.token is string
+          && request.resource.data.registrationToken.used is bool
+        ));
       allow update: if (isOwner(uid) && isStation()
         // Fuel settings live in `stationDirectory` now.
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["availableFuels", "fuelCapacities", "fuelInventory", "fuelPrices"]))
@@ -71,12 +76,6 @@ service cloud.firestore {
         && request.auth.uid == stationId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fuels", "updatedAt"]);
       allow delete: if false;
-    }
-
-    match /stationInvites/{inviteId} {
-      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow create, delete: if false;
     }
 
     match /{document=**} {

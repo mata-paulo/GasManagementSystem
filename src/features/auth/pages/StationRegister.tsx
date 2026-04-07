@@ -9,6 +9,7 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import type { AuthUser } from "@/lib/auth/authService";
+import { finalizeStationRegistrationToken, validateStationRegistrationToken } from "@/lib/data/agas";
 import { auth, db } from "@/lib/firebase/client";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
@@ -457,6 +458,40 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   const [showConfirm,    setShowConfirm]    = useState(false);
   const [confirmError,   setConfirmError]   = useState("");
   const [registering,    setRegistering]    = useState(false);
+  const [registrationToken, setRegistrationToken] = useState<string | null>(null);
+  const [tokenValidationError, setTokenValidationError] = useState<string | null>(null);
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<string | null>(null);
+
+  // Validate registration token from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    if (!token) {
+      setTokenValidationError("No registration token provided. Please use the link from your invitation email.");
+      return;
+    }
+
+    setRegistrationToken(token);
+  }, []);
+
+  // Validate token exists and hasn't expired
+  useEffect(() => {
+    if (!registrationToken) return;
+
+    const validateToken = async () => {
+      try {
+        const result = await validateStationRegistrationToken(registrationToken);
+        setTokenExpiresAt(result.expiresAt);
+        setTokenValidationError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Token validation failed";
+        setTokenValidationError(message);
+      }
+    };
+
+    validateToken();
+  }, [registrationToken]);
 
   const selectedFuels = form.brand ? BRAND_FUELS[form.brand] : [];
   const activeFuels   = selectedFuels.filter((f) => enabledFuels.has(f));
@@ -505,6 +540,12 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
     const nextOfficerLastName = officerLastName.trim();
 
     try {
+      if (!registrationToken) {
+        throw new Error("No registration token provided. Please use the invite link.");
+      }
+      if (tokenValidationError) {
+        throw new Error(tokenValidationError);
+      }
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const uid = cred.user.uid;
 
@@ -550,9 +591,20 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
       };
 
       const batch = writeBatch(db);
-      batch.set(doc(db, "accounts", uid), firestoreData);
+      batch.set(doc(db, "accounts", uid), {
+        ...firestoreData,
+        registrationToken: {
+          token: registrationToken,
+          used: true,
+          usedAt: serverTimestamp(),
+        },
+      });
       batch.set(doc(db, "stationDirectory", uid), stationDirectoryData);
       await batch.commit();
+
+      // Attach server-side token metadata (createdByUid/createdAt/expiresAt) to the new account.
+      // This is required because unauthenticated clients can't read the pending token doc due to Firestore rules.
+      await finalizeStationRegistrationToken(registrationToken);
 
       const authUser: AuthUser = {
         uid,
@@ -796,6 +848,41 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
       </button>
     </div>
   );
+
+  // Token invalid / expired — render error screen after all hooks have run
+  if (tokenValidationError) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+          <div className="bg-[#003366] px-6 py-5">
+            <p className="text-white font-black text-sm">Register Your Station</p>
+            <p className="text-white/70 text-[11px] mt-1">Invitation link issue</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {tokenValidationError}
+            </div>
+            <button
+              type="button"
+              onClick={onBack}
+              className="w-full rounded-xl border border-slate-200 bg-white text-[#003366] font-black py-3 text-sm hover:bg-slate-50 transition-all"
+            >
+              Back
+            </button>
+            {onSignIn && (
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="w-full rounded-xl bg-[#003366] text-white font-black py-3 text-sm hover:bg-[#002244] transition-all"
+              >
+                Sign in
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
