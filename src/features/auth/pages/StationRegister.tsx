@@ -34,12 +34,13 @@ const CEBU_BARANGAYS = [
   "Tinago", "Tisa", "To-ong Pardo", "Tugbongan", "Zapatera",
 ];
 
-const BRANDS = ["Shell", "Petron", "Caltex", "Phoenix", "Others"];
+const BRANDS = ["Shell", "Petron", "Caltex", "SeaOil", "Phoenix", "Others"];
 
 const BRAND_FUELS = {
   Shell:   ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
   Petron:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
   Caltex:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  SeaOil:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
   Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
   Others:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
 };
