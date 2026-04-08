@@ -8,7 +8,7 @@ delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
+import { isContainerType, isGeneratorType, plateError, isValidPlate, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import { fetchStationDirectory } from "@/lib/data/agas";
 
@@ -103,7 +103,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           valueClass: "text-4xl font-black font-headline leading-none text-[#2e7d32]",
           labelClass: "text-base font-bold mt-1 text-[#2e7d32]",
           circleColor: "#2e7d32",
-          pctClass: "text-lg font-black leading-none text-[#2e7d32]",
+          pctClass: "text-sm font-black leading-none text-[#2e7d32]",
           barClass: "bg-[#2e7d32]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#2e7d32]",
         }
@@ -114,7 +114,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           valueClass: "text-4xl font-black font-headline leading-none text-[#f57c00]",
           labelClass: "text-base font-bold mt-1 text-[#e65100]",
           circleColor: "#f57c00",
-          pctClass: "text-lg font-black leading-none text-[#f57c00]",
+          pctClass: "text-sm font-black leading-none text-[#f57c00]",
           barClass: "bg-[#f57c00]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#f57c00]",
         }
@@ -124,7 +124,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           valueClass: "text-4xl font-black font-headline leading-none text-[#c62828]",
           labelClass: "text-base font-bold mt-1 text-[#c62828]",
           circleColor: "#c62828",
-          pctClass: "text-lg font-black leading-none text-[#c62828]",
+          pctClass: "text-sm font-black leading-none text-[#c62828]",
           barClass: "bg-[#c62828]",
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
         };
@@ -523,24 +523,39 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
                 <span className="text-sm">Loading vehicles…</span>
               </div>
-            ) : (liveVehicles ?? vehicles).map((v, i) => (
-              <button key={i} type="button"
-                onClick={() => { setSelectedVehicle(i); setShowVehiclePicker(false); }}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border-2 transition-all active:scale-[0.98] ${selectedVehicle === i ? "border-[#003366] bg-blue-50" : "border-gray-100 bg-gray-50 hover:border-gray-200"}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedVehicle === i ? "bg-[#003366]" : "bg-gray-200"}`}>
-                  <span className={`material-symbols-outlined text-[20px] icon-fill ${selectedVehicle === i ? "text-white" : "text-gray-500"}`}>
-                    {v.type === "2w" ? "two_wheeler" : v.type === "others" ? "commute" : "directions_car"}
-                  </span>
-                </div>
-                <div className="flex-1 text-left">
-                  <p className={`font-black font-headline uppercase tracking-wider text-base ${selectedVehicle === i ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
-                  <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gasType}</p>
-                </div>
-                {selectedVehicle === i && (
-                  <span className="material-symbols-outlined text-[#003366] text-[20px]">check_circle</span>
-                )}
-              </button>
-            ))}
+            ) : (liveVehicles ?? vehicles).map((v, i) => {
+              const badPlate = !isGeneratorType(v.type) && !isValidPlate(v.plate);
+              return (
+                <button key={i} type="button"
+                  onClick={() => { setSelectedVehicle(i); setShowVehiclePicker(false); }}
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border-2 transition-all active:scale-[0.98] ${
+                    badPlate
+                      ? "border-red-200 bg-red-50"
+                      : selectedVehicle === i
+                        ? "border-[#003366] bg-blue-50"
+                        : "border-gray-100 bg-gray-50 hover:border-gray-200"
+                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${badPlate ? "bg-red-100" : selectedVehicle === i ? "bg-[#003366]" : "bg-gray-200"}`}>
+                    <span className={`material-symbols-outlined text-[20px] icon-fill ${badPlate ? "text-red-400" : selectedVehicle === i ? "text-white" : "text-gray-500"}`}>
+                      {v.type === "2w" ? "two_wheeler" : v.type === "others" ? "commute" : "directions_car"}
+                    </span>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className={`font-black font-headline uppercase tracking-wider text-base ${badPlate ? "text-red-500" : selectedVehicle === i ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
+                    <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gasType}</p>
+                    {badPlate && (
+                      <p className="text-[10px] text-red-400 font-bold mt-0.5">Invalid plate format — must be ABC-1234</p>
+                    )}
+                  </div>
+                  {!badPlate && selectedVehicle === i && (
+                    <span className="material-symbols-outlined text-[#003366] text-[20px]">check_circle</span>
+                  )}
+                  {badPlate && (
+                    <span className="material-symbols-outlined text-red-400 text-[20px]">warning</span>
+                  )}
+                </button>
+              );
+            })}
             {!vehiclesLoading && (liveVehicles ?? vehicles).length < 5 && (
               <button
                 type="button"
@@ -565,6 +580,23 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               <button type="button" onClick={() => { setAddingVehicle(false); setV2Error(""); }} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500">
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
+            </div>
+
+            {/* Live vehicle preview */}
+            <div className="flex items-center gap-4 bg-[#003366] rounded-2xl px-4 py-3">
+              <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined icon-fill text-white text-[28px]">
+                  {v2Form.vehicle2Type === "2w" ? "two_wheeler" : v2Form.vehicle2Type === "4w" || v2Form.vehicle2Type === "" ? "directions_car" : isGeneratorType(v2Form.vehicle2Type) ? "electrical_services" : "commute"}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black font-headline text-white uppercase tracking-widest text-base leading-none truncate">
+                  {v2Form.vehicle2Plate || "— — —"}
+                </p>
+                <p className="text-white/50 text-xs mt-1 capitalize">
+                  {v2Form.vehicle2Type === "2w" ? "2 Wheelers" : v2Form.vehicle2Type === "4w" ? "4 Wheelers" : v2Form.vehicle2Type || "Others"} · {v2Form.vehicle2GasType || "No fuel selected"}
+                </p>
+              </div>
             </div>
 
             {/* Vehicle Type */}
@@ -615,11 +647,14 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               <input
                 type="text"
                 value={v2Form.vehicle2Plate}
-                onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: e.target.value.toUpperCase() }))}
+                onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: isGeneratorType(f.vehicle2Type) ? e.target.value.toUpperCase() : sanitizePlate(e.target.value) }))}
                 placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"}
                 maxLength={10}
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
               />
+              {!isGeneratorType(v2Form.vehicle2Type) && (
+                <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC-1234</span> (letters, dash, numbers)</p>
+              )}
             </div>
 
             {/* Fuel Type */}
@@ -655,7 +690,8 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               onClick={() => {
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && isContainerType(v2Form.vehicle2Type)) { setV2Error("Container-type vehicles are not allowed in the AGAS program."); return; }
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && !v2Form.vehicle2Type.trim()) { setV2Error("Please specify the vehicle type."); return; }
-                if (!v2Form.vehicle2Plate.trim()) { setV2Error(isGeneratorType(v2Form.vehicle2Type) ? "Please enter the serial number." : "Please enter the plate number."); return; }
+                const pErr = plateError(v2Form.vehicle2Plate, v2Form.vehicle2Type);
+                if (pErr) { setV2Error(pErr); return; }
                 if (!v2Form.vehicle2GasType) { setV2Error("Please select a fuel type."); return; }
                 setV2Error("");
                 setConfirmingVehicle(true);
@@ -736,6 +772,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     });
                     onUpdateResident?.({ vehicles: newVehicles, vehicle2Type: v2Form.vehicle2Type, vehicle2Plate: plate2, vehicle2GasType: v2Form.vehicle2GasType });
                     setLiveVehicles(newVehicles);
+                    setSelectedVehicle(newVehicles.length - 1);
                     setConfirmingVehicle(false);
                     setAddingVehicle(false);
                     setV2Form({ vehicle2Type: "4w", vehicle2Plate: "", vehicle2GasType: "" });
