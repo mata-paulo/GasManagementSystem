@@ -700,13 +700,16 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
             setEnabledFuels(new Set(fuels));
             setError("");
           }} options={BRANDS} placeholder="Select brand…" icon="local_gas_station" />
-        {form.brand === "Others" && (
-          <div className="relative mt-1.5">
+      </div>
+      {form.brand === "Others" && (
+        <div className="space-y-1.5">
+          <label className={labelCls}>Brand Name</label>
+          <div className="relative">
             <input
               type="text"
               value={customBrand}
               onChange={(e) => { setCustomBrand(e.target.value.slice(0, 50)); setError(""); }}
-              placeholder="Enter brand name…"
+              placeholder="Enter the station brand name"
               maxLength={50}
               className="w-full border border-outline-variant rounded-xl py-3 pl-4 pr-14 text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 bg-surface-container-lowest"
             />
@@ -714,8 +717,8 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
               {customBrand.length}/50
             </span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className={labelCls}>Barangay</label>
         <SheetPicker value={form.barangay} onChange={(b) => { setForm((prev) => ({ ...prev, barangay: b, lat: null, lon: null })); setError(""); }}
