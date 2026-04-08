@@ -38,3 +38,44 @@ export function isContainerType(value: string): boolean {
 export function isGeneratorType(value: string): boolean {
   return wordMatchesKeyword(value, "generator");
 }
+
+/**
+ * Philippine plate number format: 2–4 letters, a dash, then 3–5 digits.
+ * e.g. ABC-1234, AB-123, ABCD-12345
+ * Returns true if valid.
+ */
+export function isValidPlate(value: string): boolean {
+  return /^[A-Z]{2,4}-\d{3,5}$/.test(value.trim().toUpperCase());
+}
+
+/**
+ * Sanitizes a plate number input on every keystroke:
+ * - Uppercases
+ * - Strips leading dashes or non-letter characters before the first letter
+ * - Only allows letters, digits, and ONE dash
+ * - Strips any character that isn't a letter, digit, or dash
+ */
+export function sanitizePlate(raw: string): string {
+  // Convert spaces to dashes, then uppercase and strip anything that isn't a letter, digit, or dash
+  let v = raw.replace(/ /g, "-").toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  // Remove leading dashes
+  v = v.replace(/^-+/, "");
+  // Keep only the first dash; remove any subsequent dashes
+  const firstDash = v.indexOf("-");
+  if (firstDash !== -1) {
+    v = v.slice(0, firstDash + 1) + v.slice(firstDash + 1).replace(/-/g, "");
+  }
+  return v;
+}
+
+/**
+ * Returns an error message if the plate is invalid, or null if it's fine.
+ * Skips validation entirely for generator serial numbers.
+ */
+export function plateError(plate: string, vehicleType: string): string | null {
+  if (isGeneratorType(vehicleType)) return null; // serial numbers have no fixed format
+  const trimmed = plate.trim().toUpperCase();
+  if (!trimmed) return "Please enter the plate number.";
+  if (!isValidPlate(trimmed)) return "Plate number must follow the format: ABC-1234 (letters, dash, numbers).";
+  return null;
+}

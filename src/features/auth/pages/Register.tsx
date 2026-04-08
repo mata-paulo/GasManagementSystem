@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { FirebaseError } from "firebase/app";
-import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
+import { isContainerType, isGeneratorType, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth } from "@/lib/firebase/client";
@@ -210,7 +210,8 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
     e.preventDefault();
     for (const v of vehicles) {
       if (!["2w", "4w"].includes(v.type) && isContainerType(v.type)) { setError("Container-type vehicles are not allowed in the AGAS program."); return; }
-      if (!v.plate.trim()) { setError(isGeneratorType(v.type) ? "Please fill in the serial number for your generator." : "Please fill in all plate numbers."); return; }
+      const pErr = plateError(v.plate, v.type);
+      if (pErr) { setError(pErr); return; }
       if (!v.gasType) { setError("Please select a fuel type for each vehicle."); return; }
     }
     if (!agreedToTerms) { setError("You must agree to the Terms and Conditions to register."); return; }
@@ -384,10 +385,13 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
                 {v.type === "2w" ? "two_wheeler" : v.type === "4w" ? "directions_car" : "commute"}
               </span>
               <input type="text" value={v.plate}
-                onChange={(e) => { updateVehicle(i, "plate", e.target.value.toUpperCase()); setError(""); }}
+                onChange={(e) => { updateVehicle(i, "plate", isGeneratorType(v.type) ? e.target.value.toUpperCase() : sanitizePlate(e.target.value)); setError(""); }}
                 placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"} maxLength={10}
                 className={`${inputCls} pl-12 uppercase tracking-widest font-bold`} />
             </div>
+            {!isGeneratorType(v.type) && (
+              <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC-1234</span> (letters, dash, numbers)</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className={labelCls}>Fuel Type</label>
