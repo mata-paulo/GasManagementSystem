@@ -12,6 +12,7 @@ node_modules/
 # Environment variables / local secrets
 .env
 .env.*
+!.env.example
 
 # Firebase local emulator/cache artifacts
 .firebase/

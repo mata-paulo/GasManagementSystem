@@ -582,6 +582,20 @@ export function getAccountDisplayName(
   return [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email || "User";
 }
 
+function stationFuelPricesToBrandPrices(
+  fuelPrices: Record<string, number> | undefined,
+): StationBrandPrice[] {
+  if (!fuelPrices) return [];
+
+  return Object.entries(fuelPrices)
+    .filter(([, price]) => Number.isFinite(price))
+    .map(([label, price]) => ({
+      label,
+      price: Math.round(price * 100) / 100,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** Admin "online" if lastSeenAt is newer than this (heartbeat runs every 60s while the app is open). */
 const STATION_ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 const QR_EXCEL_EPOCH = new Date(1899, 11, 30).getTime();
@@ -856,8 +870,6 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
     getDocs(query(
       collection(db, "accounts"),
       where("role", "==", "station"),
-      where("lat", "!=", null),
-      orderBy("lat"),
     )),
   ]);
 
@@ -865,17 +877,72 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
     .map((item) => mapStationDirectoryRecord(item.id, item.data() as Record<string, unknown>))
     .filter((item): item is StationDirectoryRecord => item != null);
 
+  const stationAccounts = pinnedAccountsSnapshot.docs
+    .map((item) => mapAccount(item.id, item.data() as Record<string, unknown>))
+    .filter((item): item is StationAccount => item?.role === "station");
+
+  const stationAccountsByDirectoryId = new Map<string, StationAccount>();
+  stationAccounts.forEach((account) => {
+    if (!account.stationDirectoryId) return;
+
+    const existing = stationAccountsByDirectoryId.get(account.stationDirectoryId);
+    if (!existing) {
+      stationAccountsByDirectoryId.set(account.stationDirectoryId, account);
+      return;
+    }
+
+    const existingUpdated = new Date(existing.updatedAt ?? existing.lastSeenAt ?? existing.registeredAt ?? 0).getTime();
+    const nextUpdated = new Date(account.updatedAt ?? account.lastSeenAt ?? account.registeredAt ?? 0).getTime();
+    if (nextUpdated >= existingUpdated) {
+      stationAccountsByDirectoryId.set(account.stationDirectoryId, account);
+    }
+  });
+
+  const enrichedDirectoryRecords = directoryRecords.map((record) => {
+    const account = stationAccountsByDirectoryId.get(record.id);
+    if (!account) return record;
+
+    const officerName =
+      [account.officerFirstName, account.officerLastName].filter(Boolean).join(" ").trim() ||
+      record.officer;
+    const liveBrandPrices = stationFuelPricesToBrandPrices(account.fuelPrices);
+
+    return {
+      ...record,
+      name: account.stationName ?? record.name,
+      brand: account.brand ?? record.brand,
+      lat: asNumber(account.lat) ?? record.lat,
+      lon: asNumber(account.lon) ?? record.lon,
+      barangay: account.barangay ?? record.barangay,
+      officer: officerName,
+      status: account.status ?? account.presenceStatus ?? record.status,
+      capacity:
+        Object.values(account.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0) || record.capacity,
+      brandPrices: liveBrandPrices.length > 0 ? liveBrandPrices : record.brandPrices,
+    } satisfies StationDirectoryRecord;
+  });
+
   // Build StationDirectoryRecord entries from station accounts that pinned their location
   const pinnedRecords: StationDirectoryRecord[] = pinnedAccountsSnapshot.docs
     .map((item, idx) => {
-      const data = item.data() as Record<string, unknown>;
-      const lat = asNumber(data.lat);
-      const lon = asNumber(data.lon);
+      const account = mapAccount(item.id, item.data() as Record<string, unknown>);
+      if (account?.role !== "station") return null;
+
+      const lat = asNumber(account.lat);
+      const lon = asNumber(account.lon);
       if (lat == null || lon == null) return null;
-      const officerName = [data.officerFirstName, data.officerLastName].filter(Boolean).join(" ") || undefined;
+      const officerName =
+        [account.officerFirstName, account.officerLastName].filter(Boolean).join(" ").trim() || undefined;
+      const data = {
+        stationName: account.stationName,
+        brand: account.brand,
+        stationCode: account.stationCode,
+        barangay: account.barangay,
+        status: account.status ?? account.presenceStatus,
+      };
       return {
         id: item.id,
-        sourceId: 90000 + idx, // high sourceId to sort after directory entries
+        sourceId: account.stationSourceId ?? 90000 + idx,
         name: (data.stationName as string | undefined) || [(data.brand as string), "Station –", (data.stationCode as string)].filter(Boolean).join(" "),
         brand: (data.brand as string) || "",
         address: (data.barangay as string) || "",
@@ -883,18 +950,19 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
         hours: "See station",
         lat,
         lon,
-        brandPrices: [],
+        brandPrices: stationFuelPricesToBrandPrices(account.fuelPrices),
         barangay: data.barangay as string | undefined,
         officer: officerName,
+        capacity: Object.values(account.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0) || undefined,
         status: (data.status as string) || "online",
       } satisfies StationDirectoryRecord;
     })
-    .filter((r): r is StationDirectoryRecord => r !== null);
+    .filter((r) => r !== null) as StationDirectoryRecord[];
 
   // Merge: pinned account records only added if their id isn't already in the directory
-  const directoryIds = new Set(directoryRecords.map((r) => r.id));
+  const directoryIds = new Set(enrichedDirectoryRecords.map((r) => r.id));
   const merged = [
-    ...directoryRecords,
+    ...enrichedDirectoryRecords,
     ...pinnedRecords.filter((r) => !directoryIds.has(r.id)),
   ];
 
@@ -982,6 +1050,33 @@ export function subscribeResidentAllocationSummary(
     unsubscribeResident();
     unsubscribeTransactions();
   };
+}
+
+export function subscribeResidentAccount(
+  uid: string,
+  onNext: (resident: ResidentAccount | null) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  if (!uid) {
+    onNext(null);
+    return () => undefined;
+  }
+
+  return onSnapshot(
+    doc(db, "accounts", uid),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onNext(null);
+        return;
+      }
+
+      const account = mapAccount(snapshot.id, snapshot.data() as Record<string, unknown>);
+      onNext(account?.role === "resident" ? account : null);
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export async function resolveResidentFromQR(decoded: DecodedQR): Promise<ResolvedResidentScan | null> {
