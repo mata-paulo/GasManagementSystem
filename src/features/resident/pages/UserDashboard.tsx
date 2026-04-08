@@ -6,7 +6,7 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
-import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { formatPlateForStorage, isContainerType, isGeneratorType, isValidPlateFormat, normalizePlateForComparison, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
@@ -732,18 +732,17 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     const plate2Normalized = normalizePlateForComparison(plate2);
 
                     // Check if plate already exists in another account.
-                    // Query by plateNormalized (new accounts) and plate exact match (legacy accounts).
-                    const [byPlateNorm, byV2PlateNorm, byPlateLegacy, byV2PlateLegacy] = await Promise.all([
-                      getDocs(query(collection(db, "accounts"), where("plateNormalized", "==", plate2Normalized))),
-                      getDocs(query(collection(db, "accounts"), where("vehicle2PlateNormalized", "==", plate2Normalized))),
+                    // plateNormalizedList covers all vehicles (1–5) on new accounts;
+                    // plate/vehicle2Plate are legacy fallbacks for old accounts.
+                    const [byList, byPlateLegacy, byV2Legacy] = await Promise.all([
+                      getDocs(query(collection(db, "accounts"), where("plateNormalizedList", "array-contains", plate2Normalized))),
                       getDocs(query(collection(db, "accounts"), where("plate", "==", plate2Normalized))),
                       getDocs(query(collection(db, "accounts"), where("vehicle2Plate", "==", plate2Normalized))),
                     ]);
                     const takenByOther = [
-                      ...byPlateNorm.docs,
-                      ...byV2PlateNorm.docs,
+                      ...byList.docs,
                       ...byPlateLegacy.docs,
-                      ...byV2PlateLegacy.docs,
+                      ...byV2Legacy.docs,
                     ].some((d) => d.id !== resident.uid);
                     if (takenByOther) {
                       setV2Error("This plate number is already registered to another account.");
@@ -753,10 +752,11 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     const newVehicles = [...(liveVehicles ?? vehicles), { type: v2Form.vehicle2Type, plate: plate2, gasType: v2Form.vehicle2GasType }];
                     await updateDoc(doc(db, "accounts", resident.uid as string), {
                       vehicles: newVehicles,
+                      // Append normalized plate to the queryable list (works for vehicles 2–5)
+                      plateNormalizedList: arrayUnion(plate2Normalized),
                       ...(newVehicles.length === 2 && {
                         vehicle2Type: v2Form.vehicle2Type,
                         vehicle2Plate: plate2,
-                        vehicle2PlateNormalized: plate2Normalized,
                         vehicle2GasType: v2Form.vehicle2GasType,
                       }),
                     });
