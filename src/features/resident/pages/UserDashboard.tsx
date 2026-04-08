@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -10,31 +10,12 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
-import { fetchStationDirectory } from "@/lib/data/agas";
+import type { ResidentAllocationSummary } from "@/lib/data/agas";
+import { fetchStationDirectory, subscribeResidentAllocationSummary } from "@/lib/data/agas";
 
 
 const DEFAULT_LAT = 10.3157;
 const DEFAULT_LON = 123.8854;
-
-const STATIC_STATION_COORDS = [
-  { lat: 10.3025851, lon: 123.9110295 }, { lat: 10.3039010, lon: 123.8950550 },
-  { lat: 10.3176340, lon: 123.8944090 }, { lat: 10.3203694, lon: 123.8994126 },
-  { lat: 10.3248960, lon: 123.9155940 }, { lat: 10.3446170, lon: 123.9121940 },
-  { lat: 10.3567474, lon: 123.9149518 }, { lat: 10.3004390, lon: 123.8746030 },
-  { lat: 10.2882290, lon: 123.8638870 }, { lat: 10.2875180, lon: 123.8792190 },
-  { lat: 10.3161410, lon: 123.9287640 }, { lat: 10.3097020, lon: 123.9080780 },
-  { lat: 10.3255071, lon: 123.9074359 }, { lat: 10.3176040, lon: 123.8965360 },
-  { lat: 10.3254869, lon: 123.9165870 }, { lat: 10.3156699, lon: 123.8842890 },
-  { lat: 10.3169054, lon: 123.8852611 }, { lat: 10.3083407, lon: 123.8893030 },
-  { lat: 10.2967202, lon: 123.8868959 }, { lat: 10.3131564, lon: 123.9127650 },
-  { lat: 10.3210638, lon: 123.9103713 }, { lat: 10.3021098, lon: 123.9064052 },
-  { lat: 10.2932211, lon: 123.8957413 }, { lat: 10.3150129, lon: 123.9015140 },
-  { lat: 10.3354793, lon: 123.9110667 }, { lat: 10.2895116, lon: 123.8781982 },
-  { lat: 10.2966476, lon: 123.8755522 }, { lat: 10.2987601, lon: 123.8938398 },
-  { lat: 10.3960743, lon: 123.9218555 }, { lat: 10.2743392, lon: 123.8568358 },
-  { lat: 10.2998279, lon: 123.8742939 }, { lat: 10.3011824, lon: 123.9001353 },
-  { lat: 10.3088927, lon: 123.9188045 }, { lat: 10.3306989, lon: 123.8978075 },
-];
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -58,6 +39,24 @@ const ANNOUNCEMENTS = [
   },
 ];
 
+function formatTransactionDate(value) {
+  if (!value) return "Unknown date";
+  return value.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTransactionTime(value) {
+  if (!value) return "--:--";
+  return value.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 1, onSelectVehicle, onUpdateResident = undefined }) {
   const mapPreviewRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -70,6 +69,12 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const [v2Saving, setV2Saving] = useState(false);
   const [v2Error, setV2Error] = useState("");
   const [confirmingVehicle, setConfirmingVehicle] = useState(false);
+  const [allocationSummary, setAllocationSummary] = useState<ResidentAllocationSummary>({
+    transactions: [],
+    fuelAllocation: Number(resident?.fuelAllocation ?? 0),
+    usedLiters: 0,
+    remainingLiters: Number(resident?.fuelAllocation ?? 0),
+  });
   const setSelectedVehicle = (v: number) => onSelectVehicle?.(v);
 
   const fullName = resident
@@ -82,18 +87,21 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const vehicleType = activeVehicle.type || "car";
   const activeGasType = activeVehicle.gasType || "";
   const barangay = resident?.barangay || "Not set";
-
-  const vehicleAllocations = [
-    { weeklyAllocation: 20, usedLiters: 8 },
-    { weeklyAllocation: 15, usedLiters: 13 },
-    { weeklyAllocation: 25, usedLiters: 3 },
-    { weeklyAllocation: 20, usedLiters: 17 },
-    { weeklyAllocation: 18, usedLiters: 5 },
-  ];
-  const { weeklyAllocation, usedLiters } = vehicleAllocations[selectedVehicle] ?? vehicleAllocations[0];
-  const remainingLiters = Math.max(weeklyAllocation - usedLiters, 0);
-  const usagePercent = Math.min((usedLiters / weeklyAllocation) * 100, 100);
-  const pctLeft = Math.round((remainingLiters / weeklyAllocation) * 100);
+  const weeklyAllocation = allocationSummary.fuelAllocation || Number(resident?.fuelAllocation ?? 0);
+  const usedLiters = allocationSummary.usedLiters;
+  const remainingLiters = allocationSummary.remainingLiters;
+  const usagePercent = weeklyAllocation > 0 ? Math.min((usedLiters / weeklyAllocation) * 100, 100) : 0;
+  const pctLeft = weeklyAllocation > 0 ? Math.round((remainingLiters / weeklyAllocation) * 100) : 0;
+  const vehiclePlate = plate.trim().toUpperCase();
+  const recentTransactions = allocationSummary.transactions
+    .filter((tx) => !vehiclePlate || (tx.plate || "").trim().toUpperCase() === vehiclePlate)
+    .slice(0, 3)
+    .map((tx) => ({
+      ...tx,
+      station: tx.stationName || "Unknown Station",
+      date: formatTransactionDate(tx.createdAt),
+      time: formatTransactionTime(tx.createdAt),
+    }));
 
   const statusConfig =
     pctLeft > 50
@@ -129,37 +137,24 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
           rowClass: "flex justify-between mt-2 text-sm font-bold text-[#c62828]",
         };
 
-  const allTransactionsByVehicle = [
-    [
-      { id: 1, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
-      { id: 2, station: "Petron – Jones Ave",    date: "Mar 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
-      { id: 3, station: "Caltex – Mango Ave",    date: "Mar 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
-    ],
-    [
-      { id: 1, station: "Total – Lahug",         date: "Apr 1, 2026",  time: "07:15 AM", liters: 6.0, fuelType: "Diesel",  pricePerLiter: 56 },
-      { id: 2, station: "Petron – Mandaue",      date: "Mar 28, 2026", time: "11:30 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
-      { id: 3, station: "Shell – A.S. Fortuna",  date: "Mar 25, 2026", time: "02:00 PM", liters: 2.0, fuelType: "Regular", pricePerLiter: 62 },
-    ],
-    [
-      { id: 1, station: "Caltex – Colon St.",    date: "Apr 2, 2026",  time: "08:00 AM", liters: 3.0, fuelType: "Regular", pricePerLiter: 62 },
-      { id: 2, station: "Shell – Talisay",       date: "Mar 29, 2026", time: "03:45 PM", liters: 0.0, fuelType: "Regular", pricePerLiter: 62 },
-    ],
-    [
-      { id: 1, station: "Petron – Banilad",      date: "Apr 3, 2026",  time: "06:50 AM", liters: 5.0, fuelType: "Regular", pricePerLiter: 62 },
-      { id: 2, station: "Total – Mactan",        date: "Apr 1, 2026",  time: "10:00 AM", liters: 7.0, fuelType: "Regular", pricePerLiter: 62 },
-      { id: 3, station: "Shell – Fuente Osmeña", date: "Mar 30, 2026", time: "01:20 PM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
-    ],
-    [
-      { id: 1, station: "Caltex – Urgello",      date: "Apr 4, 2026",  time: "09:10 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56 },
-      { id: 2, station: "Petron – Hernan Cortes", date: "Apr 2, 2026", time: "04:30 PM", liters: 0.0, fuelType: "Diesel",  pricePerLiter: 56 },
-    ],
-  ];
 
-  const allTransactions = allTransactionsByVehicle[selectedVehicle] ?? allTransactionsByVehicle[0];
+  // Fetch live vehicles from Firestore when picker opens
+  useEffect(() => {
+    const uid = resident?.uid;
+    if (!uid) {
+      setAllocationSummary({
+        transactions: [],
+        fuelAllocation: Number(resident?.fuelAllocation ?? 0),
+        usedLiters: 0,
+        remainingLiters: Number(resident?.fuelAllocation ?? 0),
+      });
+      return () => undefined;
+    }
 
-  // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
-  const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
-  const recentTransactions = allTransactions.filter((tx) => tx.fuelType === residentFuelType);
+    return subscribeResidentAllocationSummary(uid, (nextSummary) => {
+      setAllocationSummary(nextSummary);
+    });
+  }, [resident?.uid, resident?.fuelAllocation]);
 
   // Fetch live vehicles from Firestore when picker opens
   useEffect(() => {
@@ -237,19 +232,16 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         const el = document.createElement("div");
         el.style.cssText =
           "width:22px;height:22px;border-radius:50%;background:#003366;border:2px solid #f9c23c;box-shadow:0 1px 4px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:11px;";
-        el.innerHTML = "⛽";
+        el.innerHTML = "â›½";
         const icon = L.divIcon({ html: el.outerHTML, className: "", iconSize: [22, 22], iconAnchor: [11, 11] });
         L.marker([st.lat, st.lon], { icon }).addTo(map);
       });
     };
 
-    // Fetch stations and plot them, fall back to static coords if directory is empty
+    // Fetch live stations and plot their current coordinates
     void fetchStationDirectory().then((dirs) => {
-      const coords = dirs.length > 0
-        ? dirs.map((d) => ({ lat: d.lat, lon: d.lon }))
-        : STATIC_STATION_COORDS;
-      addStationMarkers(coords);
-    }).catch(() => { addStationMarkers(STATIC_STATION_COORDS); });
+      addStationMarkers(dirs.map((d) => ({ lat: d.lat, lon: d.lon })));
+    }).catch(() => {});
 
     mapInstanceRef.current = map;
 
@@ -287,7 +279,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               onClick={() => setShowVehiclePicker(true)}
               className="flex items-center gap-1 text-xs text-slate-400 font-medium capitalize"
             >
-              <span>{vehicleType} · {resident?.status === "inactive" ? "Not Active" : "Active"}</span>
+              <span>{vehicleType} Â· {resident?.status === "inactive" ? "Not Active" : "Active"}</span>
               <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
             </button>
           </div>
@@ -368,7 +360,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               </div>
             </div>
 
-            {/* Progress bar — width is a computed percentage, must use style */}
+            {/* Progress bar â€” width is a computed percentage, must use style */}
             <div className="h-5 w-full rounded-full bg-white/70 overflow-hidden shadow-inner">
               <div
                 className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 ${statusConfig.barClass}`}
@@ -384,7 +376,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Map preview — tap to open full map */}
+          {/* Map preview â€” tap to open full map */}
           <section
             className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate cursor-pointer active:opacity-90"
             onClick={() => onTabChange("map")}
@@ -406,11 +398,17 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               <h3 className="text-xs font-headline font-bold text-on-surface-variant uppercase tracking-wider">
                 Recent Fuel Activity
               </h3>
-              <button className="text-xs font-bold text-primary-container hover:underline">View All</button>
+              <button
+                type="button"
+                onClick={() => onTabChange("user-history")}
+                className="text-xs font-bold text-primary-container hover:underline"
+              >
+                View All
+              </button>
             </div>
             <div className="space-y-2">
               {recentTransactions.map((tx) => {
-                const total = tx.liters * tx.pricePerLiter;
+                const total = tx.totalPaid ?? tx.amount ?? (tx.liters * tx.pricePerLiter);
                 return (
                   <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
                     <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
@@ -418,23 +416,28 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} Â· {tx.time}</p>
                       <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
                         {tx.fuelType}
                       </span>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
-                      <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">â‚±{tx.pricePerLiter}/L</p>
+                      <p className="text-sm font-black text-[#003366] mt-0.5">â‚±{total.toFixed(2)}</p>
                     </div>
                   </div>
                 );
               })}
+              {recentTransactions.length === 0 && (
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-outline-variant/10 text-center text-sm text-slate-400">
+                  No live transactions found for this vehicle yet.
+                </div>
+              )}
             </div>
           </section>
 
-          {/* Announcements — swipeable banner carousel */}
+          {/* Announcements â€” swipeable banner carousel */}
           <section className="space-y-3 pb-2">
             <h3 className="text-xs font-headline font-bold text-on-surface-variant uppercase tracking-wider">
               Announcements
@@ -521,7 +524,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             {vehiclesLoading ? (
               <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
                 <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
-                <span className="text-sm">Loading vehicles…</span>
+                <span className="text-sm">Loading vehiclesâ€¦</span>
               </div>
             ) : (liveVehicles ?? vehicles).map((v, i) => (
               <button key={i} type="button"
@@ -534,7 +537,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 </div>
                 <div className="flex-1 text-left">
                   <p className={`font-black font-headline uppercase tracking-wider text-base ${selectedVehicle === i ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
-                  <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gasType}</p>
+                  <p className="text-xs text-gray-400 capitalize">{v.type} Â· {v.gasType}</p>
                 </div>
                 {selectedVehicle === i && (
                   <span className="material-symbols-outlined text-[#003366] text-[20px]">check_circle</span>
@@ -748,7 +751,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {v2Saving
-                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Saving…</>
+                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Savingâ€¦</>
                   : <><span className="material-symbols-outlined text-[16px]">check_circle</span>Confirm</>}
               </button>
             </div>
