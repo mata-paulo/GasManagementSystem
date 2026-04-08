@@ -97,48 +97,48 @@ type StationForm = {
   lon: number | null;
 };
 
-// ── Barangay centre coordinates (verified against OSM/Google Maps) ────────────
+// ── Barangay centre coordinates (fetched from OSM Nominatim API, April 2026) ──
 const BARANGAY_COORDS: Record<string, [number, number]> = {
-  "Adlaon":              [10.3978, 123.8542], "Agsungot":          [10.3867, 123.8614],
-  "Apas":                [10.3325, 123.9085], "Babag":             [10.2648, 123.8471],
-  "Bacayan":             [10.3388, 123.8952], "Banilad":           [10.3410, 123.9008],
-  "Basak Pardo":         [10.2841, 123.8815], "Basak San Nicolas": [10.2935, 123.9032],
-  "Binaliw":             [10.3622, 123.8629], "Budlaan":           [10.3634, 123.8508],
-  "Buhisan":             [10.2841, 123.8535], "Bulacao":           [10.2703, 123.8674],
-  "Buot-Taup Pardo":     [10.2791, 123.8718], "Busay":             [10.3622, 123.8756],
-  "Calamba":             [10.3012, 123.8906], "Cambinocot":        [10.3577, 123.8843],
-  "Camputhaw":           [10.3295, 123.8944], "Capitol Site":      [10.3182, 123.8909],
-  "Carreta":             [10.3085, 123.8920], "Central Poblacion": [10.2985, 123.9021],
-  "Cogon Pardo":         [10.2868, 123.8695], "Cogon Ramos":       [10.3022, 123.8938],
-  "Day-as":              [10.2858, 123.8878], "Duljo":             [10.2896, 123.8940],
-  "Ermita":              [10.2927, 123.8985], "Guadalupe":         [10.2941, 123.9018],
-  "Guba":                [10.4011, 123.8418], "Hipodromo":         [10.3196, 123.9094],
-  "Inayawan":            [10.2773, 123.8672], "Kalubihan":         [10.2998, 123.8955],
-  "Kalunasan":           [10.2878, 123.8768], "Kamagayan":         [10.3009, 123.8967],
-  "Kasambagan":          [10.3238, 123.9118], "Kinasang-an Pardo": [10.2838, 123.8748],
-  "Labangon":            [10.2887, 123.8862], "Lahug":             [10.3233, 123.8988],
-  "Lorega San Miguel":   [10.2989, 123.8942], "Lusaran":           [10.3689, 123.8414],
-  "Luz":                 [10.3145, 123.9025], "Mabini":            [10.3095, 123.8966],
-  "Mabolo":              [10.3209, 123.9171], "Malubog":           [10.3522, 123.8579],
-  "Manipis":             [10.3678, 123.8832], "Nasipit":           [10.3302, 123.9266],
-  "Nga-an":              [10.2698, 123.8548], "Nivel Hills":       [10.3363, 123.8886],
-  "Non-oc":              [10.2648, 123.8445], "Pari-an":           [10.2971, 123.8963],
-  "Pasil":               [10.3046, 123.8972], "Pit-os":            [10.3836, 123.8819],
-  "Poblacion Pardo":     [10.2824, 123.8722], "Pulangbato":        [10.3065, 123.8834],
-  "Pung-ol Sibugay":     [10.3766, 123.9063], "Punta Princesa":    [10.2784, 123.8896],
-  "Quiot Pardo":         [10.2804, 123.8637], "Ramos":             [10.3124, 123.8964],
-  "San Antonio":         [10.3195, 123.9108], "San Jose":          [10.3019, 123.8948],
-  "San Nicolas Proper":  [10.2959, 123.8991], "San Roque":         [10.3092, 123.9131],
-  "Santa Cruz":          [10.3056, 123.9012], "Santa Lucia":       [10.2994, 123.8975],
-  "Santo Niño":          [10.2979, 123.8951], "Sapangdaku":        [10.3388, 123.8823],
-  "Sawang Calero":       [10.3107, 123.8859], "Sinsin":            [10.3589, 123.8642],
-  "Sirao":               [10.3867, 123.8699], "Sudlon I":          [10.3978, 123.8628],
-  "Sudlon II":           [10.4022, 123.8551], "T. Padilla":        [10.3164, 123.9008],
-  "Tabunan":             [10.3789, 123.8622], "Tagbao":            [10.3425, 123.8928],
-  "Talamban":            [10.3567, 123.9149], "Taptap":            [10.3422, 123.8579],
-  "Tejero":              [10.3195, 123.9234], "Tinago":            [10.2995, 123.8968],
-  "Tisa":                [10.2878, 123.8782], "To-ong Pardo":      [10.2802, 123.8751],
-  "Tugbongan":           [10.3512, 123.9024], "Zapatera":          [10.3115, 123.8975],
+  "Adlaon":              [10.4369, 123.8680], "Agsungot":          [10.4349, 123.9102],
+  "Apas":                [10.3375, 123.9056], "Babag":             [10.3740, 123.8500],
+  "Bacayan":             [10.3870, 123.9213], "Banilad":           [10.3465, 123.9111],
+  "Basak Pardo":         [10.2865, 123.8646], "Basak San Nicolas": [10.2865, 123.8703],
+  "Binaliw":             [10.4228, 123.9161], "Budlaan":           [10.3793, 123.8859],
+  "Buhisan":             [10.3088, 123.8535], "Bulacao":           [10.2755, 123.8514],
+  "Buot-Taup Pardo":     [10.3480, 123.8081], "Busay":             [10.3608, 123.8847],
+  "Calamba":             [10.3016, 123.8845], "Cambinocot":        [10.4631, 123.8975],
+  "Camputhaw":           [10.3182, 123.8972], "Capitol Site":      [10.3247, 123.8902],
+  "Carreta":             [10.3082, 123.9149], "Central Poblacion": [10.2951, 123.9028],
+  "Cogon Pardo":         [10.2774, 123.8621], "Cogon Ramos":       [10.3049, 123.8984],
+  "Day-as":              [10.3015, 123.9023], "Duljo":             [10.2917, 123.8849],
+  "Ermita":              [10.2917, 123.8974], "Guadalupe":         [10.3229, 123.8839],
+  "Guba":                [10.4282, 123.8899], "Hipodromo":         [10.3141, 123.9070],
+  "Inayawan":            [10.2702, 123.8564], "Kalubihan":         [10.2977, 123.8991],
+  "Kalunasan":           [10.3389, 123.8796], "Kamagayan":         [10.2998, 123.8995],
+  "Kasambagan":          [10.3251, 123.9113], "Kinasang-an Pardo": [10.2823, 123.8591],
+  "Labangon":            [10.2994, 123.8791], "Lahug":             [10.3309, 123.8981],
+  "Lorega San Miguel":   [10.3067, 123.9042], "Lusaran":           [10.4338, 123.8073],
+  "Luz":                 [10.3211, 123.9078], "Mabini":            [10.4527, 123.9190],
+  "Mabolo":              [10.3143, 123.9147], "Malubog":           [10.3804, 123.8693],
+  "Manipis":             [10.3213, 123.7862], "Nasipit":           [10.3530, 123.9158],
+  "Nga-an":              [10.3157, 123.8854], "Nivel Hills":       [10.3423, 123.8954],
+  "Non-oc":              [10.3157, 123.8854], "Pari-an":           [10.2989, 123.9027],
+  "Pasil":               [10.2902, 123.8947], "Pit-os":            [10.3964, 123.9217],
+  "Poblacion Pardo":     [10.2794, 123.8554], "Pulangbato":        [10.3979, 123.9063],
+  "Pung-ol Sibugay":     [10.3970, 123.8495], "Punta Princesa":    [10.2949, 123.8702],
+  "Quiot Pardo":         [10.2890, 123.8586], "Ramos":             [10.3049, 123.8984],
+  "San Antonio":         [10.3019, 123.8983], "San Jose":          [10.3791, 123.9164],
+  "San Nicolas Proper":  [10.2949, 123.8905], "San Roque":         [10.2939, 123.9060],
+  "Santa Cruz":          [10.3061, 123.8959], "Santa Lucia":       [10.2935, 123.8619],
+  "Santo Niño":          [10.2943, 123.9021], "Sapangdaku":        [10.3350, 123.8727],
+  "Sawang Calero":       [10.2912, 123.8908], "Sinsin":            [10.3449, 123.7810],
+  "Sirao":               [10.4141, 123.8722], "Sudlon I":          [10.3636, 123.7863],
+  "Sudlon II":           [10.3796, 123.7847], "T. Padilla":        [10.3018, 123.9043],
+  "Tabunan":             [10.4397, 123.8214], "Tagbao":            [10.4425, 123.8399],
+  "Talamban":            [10.3694, 123.9169], "Taptap":            [10.4299, 123.8480],
+  "Tejero":              [10.3020, 123.9074], "Tinago":            [10.2986, 123.9081],
+  "Tisa":                [10.3021, 123.8690], "To-ong Pardo":      [10.3100, 123.8362],
+  "Tugbongan":           [10.3512, 123.9024], "Zapatera":          [10.3064, 123.9013],
 };
 const DEFAULT_CENTER: [number, number] = [10.3157, 123.8854];
 
@@ -583,7 +583,9 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
             )}
           </div>
           <p className="text-[11px] text-slate-400 -mt-1">
-            Showing <span className="font-semibold text-[#003366]">{form.barangay}</span> — tap to pin your exact station location.
+            Showing <span className="font-semibold text-[#003366]">{form.barangay}</span>
+            <span className="lg:hidden"> — drag the map to pin your exact station location.</span>
+            <span className="hidden lg:inline"> — click the map to pin your exact station location.</span>
           </p>
           <MapPicker
             lat={form.lat}
