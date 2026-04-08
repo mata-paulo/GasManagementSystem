@@ -3,6 +3,9 @@ import {z} from "zod";
 /** Align with `Register.tsx` plate input `maxLength={10}`. */
 export const PLATE_MAX_LENGTH = 10;
 
+/** Only letters, digits, and hyphens — rejects spaces and special characters. */
+const PLATE_FORMAT_REGEX = /^[A-Z0-9-]+$/i;
+
 export const NAME_MAX_LENGTH = 50;
 export const CORS = [
   "https://agas-fuel-rationing-system.web.app",
@@ -63,10 +66,8 @@ export const registerResidentSchema = z.object({
     .string()
     .trim()
     .min(1, "Plate number is required.")
-    .max(
-      PLATE_MAX_LENGTH,
-      `Plate number must be at most ${PLATE_MAX_LENGTH} characters.`
-    ),
+    .max(PLATE_MAX_LENGTH, `Plate number must be at most ${PLATE_MAX_LENGTH} characters.`)
+    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and hyphens."),
   gasType: z
     .string()
     .trim()
@@ -114,6 +115,7 @@ export const registerResidentSchema = z.object({
     .string()
     .trim()
     .max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`)
+    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and hyphens.")
     .optional(),
   vehicle2GasType: z
     .string()
@@ -123,7 +125,7 @@ export const registerResidentSchema = z.object({
   vehicles: z.array(
     z.object({
       type: vehicleTypeSchema,
-      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`),
+      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`).regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and hyphens."),
       gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
     })
   ).min(1).max(5, "Maximum of 5 vehicles allowed.").optional(),

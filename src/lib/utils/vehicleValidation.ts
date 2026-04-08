@@ -38,3 +38,16 @@ export function isContainerType(value: string): boolean {
 export function isGeneratorType(value: string): boolean {
   return wordMatchesKeyword(value, "generator");
 }
+
+/** Only letters, digits, and hyphens — matches both standard plates and generator serials. */
+const PLATE_FORMAT_REGEX = /^[A-Z0-9-]+$/i;
+
+/** True if the plate/serial value contains only allowed characters. */
+export function isValidPlateFormat(value: string): boolean {
+  return PLATE_FORMAT_REGEX.test(value.trim());
+}
+
+/** Strips any character that is not a letter, digit, or hyphen. Use on onChange. */
+export function sanitizePlateInput(value: string): string {
+  return value.replace(/[^A-Z0-9-]/gi, "").toUpperCase();
+}

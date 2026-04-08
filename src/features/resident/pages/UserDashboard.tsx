@@ -6,9 +6,9 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
+import { isContainerType, isGeneratorType, isValidPlateFormat, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import type { ResidentAllocationSummary } from "@/lib/data/agas";
 import { fetchStationDirectory, subscribeResidentAllocationSummary } from "@/lib/data/agas";
@@ -618,7 +618,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               <input
                 type="text"
                 value={v2Form.vehicle2Plate}
-                onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: e.target.value.toUpperCase() }))}
+                onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: sanitizePlateInput(e.target.value) }))}
                 placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"}
                 maxLength={10}
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
@@ -659,6 +659,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && isContainerType(v2Form.vehicle2Type)) { setV2Error("Container-type vehicles are not allowed in the AGAS program."); return; }
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && !v2Form.vehicle2Type.trim()) { setV2Error("Please specify the vehicle type."); return; }
                 if (!v2Form.vehicle2Plate.trim()) { setV2Error(isGeneratorType(v2Form.vehicle2Type) ? "Please enter the serial number." : "Please enter the plate number."); return; }
+                if (!isGeneratorType(v2Form.vehicle2Type) && !isValidPlateFormat(v2Form.vehicle2Plate)) { setV2Error("Plate number may only contain letters, numbers, and hyphens (e.g. ABC-1234)."); return; }
                 if (!v2Form.vehicle2GasType) { setV2Error("Please select a fuel type."); return; }
                 setV2Error("");
                 setConfirmingVehicle(true);
@@ -728,6 +729,19 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                   setV2Error("");
                   try {
                     const plate2 = v2Form.vehicle2Plate.trim().toUpperCase();
+
+                    // Check if plate already exists in another account (primary or vehicle2 field)
+                    const [byPlate, byVehicle2Plate] = await Promise.all([
+                      getDocs(query(collection(db, "accounts"), where("plate", "==", plate2))),
+                      getDocs(query(collection(db, "accounts"), where("vehicle2Plate", "==", plate2))),
+                    ]);
+                    const takenByOther = [...byPlate.docs, ...byVehicle2Plate.docs]
+                      .some((d) => d.id !== resident.uid);
+                    if (takenByOther) {
+                      setV2Error("This plate number is already registered to another account.");
+                      return;
+                    }
+
                     const newVehicles = [...(liveVehicles ?? vehicles), { type: v2Form.vehicle2Type, plate: plate2, gasType: v2Form.vehicle2GasType }];
                     await updateDoc(doc(db, "accounts", resident.uid as string), {
                       vehicles: newVehicles,

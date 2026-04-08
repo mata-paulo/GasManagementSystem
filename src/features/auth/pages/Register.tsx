@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { FirebaseError } from "firebase/app";
-import { isContainerType, isGeneratorType } from "@/lib/utils/vehicleValidation";
+import { isContainerType, isGeneratorType, isValidPlateFormat, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth } from "@/lib/firebase/client";
@@ -211,6 +211,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
     for (const v of vehicles) {
       if (!["2w", "4w"].includes(v.type) && isContainerType(v.type)) { setError("Container-type vehicles are not allowed in the AGAS program."); return; }
       if (!v.plate.trim()) { setError(isGeneratorType(v.type) ? "Please fill in the serial number for your generator." : "Please fill in all plate numbers."); return; }
+      if (!isGeneratorType(v.type) && !isValidPlateFormat(v.plate)) { setError("Plate number may only contain letters, numbers, and hyphens (e.g. ABC-1234)."); return; }
       if (!v.gasType) { setError("Please select a fuel type for each vehicle."); return; }
     }
     if (!agreedToTerms) { setError("You must agree to the Terms and Conditions to register."); return; }
@@ -384,7 +385,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
                 {v.type === "2w" ? "two_wheeler" : v.type === "4w" ? "directions_car" : "commute"}
               </span>
               <input type="text" value={v.plate}
-                onChange={(e) => { updateVehicle(i, "plate", e.target.value.toUpperCase()); setError(""); }}
+                onChange={(e) => { updateVehicle(i, "plate", sanitizePlateInput(e.target.value)); setError(""); }}
                 placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"} maxLength={10}
                 className={`${inputCls} pl-12 uppercase tracking-widest font-bold`} />
             </div>

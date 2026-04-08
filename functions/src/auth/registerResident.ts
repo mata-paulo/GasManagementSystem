@@ -44,14 +44,24 @@ async function assertResidentRegistrationLimitAvailable(): Promise<void> {
 
 async function assertEmailAndPlateAvailable(
   normalizedEmail: string,
-  normalizedPlate: string
+  platesToCheck: string[]
 ): Promise<void> {
   const db = admin.firestore();
   const accounts = db.collection("accounts");
 
-  const [byEmail, byPlate] = await Promise.all([
+  const uniquePlates = [...new Set(platesToCheck.filter(Boolean))];
+
+  const [byEmail, ...byPlateResults] = await Promise.all([
     accounts.where("email", "==", normalizedEmail).limit(1).get(),
-    accounts.where("plate", "==", normalizedPlate).limit(1).get(),
+    // Check primary plate field
+    accounts.where("plate", "==", uniquePlates[0]).limit(1).get(),
+    // Check legacy vehicle2Plate field
+    accounts.where("vehicle2Plate", "==", uniquePlates[0]).limit(1).get(),
+    // Check remaining plates (vehicles[1+]) against both fields
+    ...uniquePlates.slice(1).flatMap((p) => [
+      accounts.where("plate", "==", p).limit(1).get(),
+      accounts.where("vehicle2Plate", "==", p).limit(1).get(),
+    ]),
   ]);
 
   if (!byEmail.empty) {
@@ -60,12 +70,16 @@ async function assertEmailAndPlateAvailable(
       "An account with this email is already registered."
     );
   }
-  if (!byPlate.empty) {
-    throw new HttpsError(
-      "already-exists",
-      "This plate number is already registered."
-    );
-  }
+
+  byPlateResults.forEach((snap, idx) => {
+    if (!snap.empty) {
+      const plate = uniquePlates[Math.floor(idx / 2)] ?? uniquePlates[0];
+      throw new HttpsError(
+        "already-exists",
+        `Plate number ${plate} is already registered to another account.`
+      );
+    }
+  });
 }
 
 function sendHttpsError(res: Response, err: HttpsError): void {
@@ -120,8 +134,13 @@ export const registerResident = onRequest(
       const normalizedEmail = data.email.toLowerCase();
       const normalizedPlate = data.plate.trim().toUpperCase();
 
+      // Collect all plates being registered (primary + vehicles array)
+      const allPlates = data.vehicles && data.vehicles.length > 0
+        ? [...new Set(data.vehicles.map((v) => v.plate.trim().toUpperCase()))]
+        : [normalizedPlate];
+
       await assertResidentRegistrationLimitAvailable();
-      await assertEmailAndPlateAvailable(normalizedEmail, normalizedPlate);
+      await assertEmailAndPlateAvailable(normalizedEmail, allPlates);
 
       let uid: string;
       try {
