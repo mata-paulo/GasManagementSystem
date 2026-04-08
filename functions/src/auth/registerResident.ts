@@ -9,6 +9,39 @@ import {
   type RegisterResidentInput,
 } from "../utils/validators";
 
+function getResidentRegistrationLimit(): number | null {
+  const raw =
+    process.env.RESIDENT_REGISTRATION_LIMIT ??
+    process.env.VITE_RESIDENT_REGISTRATION_LIMIT ??
+    process.env.VITE_PUBLIC_RESIDENT_REGISTRATION_LIMIT;
+
+  if (!raw || !raw.trim()) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+  return Math.floor(parsed);
+}
+
+async function assertResidentRegistrationLimitAvailable(): Promise<void> {
+  const limit = getResidentRegistrationLimit();
+  if (limit == null) return;
+
+  const snapshot = await admin.firestore()
+    .collection("accounts")
+    .where("role", "==", "resident")
+    .count()
+    .get();
+
+  const currentResidents = snapshot.data().count;
+  if (currentResidents >= limit) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "Resident registration limit has been reached."
+    );
+  }
+}
+
 async function assertEmailAndPlateAvailable(
   normalizedEmail: string,
   normalizedPlate: string
@@ -87,6 +120,7 @@ export const registerResident = onRequest(
       const normalizedEmail = data.email.toLowerCase();
       const normalizedPlate = data.plate.trim().toUpperCase();
 
+      await assertResidentRegistrationLimitAvailable();
       await assertEmailAndPlateAvailable(normalizedEmail, normalizedPlate);
 
       let uid: string;

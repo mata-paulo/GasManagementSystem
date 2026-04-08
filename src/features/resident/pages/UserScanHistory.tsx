@@ -1,5 +1,7 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
+import type { ResidentAllocationSummary } from "@/lib/data/agas";
+import { subscribeResidentAllocationSummary } from "@/lib/data/agas";
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -8,160 +10,164 @@ const USER_TABS = [
   { id: "settings", icon: "account_circle", label: "Account" },
 ];
 
-const historyByVehicle = [
-  [
-    { id: 1, station: "Shell – Fuente Osmeña", date: "March 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-    { id: 2, station: "Petron – Jones Ave",    date: "March 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-    { id: 3, station: "Caltex – Mango Ave",    date: "March 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-  ],
-  [
-    { id: 1, station: "Total – Lahug",          date: "April 1, 2026",  time: "07:15 AM", liters: 6.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-    { id: 2, station: "Petron – Mandaue",        date: "March 28, 2026", time: "11:30 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-    { id: 3, station: "Shell – A.S. Fortuna",    date: "March 25, 2026", time: "02:00 PM", liters: 2.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-  ],
-  [
-    { id: 1, station: "Caltex – Colon St.",      date: "April 2, 2026",  time: "08:00 AM", liters: 3.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-    { id: 2, station: "Shell – Talisay",          date: "March 29, 2026", time: "03:45 PM", liters: 0.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-  ],
-  [
-    { id: 1, station: "Petron – Banilad",         date: "April 3, 2026",  time: "06:50 AM", liters: 5.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-    { id: 2, station: "Total – Mactan",            date: "April 1, 2026",  time: "10:00 AM", liters: 7.0, fuelType: "Regular", pricePerLiter: 62, status: "Dispensed" },
-    { id: 3, station: "Shell – Fuente Osmeña",    date: "March 30, 2026", time: "01:20 PM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-  ],
-  [
-    { id: 1, station: "Caltex – Urgello",         date: "April 4, 2026",  time: "09:10 AM", liters: 5.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-    { id: 2, station: "Petron – Hernan Cortes",   date: "April 2, 2026",  time: "04:30 PM", liters: 0.0, fuelType: "Diesel",  pricePerLiter: 56, status: "Dispensed" },
-  ],
-];
-
 const FILTERS = [
-  { id: "all",   label: "All" },
+  { id: "all", label: "All" },
   { id: "today", label: "Today" },
-  { id: "week",  label: "Week" },
+  { id: "week", label: "Week" },
   { id: "month", label: "Month" },
 ];
 
-// Parse "Month DD, YYYY" date strings used in the mock data
-function parseTxDate(dateStr: string): Date {
-  return new Date(dateStr);
+function formatPeso(value: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+}
+
+function formatDate(date: Date | null) {
+  if (!date) return "Unknown date";
+  return date.toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(date: Date | null) {
+  if (!date) return "--:--";
+  return date.toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function matchesFilter(date: Date | null, filter: string) {
+  if (!date || filter === "all") return filter === "all";
+
+  const now = new Date();
+  if (filter === "today") {
+    return date.toDateString() === now.toDateString();
+  }
+  if (filter === "week") {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    return date >= weekAgo;
+  }
+  if (filter === "month") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+  return true;
 }
 
 export default function UserScanHistory({ activeTab, onTabChange, resident, onShowQR, selectedVehicle = 0 }) {
   const [filter, setFilter] = useState("all");
+  const [summary, setSummary] = useState<ResidentAllocationSummary>({
+    transactions: [],
+    fuelAllocation: Number(resident?.fuelAllocation ?? 20),
+    usedLiters: 0,
+    remainingLiters: Number(resident?.fuelAllocation ?? 20),
+  });
+
+  useEffect(() => {
+    const uid = resident?.uid;
+    if (!uid) return () => undefined;
+    return subscribeResidentAllocationSummary(uid, setSummary);
+  }, [resident?.uid]);
 
   const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
-  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0];
-  const activeGasType = activeVehicle?.gasType || resident?.gasType || "";
-  const history = historyByVehicle[selectedVehicle] ?? historyByVehicle[0];
-
-  // "Gasoline" residents see Regular fuel; "Diesel" residents see Diesel
-  const residentFuelType = activeGasType === "Diesel" ? "Diesel" : "Regular";
+  const fallbackVehicle = {
+    type: resident?.vehicleType || "",
+    plate: resident?.plate || "",
+    gasType: resident?.gasType || "",
+  };
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? fallbackVehicle;
+  const activePlate = (activeVehicle?.plate || fallbackVehicle.plate || "").trim().toUpperCase();
 
   const filtered = useMemo(() => {
-    const now = new Date();
-    return history.filter((tx) => {
-      if (tx.fuelType !== residentFuelType) return false;
-      if (filter === "all") return true;
-      const d = parseTxDate(tx.date);
-      if (filter === "today") {
-        return d.toDateString() === now.toDateString();
-      }
-      if (filter === "week") {
-        const weekAgo = new Date(now);
-        weekAgo.setDate(now.getDate() - 7);
-        return d >= weekAgo;
-      }
-      if (filter === "month") {
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      }
-      return true;
-    });
-  }, [filter, history, residentFuelType]);
+    return summary.transactions
+      .filter((tx) => !activePlate || (tx.plate || "").trim().toUpperCase() === activePlate)
+      .filter((tx) => matchesFilter(tx.createdAt, filter));
+  }, [activePlate, filter, summary.transactions]);
 
   const grouped = filtered.reduce((acc, tx) => {
-    if (!acc[tx.date]) acc[tx.date] = [];
-    acc[tx.date].push(tx);
+    const label = formatDate(tx.createdAt);
+    if (!acc[label]) acc[label] = [];
+    acc[label].push(tx);
     return acc;
-  }, {} as Record<string, typeof history>);
+  }, {} as Record<string, typeof filtered>);
 
   const totalLiters = filtered.reduce((sum, tx) => sum + tx.liters, 0);
-  const totalSpent  = filtered.reduce((sum, tx) => sum + tx.liters * tx.pricePerLiter, 0);
+  const totalSpent = filtered.reduce(
+    (sum, tx) => sum + Number(tx.totalPaid ?? tx.amount ?? (tx.liters * tx.pricePerLiter)),
+    0,
+  );
 
   return (
-    <div className="flex flex-col min-h-dvh bg-background">
-      {/* Header */}
-      <div className="flex items-center px-6 py-4 bg-primary-container sticky top-0 z-40">
+    <div className="flex min-h-dvh flex-col bg-background">
+      <div className="sticky top-0 z-40 flex items-center bg-primary-container px-6 py-4">
         <div className="flex-1 flex flex-col items-center">
-          <h1 className="text-white font-headline font-bold text-lg leading-none">
-            Transactions History
-          </h1>
-          <p className="text-[10px] text-white/70 font-bold uppercase tracking-wider mt-0.5">
-            Your fuel transaction records
-          </p>
+          <h1 className="font-headline text-lg font-bold leading-none text-white">Transactions History</h1>
+          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/70">Your live fuel transaction records</p>
         </div>
-        <span className="material-symbols-outlined text-tertiary-fixed icon-filled text-[28px]">
-          receipt_long
-        </span>
+        <span className="material-symbols-outlined icon-filled text-[28px] text-tertiary-fixed">receipt_long</span>
       </div>
 
-      <main className="flex-1 px-5 pt-5 pb-36 max-w-2xl mx-auto w-full space-y-5">
-        {/* Filter bar */}
+      <main className="mx-auto flex-1 w-full max-w-2xl space-y-5 px-5 pb-36 pt-5">
         <div className="flex justify-center gap-2">
-          {FILTERS.map((f) => (
+          {FILTERS.map((item) => (
             <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={`shrink-0 px-5 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                filter === f.id
-                  ? "bg-[#003366] text-white border-[#003366]"
-                  : "bg-white text-slate-500 border-slate-200 active:scale-95"
+              key={item.id}
+              onClick={() => setFilter(item.id)}
+              className={`shrink-0 rounded-full border px-5 py-1.5 text-xs font-bold transition-all ${
+                filter === item.id
+                  ? "border-[#003366] bg-[#003366] text-white"
+                  : "border-slate-200 bg-white text-slate-500 active:scale-95"
               }`}
             >
-              {f.label}
+              {item.label}
             </button>
           ))}
         </div>
 
-        {/* Summary cards */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-primary-container/10 border border-primary-container/20 rounded-2xl p-4 space-y-1">
+          <div className="space-y-1 rounded-2xl border border-primary-container/20 bg-primary-container/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Dispensed</p>
-            <p className="text-xl font-black font-headline text-primary-container">{totalLiters.toFixed(1)} L</p>
+            <p className="font-headline text-xl font-black text-primary-container">{totalLiters.toFixed(1)} L</p>
           </div>
-          <div className="bg-tertiary/10 border border-tertiary/20 rounded-2xl p-4 space-y-1">
+          <div className="space-y-1 rounded-2xl border border-tertiary/20 bg-tertiary/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Transactions</p>
-            <p className="text-xl font-black font-headline text-tertiary">{filtered.length}</p>
+            <p className="font-headline text-xl font-black text-tertiary">{filtered.length}</p>
           </div>
-          <div className="bg-[#003366]/10 border border-[#003366]/20 rounded-2xl p-4 space-y-1">
+          <div className="space-y-1 rounded-2xl border border-[#003366]/20 bg-[#003366]/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Total Spent</p>
-            <p className="text-xl font-black font-headline text-[#003366]">₱{totalSpent.toFixed(0)}</p>
+            <p className="font-headline text-xl font-black text-[#003366]">{formatPeso(totalSpent)}</p>
           </div>
         </div>
 
-        {/* Grouped history */}
-        {Object.entries(grouped).map(([date, txs]) => (
-          <section key={date} className="space-y-3">
-            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
-              {date}
-            </p>
-            {txs.map((tx) => {
-              const total = tx.liters * tx.pricePerLiter;
+        {Object.entries(grouped).map(([dateLabel, transactions]) => (
+          <section key={dateLabel} className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{dateLabel}</p>
+            {transactions.map((tx) => {
+              const total = Number(tx.totalPaid ?? tx.amount ?? (tx.liters * tx.pricePerLiter));
               return (
-                <div key={tx.id} className="bg-white rounded-2xl p-3.5 shadow-sm border border-outline-variant/10 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-white icon-fill text-[22px]">local_gas_station</span>
+                <div key={tx.id} className="flex items-center gap-3 rounded-2xl border border-outline-variant/10 bg-white p-3.5 shadow-sm">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#003366]">
+                    <span className="material-symbols-outlined icon-fill text-[22px] text-white">local_gas_station</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
-                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold leading-tight text-on-surface">{tx.stationName || "Unknown Station"}</p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">{formatDate(tx.createdAt)} · {formatTime(tx.createdAt)}</p>
+                    <span className="mt-1 inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
                       {tx.fuelType}
                     </span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">₱{tx.pricePerLiter}/L</p>
-                    <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
+                  <div className="shrink-0 text-right">
+                    <p className="text-base font-black leading-none text-on-surface">{tx.liters.toFixed(1)} L</p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">{formatPeso(tx.pricePerLiter)}/L</p>
+                    <p className="mt-0.5 text-sm font-black text-[#003366]">{formatPeso(total)}</p>
                   </div>
                 </div>
               );
@@ -170,23 +176,18 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
         ))}
 
         {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-            <span className="material-symbols-outlined text-outline text-[48px]">
-              receipt_long
-            </span>
-            <p className="text-sm text-on-surface-variant font-medium">
-              No transactions yet.
-            </p>
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <span className="material-symbols-outlined text-[48px] text-outline">receipt_long</span>
+            <p className="text-sm font-medium text-on-surface-variant">No live transactions yet.</p>
           </div>
         )}
       </main>
 
-      {/* Floating QR button */}
-      <div className="fixed bottom-32 left-0 right-0 flex justify-center z-40 pointer-events-none">
+      <div className="pointer-events-none fixed bottom-32 left-0 right-0 z-40 flex justify-center">
         <button
           type="button"
           onClick={onShowQR}
-          className="pointer-events-auto flex items-center gap-2 bg-[#003366] text-white font-headline font-bold px-6 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,51,102,0.45)] active:scale-95 transition-all border-2 border-white/20"
+          className="pointer-events-auto flex items-center gap-2 rounded-full border-2 border-white/20 bg-[#003366] px-6 py-3.5 font-headline font-bold text-white shadow-[0_8px_32px_rgba(0,51,102,0.45)] transition-all active:scale-95"
         >
           <span className="material-symbols-outlined icon-fill">qr_code</span>
           View My QR Code
@@ -197,4 +198,3 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
     </div>
   );
 }
-

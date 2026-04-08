@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -8,6 +8,8 @@ delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
+import type { ResidentAccount, ResidentAllocationSummary, StationDirectoryRecord } from "@/lib/data/agas";
+import { fetchStationDirectory, subscribeResidentAccount, subscribeResidentAllocationSummary } from "@/lib/data/agas";
 import { encodeQR } from "@/lib/qr/qrCodec";
 
 function formatTimestamp(iso: string) {
@@ -35,7 +37,21 @@ function formatTransactionTime(value: Date | null) {
   });
 }
 
-/** Title-case each word for display (ASCII/Unicode-safe; avoids \b\w missing non‑Latin letters). */
+function formatPeso(value: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+}
+
+function normalizeBrand(value: string | undefined) {
+  const brand = (value || "").trim();
+  return brand.toLowerCase() === "seaoil" ? "Sea Oil" : (brand || "Other");
+}
+
+/** Title-case each word for display (ASCII/Unicode-safe; avoids \b\w missing non-Latin letters). */
 function formatVehicleTypeLabel(raw: unknown): string {
   if (raw == null) return "";
   const s = String(raw).trim();
@@ -81,91 +97,27 @@ function toPortalTransaction(transaction) {
   };
 }
 
+function mapDirectoryStation(station: StationDirectoryRecord) {
+  return {
+    id: Number.parseInt(station.id, 10) || station.sourceId,
+    name: station.name,
+    brand: normalizeBrand(station.brand),
+    barangay: station.barangay || station.address || "Not set",
+    lat: station.lat,
+    lng: station.lon,
+    fuels: Array.isArray(station.brandPrices)
+      ? station.brandPrices.map((item) => ({ name: item.label, price: item.price }))
+      : [],
+    status: station.status || "",
+  };
+}
+
 const NAV_ITEMS = [
   { id: "overview",      icon: "dashboard",       label: "Overview"         },
   { id: "qr-code",       icon: "qr_code",         label: "My QR Code"       },
   { id: "transactions",  icon: "receipt_long",    label: "Transactions"     },
   { id: "map",           icon: "map",             label: "Stations"         },
   { id: "account",       icon: "manage_accounts", label: "Account"          },
-];
-
-const TRANSACTIONS = [
-  { id: 1, station: "Shell – Fuente Osmeña", date: "March 30, 2026", time: "10:24 AM", liters: 4.0, fuelType: "Regular", pricePerLiter: 62 },
-  { id: 2, station: "Petron – Jones Ave",    date: "March 27, 2026", time: "09:45 AM", liters: 2.5, fuelType: "Regular", pricePerLiter: 62 },
-  { id: 3, station: "Caltex – Mango Ave",    date: "March 24, 2026", time: "08:12 AM", liters: 1.5, fuelType: "Diesel",  pricePerLiter: 56 },
-];
-
-const mkFuels = (d: number, pd: number, r: number, p95: number, p97: number) => [
-  { name: "Diesel",                price: d   },
-  { name: "Premium Diesel",        price: pd  },
-  { name: "Regular/Unleaded (91)", price: r   },
-  { name: "Premium (95)",          price: p95 },
-  { name: "Super Premium (97)",    price: p97 },
-];
-
-const ALL_STATIONS = [
-  // Shell
-  { id:  1, name: "Shell – Robinsons Galleria",    brand: "Shell",     barangay: "Ermita",         lat: 10.3062, lng: 123.8927, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  2, name: "Shell – Osmeña / Jones Ave",    brand: "Shell",     barangay: "Lorega",         lat: 10.3058, lng: 123.8906, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  3, name: "Shell – N. Escario St",         brand: "Shell",     barangay: "Camputhaw",      lat: 10.3188, lng: 123.9018, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  4, name: "Shell – Gorordo Ave",           brand: "Shell",     barangay: "Lahug",          lat: 10.3252, lng: 123.9008, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  5, name: "Shell – F. Cabahug St",         brand: "Shell",     barangay: "Kasambagan",     lat: 10.3425, lng: 123.9088, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  6, name: "Shell – Banilad",               brand: "Shell",     barangay: "Banilad",        lat: 10.3512, lng: 123.8978, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  7, name: "Shell – Talamban Highlands",    brand: "Shell",     barangay: "Talamban",       lat: 10.3682, lng: 123.9012, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  8, name: "Shell – Katipunan St",          brand: "Shell",     barangay: "Labangon",       lat: 10.2898, lng: 123.8868, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id:  9, name: "Shell – Basak Pardo",           brand: "Shell",     barangay: "Basak Pardo",    lat: 10.2842, lng: 123.8818, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id: 10, name: "Shell – Mambaling",             brand: "Shell",     barangay: "Mambaling",      lat: 10.2958, lng: 123.8842, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id: 11, name: "Shell – NRA",                   brand: "Shell",     barangay: "NRA",            lat: 10.3392, lng: 123.9072, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id: 12, name: "Shell – MJ Cuenco Ave",         brand: "Shell",     barangay: "Carreta",        lat: 10.3098, lng: 123.8918, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  { id: 13, name: "Shell – Talamban Rd (Upper)",   brand: "Shell",     barangay: "Talamban",       lat: 10.3722, lng: 123.9052, fuels: mkFuels(58.75,63.45,62.20,70.85,76.50) },
-  // Petron
-  { id: 14, name: "Petron – Pope John Paul II",    brand: "Petron",    barangay: "Apas",           lat: 10.3332, lng: 123.9058, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 15, name: "Petron – N. Escario (Guadalupe)",brand:"Petron",    barangay: "Guadalupe",      lat: 10.3158, lng: 123.9002, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 16, name: "Petron – F. Cabahug St",        brand: "Petron",    barangay: "Kasambagan",     lat: 10.3418, lng: 123.9072, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 17, name: "Petron – R. Duterte St",        brand: "Petron",    barangay: "Banawa",         lat: 10.3042, lng: 123.8858, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 18, name: "Petron – V Rama Ave",           brand: "Petron",    barangay: "Luz",            lat: 10.3082, lng: 123.9018, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 19, name: "Petron – B. Rodriguez St",      brand: "Petron",    barangay: "Cogon Ramos",    lat: 10.3142, lng: 123.8968, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 20, name: "Petron – South Cebu City",      brand: "Petron",    barangay: "Pardo",          lat: 10.2772, lng: 123.8778, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 21, name: "Petron – Near Fuente",          brand: "Petron",    barangay: "Cogon Ramos",    lat: 10.3162, lng: 123.8942, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 22, name: "Petron – Punta Princesa",       brand: "Petron",    barangay: "Punta Princesa", lat: 10.2882, lng: 123.8862, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  { id: 23, name: "Petron – Tisa",                 brand: "Petron",    barangay: "Tisa",           lat: 10.2942, lng: 123.8868, fuels: mkFuels(58.50,63.10,61.95,70.60,76.15) },
-  // Caltex
-  { id: 24, name: "Caltex – Landers Cebu",         brand: "Caltex",    barangay: "Apas",           lat: 10.3352, lng: 123.9038, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  { id: 25, name: "Caltex – T. Padilla / MJ Cuenco",brand:"Caltex",   barangay: "Carreta",        lat: 10.3082, lng: 123.8898, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  { id: 26, name: "Caltex – Magallanes St",        brand: "Caltex",    barangay: "Parian",         lat: 10.3022, lng: 123.8878, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  { id: 27, name: "Caltex – Cebu South Rd",        brand: "Caltex",    barangay: "Basak",          lat: 10.2832, lng: 123.8828, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  { id: 28, name: "Caltex – Filimon Sotto Dr",     brand: "Caltex",    barangay: "Cogon Ramos",    lat: 10.3172, lng: 123.8938, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  { id: 29, name: "Caltex – Tres de Abril St",     brand: "Caltex",    barangay: "Punta Princesa", lat: 10.2872, lng: 123.8850, fuels: mkFuels(58.60,63.25,62.05,70.70,76.30) },
-  // Phoenix
-  { id: 30, name: "Phoenix – Banilad",             brand: "Phoenix",   barangay: "Banilad",        lat: 10.3502, lng: 123.8968, fuels: mkFuels(57.90,62.50,61.40,69.95,75.60) },
-  { id: 31, name: "Phoenix – Mambaling",           brand: "Phoenix",   barangay: "Mambaling",      lat: 10.2952, lng: 123.8832, fuels: mkFuels(57.90,62.50,61.40,69.95,75.60) },
-  // Sea Oil
-  { id: 32, name: "SEAOIL – Tres de Abril St",     brand: "Sea Oil",   barangay: "Punta Princesa", lat: 10.2862, lng: 123.8840, fuels: mkFuels(57.75,62.30,61.25,69.75,75.40) },
-  { id: 33, name: "SeaOil – Bacalso Ave",          brand: "Sea Oil",   barangay: "Duljo-Fatima",   lat: 10.2922, lng: 123.8808, fuels: mkFuels(57.75,62.30,61.25,69.75,75.40) },
-  // Flying V
-  { id: 34, name: "Flying V – Pit-os",             brand: "Flying V",  barangay: "Pit-os",         lat: 10.3802, lng: 123.9022, fuels: mkFuels(57.50,62.00,60.95,69.50,75.10) },
-  { id: 35, name: "Flying V – Quiot Pardo",        brand: "Flying V",  barangay: "Quiot Pardo",    lat: 10.2732, lng: 123.8798, fuels: mkFuels(57.50,62.00,60.95,69.50,75.10) },
-  // Diatoms
-  { id: 36, name: "Diatoms – Tisa",                brand: "Diatoms",   barangay: "Tisa",           lat: 10.2952, lng: 123.8875, fuels: mkFuels(57.40,61.90,60.85,69.40,75.00) },
-  { id: 37, name: "Diatoms – P. Del Rosario St",   brand: "Diatoms",   barangay: "Pahina Central", lat: 10.3022, lng: 123.8918, fuels: mkFuels(57.40,61.90,60.85,69.40,75.00) },
-  // Other / Independent
-  { id: 38, name: "Fueltech – Tinago",             brand: "Other",     barangay: "Tinago",         lat: 10.3062, lng: 123.8888, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 39, name: "Unioil – Lahug",                brand: "Other",     barangay: "Lahug",          lat: 10.3242, lng: 123.9018, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 40, name: "Total – Basak Pardo",           brand: "Other",     barangay: "Basak Pardo",    lat: 10.2802, lng: 123.8808, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 41, name: "Rephil – Pardo",                brand: "Other",     barangay: "Pardo",          lat: 10.2812, lng: 123.8788, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 42, name: "Triune – Sudlon",               brand: "Other",     barangay: "Sudlon",         lat: 10.3902, lng: 123.8958, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 43, name: "C3 Fuels – Labangon",           brand: "Other",     barangay: "Labangon",       lat: 10.2892, lng: 123.8868, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 44, name: "Geminie – Talamban",            brand: "Other",     barangay: "Talamban",       lat: 10.3702, lng: 123.9028, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 45, name: "Gas Up – Cebu South Rd",        brand: "Other",     barangay: "Quiot Pardo",    lat: 10.2752, lng: 123.8828, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 46, name: "JSY – Kalunasan",               brand: "Other",     barangay: "Kalunasan",      lat: 10.3082, lng: 123.8858, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 47, name: "SGD – Sirao / Busay",           brand: "Other",     barangay: "Sirao",          lat: 10.3982, lng: 123.8848, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 48, name: "2010 Gas – Busay",              brand: "Other",     barangay: "Busay",          lat: 10.3952, lng: 123.8818, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 49, name: "LKB – Sudlon / TCH",            brand: "Other",     barangay: "Sudlon",         lat: 10.3922, lng: 123.8878, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 50, name: "SALLEVER – Agsungot",           brand: "Other",     barangay: "Agsungot",       lat: 10.4052, lng: 123.8788, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 51, name: "Cogon Gas Station",             brand: "Other",     barangay: "Cogon Pardo",    lat: 10.2802, lng: 123.8868, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 52, name: "Aura Fuels – V Rama Ave",       brand: "Other",     barangay: "Luz",            lat: 10.3058, lng: 123.8958, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 53, name: "Light Fuels – NRA",             brand: "Other",     barangay: "NRA",            lat: 10.3452, lng: 123.9078, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
-  { id: 54, name: "Oh My Gas – Talamban",          brand: "Other",     barangay: "Talamban",       lat: 10.3732, lng: 123.9038, fuels: mkFuels(57.25,61.75,60.70,69.25,74.85) },
 ];
 
 const FUEL_BADGE: Record<string, string> = {
@@ -179,8 +131,17 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const [collapsed, setCollapsed]       = useState(false);
   const [txFilter, setTxFilter]         = useState("All");
   const [brandFilter, setBrandFilter]           = useState("All");
-  const [selectedStation, setSelectedStation]   = useState<typeof ALL_STATIONS[0] | null>(null);
+  const [selectedStation, setSelectedStation]   = useState<ReturnType<typeof mapDirectoryStation> | null>(null);
   const [selectedVehicle, setSelectedVehicle]   = useState(0);
+  const [liveResident, setLiveResident]         = useState<ResidentAccount | null>(resident ?? null);
+  const [allocationSummary, setAllocationSummary] = useState<ResidentAllocationSummary>({
+    transactions: [],
+    fuelAllocation: Number(resident?.fuelAllocation ?? 20),
+    usedLiters: 0,
+    remainingLiters: Number(resident?.fuelAllocation ?? 20),
+  });
+  const [liveStations, setLiveStations]         = useState<Array<ReturnType<typeof mapDirectoryStation>>>([]);
+  const [portalMessage, setPortalMessage]       = useState("");
   const mapRef                          = useRef<HTMLDivElement>(null);
   const mapInst                         = useRef<L.Map | null>(null);
   const markerEls                       = useRef<Record<number, HTMLElement>>({});
@@ -189,29 +150,94 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const qrRef                           = useRef<HTMLDivElement>(null);
   const webCaptureRef                   = useRef<HTMLDivElement>(null);
 
-  const firstName    = resident?.firstName || "Resident";
-  const lastName     = resident?.lastName  || "";
+  const currentResident = liveResident ?? resident;
+  const firstName    = currentResident?.firstName || "Resident";
+  const lastName     = currentResident?.lastName  || "";
   const fullName     = `${firstName} ${lastName}`.trim();
-  const vehicles     = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
-  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "Car", plate: "N/A", gasType: "Regular" };
-  const plate        = activeVehicle.plate;
-  const vehicleType  = activeVehicle.type || "Car";
-  const gasType      = activeVehicle.gasType || "Regular";
-  const barangay     = resident?.barangay     || "Not set";
-  const vehicleTypeDisplay = formatVehicleTypeLabel(vehicleType) || vehicleType;
-  const registeredAt = resident?.registeredAt || new Date().toISOString();
+  const vehicles     = (currentResident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const fallbackVehicle = {
+    type: currentResident?.vehicleType || "Car",
+    plate: currentResident?.plate || "N/A",
+    gasType: currentResident?.gasType || "Regular",
+  };
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? fallbackVehicle;
+  const plate        = activeVehicle.plate || fallbackVehicle.plate;
+  const vehicleType  = formatVehicleTypeLabel(activeVehicle.type || fallbackVehicle.type) || "Car";
+  const gasType      = activeVehicle.gasType || fallbackVehicle.gasType;
+  const barangay     = currentResident?.barangay || "Not set";
+  const registeredAt = currentResident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
+  const residentStatus = (currentResident?.status || "").toLowerCase() === "inactive" ? "Inactive" : "Active";
 
-  const remaining    = resident?.remaining ?? 12.0;
-  const weeklyQuota  = 20;
-  const used         = weeklyQuota - remaining;
-  const pct          = Math.round((remaining / weeklyQuota) * 100);
-  const totalSpent   = TRANSACTIONS.reduce((s, t) => s + t.liters * t.pricePerLiter, 0);
+  const liveTransactions = allocationSummary.transactions.map(toPortalTransaction);
+  const vehiclePlate = (plate || "").trim().toUpperCase();
+  const scopedTransactions = vehiclePlate
+    ? liveTransactions.filter((transaction) => (transaction.plate || "").trim().toUpperCase() === vehiclePlate)
+    : liveTransactions;
+  const visibleTransactions = scopedTransactions.filter((transaction) => matchesTransactionFilter(transaction.createdAt, txFilter));
+  const remaining    = allocationSummary.remainingLiters;
+  const weeklyQuota  = allocationSummary.fuelAllocation || Number(currentResident?.fuelAllocation ?? 20);
+  const used         = allocationSummary.usedLiters;
+  const pct          = weeklyQuota > 0 ? Math.round((remaining / weeklyQuota) * 100) : 0;
+  const totalSpent   = scopedTransactions.reduce((sum, transaction) => sum + ((transaction.totalPaid ?? (transaction.liters * transaction.pricePerLiter)) || 0), 0);
 
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, currentResident?.uid, plate, vehicleType, barangay, weeklyQuota, used);
   const circumference = 2 * Math.PI * 22;
 
-  /* ── Map (All Stations page) ── */
+  useEffect(() => {
+    setLiveResident(resident ?? null);
+  }, [resident]);
+
+  useEffect(() => {
+    const uid = resident?.uid;
+    if (!uid) return () => undefined;
+
+    return subscribeResidentAccount(
+      uid,
+      (nextResident) => {
+        setLiveResident(nextResident ?? resident ?? null);
+      },
+      () => {
+        setPortalMessage("Resident details are showing the latest available data.");
+      },
+    );
+  }, [resident]);
+
+  useEffect(() => {
+    const uid = resident?.uid;
+    if (!uid) return () => undefined;
+
+    return subscribeResidentAllocationSummary(
+      uid,
+      (nextSummary) => {
+        setAllocationSummary(nextSummary);
+      },
+      () => {
+        setPortalMessage("Transaction updates are temporarily delayed.");
+      },
+    );
+  }, [resident]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchStationDirectory()
+      .then((records) => {
+        if (cancelled || records.length === 0) return;
+        setLiveStations(records.map(mapDirectoryStation));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPortalMessage("Station prices are showing the latest available data.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* -- Map (All Stations page) -- */
   useEffect(() => {
     if (activePage !== "map") return;
     const el = mapRef.current;
@@ -225,7 +251,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
       markerZoomAnimation: false,
     }).setView([10.3200, 123.8950], 11.5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: 'Â© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
       updateWhenIdle: false,
       updateWhenZooming: false,
@@ -234,7 +260,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     mapInst.current = map;
     map.invalidateSize();
 
-    ALL_STATIONS.forEach((st) => {
+    liveStations.forEach((st) => {
       const markerEl = document.createElement("div");
       markerEl.style.cssText =
         "width:32px;height:32px;border-radius:50%;background:#003366;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;";
@@ -253,11 +279,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     });
 
     return () => { map.remove(); mapInst.current = null; markerEls.current = {}; };
-  }, [activePage]);
+  }, [activePage, liveStations]);
 
-  /* ── Sync marker colors + auto-scroll list when selectedStation changes ── */
+  /* -- Sync marker colors + auto-scroll list when selectedStation changes -- */
   useEffect(() => {
-    ALL_STATIONS.forEach((st) => {
+    liveStations.forEach((st) => {
       const wrapper = markerEls.current[st.id];
       if (!wrapper) return;
       const el = wrapper.querySelector("div") as HTMLElement | null;
@@ -276,18 +302,18 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     listEl.scrollTo({ top: offset, behavior: "smooth" });
   }, [selectedStation]);
 
-  /* ── Filter map markers by brand ── */
+  /* -- Filter map markers by brand -- */
   useEffect(() => {
-    ALL_STATIONS.forEach((st) => {
+    liveStations.forEach((st) => {
       const wrapper = markerEls.current[st.id];
       if (!wrapper) return;
       const el = wrapper.querySelector("div") as HTMLElement | null;
       if (!el) return;
       el.style.display = (brandFilter === "All" || st.brand === brandFilter) ? "flex" : "none";
     });
-  }, [brandFilter]);
+  }, [brandFilter, liveStations]);
 
-  /* ── Download QR ── */
+  /* -- Download QR -- */
   const handleDownloadQR = async () => {
     if (!webCaptureRef.current) return;
     const canvas = await html2canvas(webCaptureRef.current, {
@@ -303,17 +329,17 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden">
 
-      {/* ── Hidden branded capture card (used for Download QR) ── */}
+      {/* -- Hidden branded capture card (used for Download QR) -- */}
       <div
         ref={webCaptureRef}
         style={{ position: "fixed", top: "-9999px", left: 0, width: 420, background: "#ffffff", fontFamily: "sans-serif" }}
       >
         {/* Navy header */}
         <div style={{ background: "#001e40", padding: "22px 28px", textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S · Gas Allocation QR</p>
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S Â· Gas Allocation QR</p>
           <p style={{ color: "#ffffff", fontWeight: 900, fontSize: 32, letterSpacing: 6, textTransform: "uppercase", margin: 0 }}>{plate}</p>
           {gasType && (
-            <p style={{ color: "#fde047", fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 0 }}>⛽ {gasType}</p>
+            <p style={{ color: "#fde047", fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 0 }}>{gasType}</p>
           )}
         </div>
         {/* QR + info */}
@@ -337,11 +363,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
         </div>
         {/* Footer */}
         <div style={{ background: "#f1f5f9", padding: "10px 28px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
-          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>© 2026 Mata Technologies Inc. · A.G.A.S — Access to Goods and Assistance System</p>
+          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>Â© 2026 Mata Technologies Inc. Â· A.G.A.S â€” Access to Goods and Assistance System</p>
         </div>
       </div>
 
-      {/* ── Sidebar ── */}
+      {/* -- Sidebar -- */}
       <aside
         className={`flex flex-col bg-[#003366] shadow-xl transition-all duration-300 shrink-0 ${
           collapsed ? "w-[68px]" : "w-[240px]"
@@ -368,7 +394,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-white text-sm font-bold leading-none truncate">{fullName}</p>
-              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} · {vehicleType}</p>
+              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} Â· {vehicleType}</p>
             </div>
           )}
         </div>
@@ -425,7 +451,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* -- Main -- */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Top bar */}
@@ -434,14 +460,19 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             <h1 className="text-[#003366] font-headline font-black text-lg leading-none">
               {NAV_ITEMS.find(n => n.id === activePage)?.label}
             </h1>
-            <p className="text-slate-400 text-xs mt-0.5">Cebu City A.G.A.S · Resident Portal</p>
+            <p className="text-slate-400 text-xs mt-0.5">Cebu City A.G.A.S Â· Resident Portal</p>
           </div>
         </header>
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
+          {portalMessage && (
+            <div className="max-w-6xl mx-auto mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {portalMessage}
+            </div>
+          )}
 
-          {/* ── OVERVIEW ── */}
+          {/* -- OVERVIEW -- */}
           {activePage === "overview" && (
             <div className="space-y-6 max-w-6xl mx-auto">
               {/* Stat cards */}
@@ -450,7 +481,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   { label: "Remaining Fuel", value: `${remaining.toFixed(1)} L`, icon: "local_gas_station", color: "text-green-700", bg: "bg-green-50", border: "border-green-200" },
                   { label: "Used This Week",  value: `${used.toFixed(1)} L`,      icon: "ev_station",        color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
                   { label: "Allocation Used", value: `${100 - pct}%`,             icon: "donut_large",       color: "text-[#003366]",  bg: "bg-blue-50",   border: "border-blue-200" },
-                  { label: "Total Spent",     value: `₱${totalSpent.toFixed(0)}`, icon: "payments",          color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200" },
+                  { label: "Total Spent",     value: formatPeso(totalSpent),      icon: "payments",          color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200" },
                 ].map((c) => (
                   <div key={c.label} className={`${c.bg} border ${c.border} rounded-2xl p-4 flex items-center gap-4`}>
                     <div className={`w-11 h-11 rounded-xl ${c.bg} border ${c.border} flex items-center justify-center shrink-0`}>
@@ -476,25 +507,28 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     </button>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {TRANSACTIONS.map((tx) => (
+                    {scopedTransactions.slice(0, 5).map((tx) => (
                       <div key={tx.id} className="flex items-center gap-4 px-5 py-4">
                         <div className="w-10 h-10 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
                           <span className="text-white font-black text-sm">{initials}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-slate-800">{fullName}</p>
-                          <p className="text-xs text-slate-400">{plate} · {tx.date} · {tx.time}</p>
+                          <p className="text-sm font-bold text-slate-800">{tx.station}</p>
+                          <p className="text-xs text-slate-400">{tx.plate || plate} Â· {tx.date} Â· {tx.time}</p>
                           <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${FUEL_BADGE[tx.fuelType] ?? "bg-slate-100 text-slate-600"}`}>
                             {tx.fuelType}
                           </span>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-base font-black text-slate-800">{tx.liters.toFixed(1)} L</p>
-                          <p className="text-xs text-slate-400">₱{tx.pricePerLiter}/L</p>
-                          <p className="text-sm font-black text-[#003366]">₱{(tx.liters * tx.pricePerLiter).toFixed(2)}</p>
+                          <p className="text-xs text-slate-400">{formatPeso(tx.pricePerLiter)}/L</p>
+                          <p className="text-sm font-black text-[#003366]">{formatPeso(tx.totalPaid ?? (tx.liters * tx.pricePerLiter))}</p>
                         </div>
                       </div>
                     ))}
+                    {scopedTransactions.length === 0 && (
+                      <div className="px-5 py-8 text-center text-sm text-slate-400">No live transactions found for this vehicle yet.</div>
+                    )}
                   </div>
                 </div>
 
@@ -542,7 +576,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             </div>
           )}
 
-          {/* ── MY QR CODE ── */}
+          {/* -- MY QR CODE -- */}
           {activePage === "qr-code" && (
             <div className="max-w-5xl mx-auto">
               {/* Navy banner */}
@@ -570,14 +604,14 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   )}
                   <span className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1.5 rounded-full border border-green-400/30">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-                    Active · Verified
+                    {residentStatus} Â· Verified
                   </span>
                 </div>
               </div>
 
               {/* Two-column */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Left — QR code */}
+                {/* Left â€” QR code */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col items-center gap-2 self-start">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan at participating stations</p>
                   <div ref={qrRef} className="bg-white rounded-2xl border border-slate-100 shadow-inner p-4">
@@ -598,7 +632,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   </div>
                 </div>
 
-                {/* Right — Details */}
+                {/* Right â€” Details */}
                 <div className="space-y-3">
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50">
@@ -662,15 +696,15 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             </div>
           )}
 
-          {/* ── TRANSACTIONS ── */}
+          {/* -- TRANSACTIONS -- */}
           {activePage === "transactions" && (
             <div className="max-w-4xl mx-auto space-y-5">
               {/* Summary */}
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: "Total Dispensed",  value: `${TRANSACTIONS.reduce((s,t)=>s+t.liters,0).toFixed(1)} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
-                  { label: "Transactions",      value: TRANSACTIONS.length,                                          color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
-                  { label: "Total Spent",       value: `₱${totalSpent.toFixed(2)}`,                                 color: "text-green-700",  bg: "bg-green-50 border-green-200" },
+                  { label: "Total Dispensed",  value: `${scopedTransactions.reduce((s,t)=>s+t.liters,0).toFixed(1)} L`, color: "text-[#003366]", bg: "bg-blue-50 border-blue-200" },
+                  { label: "Transactions",      value: visibleTransactions.length,                                        color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
+                  { label: "Total Spent",       value: formatPeso(visibleTransactions.reduce((sum, tx) => sum + ((tx.totalPaid ?? (tx.liters * tx.pricePerLiter)) || 0), 0)), color: "text-green-700",  bg: "bg-green-50 border-green-200" },
                 ].map((c) => (
                   <div key={c.label} className={`border rounded-2xl p-5 ${c.bg}`}>
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{c.label}</p>
@@ -705,7 +739,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   <span className="text-right">Total</span>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {TRANSACTIONS.map((tx) => (
+                  {visibleTransactions.map((tx) => (
                     <div key={tx.id} className="grid grid-cols-6 px-5 py-4 items-center hover:bg-slate-50 transition-colors">
                       <div className="col-span-2 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#003366] flex items-center justify-center shrink-0">
@@ -713,7 +747,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         </div>
                         <div>
                           <p className="text-sm font-bold text-slate-800">{tx.station}</p>
-                          <p className="text-xs text-slate-400">{fullName}</p>
+                          <p className="text-xs text-slate-400">{tx.plate || plate}</p>
                         </div>
                       </div>
                       <div>
@@ -724,21 +758,24 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${FUEL_BADGE[tx.fuelType] ?? "bg-slate-100 text-slate-600"}`}>
                           {tx.fuelType}
                         </span>
-                        <p className="text-xs text-slate-400 mt-1">₱{tx.pricePerLiter}/L</p>
+                        <p className="text-xs text-slate-400 mt-1">{formatPeso(tx.pricePerLiter)}/L</p>
                       </div>
                       <p className="text-right text-sm font-bold text-slate-700">{tx.liters.toFixed(1)} L</p>
-                      <p className="text-right text-sm font-black text-[#003366]">₱{(tx.liters * tx.pricePerLiter).toFixed(2)}</p>
+                      <p className="text-right text-sm font-black text-[#003366]">{formatPeso(tx.totalPaid ?? (tx.liters * tx.pricePerLiter))}</p>
                     </div>
                   ))}
+                  {visibleTransactions.length === 0 && (
+                    <div className="px-5 py-8 text-center text-sm text-slate-400">No live transactions match this filter yet.</div>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── ALL STATIONS ── */}
+          {/* -- ALL STATIONS -- */}
           {activePage === "map" && (() => {
-            const brands = ["All", "Shell", "Petron", "Caltex", "Phoenix", "Sea Oil", "Flying V", "Diatoms", "Other"];
-            const filtered = brandFilter === "All" ? ALL_STATIONS : ALL_STATIONS.filter(s => s.brand === brandFilter);
+            const brands = ["All", ...Array.from(new Set(liveStations.map((station) => station.brand))).sort()];
+            const filtered = brandFilter === "All" ? liveStations : liveStations.filter(s => s.brand === brandFilter);
             return (
               <div className="max-w-7xl mx-auto h-full">
                 <div className="grid grid-cols-3 gap-5 h-[calc(100vh-160px)]">
@@ -768,9 +805,12 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                                 <span className="w-1.5 h-1.5 rounded-full bg-[#003366] shrink-0" />
                                 <span className="text-xs text-slate-600">{fuel.name}</span>
                               </div>
-                              <span className="text-xs font-black text-[#003366]">₱{fuel.price.toFixed(2)}<span className="text-[10px] font-normal text-slate-400">/L</span></span>
+                              <span className="text-xs font-black text-[#003366]">{formatPeso(fuel.price)}<span className="text-[10px] font-normal text-slate-400">/L</span></span>
                             </div>
                           ))}
+                          {selectedStation.fuels.length === 0 && (
+                            <p className="text-xs text-slate-500">This station has not published live prices yet.</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -778,8 +818,8 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   {/* Station list */}
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                     <div className="px-4 py-3 border-b border-slate-100">
-                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations – Cebu City</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">{filtered.length} of {ALL_STATIONS.length} stations</p>
+                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations â€“ Cebu City</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">{filtered.length} of {liveStations.length} stations</p>
                       {/* Brand filter */}
                       <div className="flex flex-wrap gap-1.5 mt-2.5">
                         {brands.map((b) => (
@@ -831,7 +871,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             );
           })()}
 
-          {/* ── ACCOUNT ── */}
+          {/* -- ACCOUNT -- */}
           {activePage === "account" && (
             <div className="max-w-2xl mx-auto space-y-5">
               {/* Profile card */}
@@ -841,8 +881,8 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-headline font-black text-xl leading-tight">{fullName}</p>
-                  <p className="text-white/60 text-sm mt-0.5">{plate} · {vehicleType}</p>
-                  <p className="text-white/50 text-xs mt-0.5">{barangay} · {gasType}</p>
+                  <p className="text-white/60 text-sm mt-0.5">{plate} Â· {vehicleType}</p>
+                  <p className="text-white/50 text-xs mt-0.5">{barangay} Â· {gasType}</p>
                 </div>
                 <div className="shrink-0 flex flex-col items-end gap-2">
                   {vehicles.length > 1 && (
@@ -858,7 +898,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   )}
                   <span className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1 rounded-full border border-green-400/30">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-                    Active
+                    {residentStatus}
                   </span>
                 </div>
               </div>
@@ -871,7 +911,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   { label: "Barangay",     value: barangay,     icon: "location_on"     },
                   { label: "Vehicle Type", value: vehicleType,  icon: "commute"         },
                   { label: "Fuel Type",    value: gasType,      icon: "local_gas_station" },
-                  { label: "Status",       value: "Active",     icon: "verified_user"   },
+                  { label: "Status",       value: residentStatus, icon: "verified_user"   },
                 ].map((d) => (
                   <div key={d.label} className="bg-white rounded-2xl px-5 py-4 border border-slate-200 shadow-sm flex items-center gap-3">
                     <span className="material-symbols-outlined text-[#003366] text-[20px] shrink-0">{d.icon}</span>
@@ -916,7 +956,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               </button>
 
               <p className="text-center text-slate-300 text-[10px] pb-2">
-                © 2026 Mata Technologies Inc. · A.G.A.S
+                Â© 2026 Mata Technologies Inc. Â· A.G.A.S
               </p>
             </div>
           )}
@@ -926,4 +966,5 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     </div>
   );
 }
+
 
