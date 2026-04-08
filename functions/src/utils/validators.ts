@@ -9,12 +9,9 @@ export const PLATE_MAX_LENGTH = 10;
  */
 const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 -]*[A-Z0-9])?$/i;
 
-/** Visually similar digit→letter substitutions (homoglyph guard). */
-const HOMOGLYPHS: Record<string, string> = { "0":"O","1":"I","5":"S","8":"B" };
-
-/** Strips non-alphanumeric, uppercases, then collapses homoglyphs for duplicate comparison. */
+/** Strips ALL non-alphanumeric characters for duplicate comparison. */
 export function normalizePlate(plate: string): string {
-  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase().replace(/[0158]/g, c => HOMOGLYPHS[c]);
+  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
 /**

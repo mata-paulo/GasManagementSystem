@@ -76,15 +76,12 @@ export function plateError(plate: string, vehicleType: string): string | null {
   return null;
 }
 
-/** Visually similar digit→letter substitutions (homoglyph guard). */
-const HOMOGLYPHS: Record<string, string> = { "0":"O","1":"I","5":"S","8":"B" };
-
 /**
- * Strips non-alphanumeric chars, uppercases, then collapses homoglyphs so
- * "AB0-1234" and "ABO-1234" both compare equal.
+ * Strips ALL non-alphanumeric characters for duplicate comparison.
+ * "ABC-1234" → "ABC1234". Use when checking if two plates are the same vehicle.
  */
 export function normalizePlateForComparison(plate: string): string {
-  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase().replace(/[0158]/g, c => HOMOGLYPHS[c]);
+  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
 /**
