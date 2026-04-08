@@ -8,7 +8,7 @@ delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { isContainerType, isGeneratorType, isValidPlateFormat, normalizePlateForComparison, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
+import { formatPlateForStorage, isContainerType, isGeneratorType, isValidPlateFormat, normalizePlateForComparison, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import type { ResidentAllocationSummary } from "@/lib/data/agas";
 import { fetchStationDirectory, subscribeResidentAllocationSummary } from "@/lib/data/agas";
@@ -728,7 +728,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                   setV2Saving(true);
                   setV2Error("");
                   try {
-                    const plate2 = v2Form.vehicle2Plate.trim().toUpperCase();
+                    const plate2 = formatPlateForStorage(v2Form.vehicle2Plate);
                     const plate2Normalized = normalizePlateForComparison(plate2);
 
                     // Check if plate already exists in another account.

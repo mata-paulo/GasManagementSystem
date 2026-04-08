@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { FirebaseError } from "firebase/app";
-import { isContainerType, isGeneratorType, isValidPlateFormat, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
+import { formatPlateForStorage, isContainerType, isGeneratorType, isValidPlateFormat, sanitizePlateInput } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth } from "@/lib/firebase/client";
@@ -225,7 +225,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
     setRegistering(true);
     const email = form.email.trim().toLowerCase();
     try {
-      const mappedVehicles = vehicles.map((v) => ({ ...v, plate: v.plate.trim().toUpperCase() }));
+      const mappedVehicles = vehicles.map((v) => ({ ...v, plate: formatPlateForStorage(v.plate) }));
       const payload: Record<string, unknown> = {
         vehicleType: mappedVehicles[0].type,
         plate: mappedVehicles[0].plate,

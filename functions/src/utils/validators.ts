@@ -14,6 +14,18 @@ export function normalizePlate(plate: string): string {
   return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
+/**
+ * Formats a plate for canonical storage: strips separators then inserts a
+ * hyphen at the letter→digit boundary ("ABC 1234" → "ABC-1234").
+ * Falls back to the stripped value if no clear boundary exists.
+ */
+export function formatPlateForStorage(plate: string): string {
+  const cleaned = normalizePlate(plate);
+  const match = cleaned.match(/^([A-Z]+)([0-9]+)$/i);
+  if (match) return `${match[1]}-${match[2]}`;
+  return cleaned;
+}
+
 export const NAME_MAX_LENGTH = 50;
 export const CORS = [
   "https://agas-fuel-rationing-system.web.app",

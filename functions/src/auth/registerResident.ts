@@ -5,6 +5,7 @@ import {FieldValue} from "firebase-admin/firestore";
 import type {Request, Response} from "express";
 import {
   CORS,
+  formatPlateForStorage,
   normalizePlate,
   registerResidentSchema,
   type RegisterResidentInput,
@@ -137,11 +138,11 @@ export const registerResident = onRequest(
       const data: RegisterResidentInput = parsed.data;
 
       const normalizedEmail = data.email.toLowerCase();
-      const normalizedPlate = data.plate.trim().toUpperCase();
+      const normalizedPlate = formatPlateForStorage(data.plate);
 
-      // Collect all plates being registered (primary + vehicles array)
+      // Collect all plates being registered (primary + vehicles array), formatted for storage
       const allPlates = data.vehicles && data.vehicles.length > 0
-        ? [...new Set(data.vehicles.map((v) => v.plate.trim().toUpperCase()))]
+        ? [...new Set(data.vehicles.map((v) => formatPlateForStorage(v.plate)))]
         : [normalizedPlate];
 
       await assertResidentRegistrationLimitAvailable();
@@ -196,7 +197,7 @@ export const registerResident = onRequest(
         };
         // Build vehicles array: prefer sent array, fallback to primary fields
         const vehiclesArray = (data.vehicles && data.vehicles.length > 0)
-          ? data.vehicles.map((v) => ({ ...v, plate: v.plate.trim().toUpperCase() }))
+          ? data.vehicles.map((v) => ({ ...v, plate: formatPlateForStorage(v.plate) }))
           : [{ type: data.vehicleType, plate: normalizedPlate, gasType: data.gasType }];
         docData.vehicles = vehiclesArray;
         // Keep legacy individual fields for backward compatibility
