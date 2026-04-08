@@ -39,15 +39,40 @@ export function isGeneratorType(value: string): boolean {
   return wordMatchesKeyword(value, "generator");
 }
 
-/** Only letters, digits, and hyphens — matches both standard plates and generator serials. */
-const PLATE_FORMAT_REGEX = /^[A-Z0-9-]+$/i;
+/**
+ * Philippine plate format: letters/digits, optional single space between groups.
+ * Covers old format (AB 1234), new format (ABC 1234), motorcycle (DA93600), etc.
+ * Must start and end with an alphanumeric character.
+ */
+const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 ]*[A-Z0-9])?$/i;
 
-/** True if the plate/serial value contains only allowed characters. */
+/** True if the plate/serial value matches the expected format. */
 export function isValidPlateFormat(value: string): boolean {
-  return PLATE_FORMAT_REGEX.test(value.trim());
+  const trimmed = value.trim();
+  return trimmed.length > 0 && PLATE_FORMAT_REGEX.test(trimmed);
 }
 
-/** Strips any character that is not a letter, digit, or hyphen. Use on onChange. */
+/**
+ * Sanitizes plate input on onChange:
+ * - Converts hyphens to spaces (common user mistake: "ABC-1234" → "ABC 1234")
+ * - Strips all other non-alphanumeric characters
+ * - Collapses multiple spaces to one
+ * - Strips leading spaces, uppercases
+ */
 export function sanitizePlateInput(value: string): string {
-  return value.replace(/[^A-Z0-9-]/gi, "").toUpperCase();
+  return value
+    .replace(/-/g, " ")
+    .replace(/[^A-Z0-9 ]/gi, "")
+    .replace(/\s+/g, " ")
+    .trimStart()
+    .toUpperCase();
+}
+
+/**
+ * Strips ALL non-alphanumeric characters for duplicate comparison.
+ * "ABC 1234" → "ABC1234", "ABC-1234" → "ABC1234"
+ * Use this when checking whether two plates refer to the same vehicle.
+ */
+export function normalizePlateForComparison(plate: string): string {
+  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }

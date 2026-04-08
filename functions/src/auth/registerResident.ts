@@ -5,6 +5,7 @@ import {FieldValue} from "firebase-admin/firestore";
 import type {Request, Response} from "express";
 import {
   CORS,
+  normalizePlate,
   registerResidentSchema,
   type RegisterResidentInput,
 } from "../utils/validators";
@@ -50,17 +51,21 @@ async function assertEmailAndPlateAvailable(
   const accounts = db.collection("accounts");
 
   const uniquePlates = [...new Set(platesToCheck.filter(Boolean))];
+  // Normalize each plate for comparison (strips spaces, hyphens, etc.)
+  const uniqueNormalized = [...new Set(uniquePlates.map(normalizePlate))];
 
-  const [byEmail, ...byPlateResults] = await Promise.all([
+  // For each normalized plate value, query:
+  //   1. plateNormalized field (new accounts)
+  //   2. vehicle2PlateNormalized field (new accounts, second vehicle)
+  //   3. plate field exact match with normalized value (legacy accounts stored without spaces)
+  //   4. vehicle2Plate field exact match with normalized value (legacy)
+  const [byEmail, ...snapshots] = await Promise.all([
     accounts.where("email", "==", normalizedEmail).limit(1).get(),
-    // Check primary plate field
-    accounts.where("plate", "==", uniquePlates[0]).limit(1).get(),
-    // Check legacy vehicle2Plate field
-    accounts.where("vehicle2Plate", "==", uniquePlates[0]).limit(1).get(),
-    // Check remaining plates (vehicles[1+]) against both fields
-    ...uniquePlates.slice(1).flatMap((p) => [
-      accounts.where("plate", "==", p).limit(1).get(),
-      accounts.where("vehicle2Plate", "==", p).limit(1).get(),
+    ...uniqueNormalized.flatMap((np) => [
+      accounts.where("plateNormalized", "==", np).limit(1).get(),
+      accounts.where("vehicle2PlateNormalized", "==", np).limit(1).get(),
+      accounts.where("plate", "==", np).limit(1).get(),
+      accounts.where("vehicle2Plate", "==", np).limit(1).get(),
     ]),
   ]);
 
@@ -71,15 +76,15 @@ async function assertEmailAndPlateAvailable(
     );
   }
 
-  byPlateResults.forEach((snap, idx) => {
-    if (!snap.empty) {
-      const plate = uniquePlates[Math.floor(idx / 2)] ?? uniquePlates[0];
+  for (let i = 0; i < uniqueNormalized.length; i++) {
+    const group = snapshots.slice(i * 4, i * 4 + 4);
+    if (group.some((snap) => !snap.empty)) {
       throw new HttpsError(
         "already-exists",
-        `Plate number ${plate} is already registered to another account.`
+        `Plate number ${uniquePlates[i]} is already registered to another account.`
       );
     }
-  });
+  }
 }
 
 function sendHttpsError(res: Response, err: HttpsError): void {
@@ -180,6 +185,7 @@ export const registerResident = onRequest(
         const docData: Record<string, unknown> = {
           vehicleType: data.vehicleType,
           plate: normalizedPlate,
+          plateNormalized: normalizePlate(normalizedPlate),
           gasType: data.gasType,
           firstName: data.firstName,
           lastName: data.lastName,
@@ -197,6 +203,7 @@ export const registerResident = onRequest(
         if (vehiclesArray.length > 1) {
           docData.vehicle2Type = vehiclesArray[1].type;
           docData.vehicle2Plate = vehiclesArray[1].plate;
+          docData.vehicle2PlateNormalized = normalizePlate(vehiclesArray[1].plate);
           docData.vehicle2GasType = vehiclesArray[1].gasType;
         }
         await admin.firestore().collection("accounts").doc(uid).set(docData);
