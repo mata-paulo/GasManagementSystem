@@ -31,6 +31,11 @@ export interface ResidentAccount extends AuthUser {
   barangay?: string;
   vehicleType?: string;
   gasType?: string;
+  // Multi-vehicle support (jevguio PR #4)
+  vehicles?: Array<{ type: string; plate: string; gasType: string }>;
+  vehicle2Type?: string;    // legacy bridge — mirrors vehicles[1].type for old accounts
+  vehicle2Plate?: string;   // legacy bridge — mirrors vehicles[1].plate for old accounts
+  vehicle2GasType?: string; // legacy bridge — mirrors vehicles[1].gasType for old accounts
   fuelAllocation?: number;
   fuelUsed?: number;
   fuelWeekKey?: string;
@@ -388,6 +393,12 @@ function mapAccount(uid: string, data: Record<string, unknown>): AccountRecord |
       barangay: typeof data.barangay === "string" ? data.barangay : undefined,
       vehicleType: typeof data.vehicleType === "string" ? data.vehicleType : undefined,
       gasType: typeof data.gasType === "string" ? data.gasType : undefined,
+      vehicles: Array.isArray(data.vehicles)
+        ? (data.vehicles as Array<{ type: string; plate: string; gasType: string }>)
+        : undefined,
+      vehicle2Type: typeof data.vehicle2Type === "string" ? data.vehicle2Type : undefined,
+      vehicle2Plate: typeof data.vehicle2Plate === "string" ? data.vehicle2Plate : undefined,
+      vehicle2GasType: typeof data.vehicle2GasType === "string" ? data.vehicle2GasType : undefined,
       fuelAllocation: asNumber(data.fuelAllocation) ?? WEEKLY_FUEL_LIMIT,
       fuelUsed: asNumber(data.fuelUsed) ?? 0,
       fuelWeekKey: asString(data.fuelWeekKey),

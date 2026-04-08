@@ -34,14 +34,14 @@ const CEBU_BARANGAYS = [
   "Tinago", "Tisa", "To-ong Pardo", "Tugbongan", "Zapatera",
 ];
 
-const BRANDS = ["Default", "Shell", "Petron", "Caltex", "Phoenix"];
+const BRANDS = ["Shell", "Petron", "Caltex", "Phoenix", "Others"];
 
 const BRAND_FUELS = {
-  Default: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
-  Caltex:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
-  Petron:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
-  Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
   Shell:   ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Petron:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Caltex:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Phoenix: ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
+  Others:  ["Diesel", "Premium Diesel", "Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)", "Kerosene"],
 };
 
 type Brand = keyof typeof BRAND_FUELS;
@@ -451,6 +451,7 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
     googleEmail: "", password: "", confirmPassword: "",
     lat: null, lon: null,
   });
+  const [customBrand,    setCustomBrand]    = useState("");
   const [fuelCapacities, setFuelCapacities] = useState<Record<string, string>>({});
   const [enabledFuels,   setEnabledFuels]   = useState<Set<string>>(new Set());
   const [agreedToTerms,  setAgreedToTerms]  = useState(false);
@@ -513,6 +514,7 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
 
   const validateStepTwo = () => {
     if (!form.brand) { setError("Please select a brand."); return false; }
+    if (form.brand === "Others" && !customBrand.trim()) { setError("Please enter a brand name."); return false; }
     if (!form.barangay) { setError("Please select a barangay."); return false; }
     if (form.lat === null || form.lon === null) { setError("Please pin your station location on the map."); return false; }
     if (activeFuels.length === 0) { setError("Please enable at least one fuel type."); return false; }
@@ -534,7 +536,8 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
   const handleConfirm = async () => {
     setConfirmError("");
     setRegistering(true);
-    const { barangay, brand, officerFirstName, officerLastName, googleEmail, password, lat, lon } = form;
+    const { barangay, brand: brandKey, officerFirstName, officerLastName, googleEmail, password, lat, lon } = form;
+    const brand = brandKey === "Others" ? customBrand.trim() : brandKey;
     const email = googleEmail.trim().toLowerCase();
     const nextOfficerFirstName = officerFirstName.trim();
     const nextOfficerLastName = officerLastName.trim();
@@ -543,8 +546,14 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
       if (!registrationToken) {
         throw new Error("No registration token provided. Please use the invite link.");
       }
-      if (tokenValidationError) {
-        throw new Error(tokenValidationError);
+      // Re-validate token at submit time — catches tokens used by someone else
+      // while the form was open (mount-time check alone is not sufficient).
+      try {
+        await validateStationRegistrationToken(registrationToken);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Token validation failed";
+        setTokenValidationError(message);
+        throw new Error(message);
       }
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const uid = cred.user.uid;
@@ -567,7 +576,7 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
         stationDirectoryId: uid,
       };
       const stationDirectoryData: Record<string, unknown> = {
-        name: [(brand || "").trim(), "Station"].filter(Boolean).join(" "),
+        name: brandKey === "Others" ? brand : [(brand || "").trim(), "Station"].filter(Boolean).join(" "),
         brand,
         address: barangay,
         hours: "See station",
@@ -684,11 +693,27 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
         <label className={labelCls}>Brand</label>
         <SheetPicker value={form.brand} onChange={(b) => {
             setForm((prev) => ({ ...prev, brand: b as Brand }));
+            if (b !== "Others") setCustomBrand("");
             const fuels = BRAND_FUELS[b as Brand] || [];
             setFuelCapacities(Object.fromEntries(fuels.map((f) => [f, ""])));
             setEnabledFuels(new Set(fuels));
             setError("");
           }} options={BRANDS} placeholder="Select brand…" icon="local_gas_station" />
+        {form.brand === "Others" && (
+          <div className="relative mt-1.5">
+            <input
+              type="text"
+              value={customBrand}
+              onChange={(e) => { setCustomBrand(e.target.value.slice(0, 50)); setError(""); }}
+              placeholder="Enter brand name…"
+              maxLength={50}
+              className="w-full border border-outline-variant rounded-xl py-3 pl-4 pr-14 text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 bg-surface-container-lowest"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">
+              {customBrand.length}/50
+            </span>
+          </div>
+        )}
       </div>
       <div className="space-y-1.5">
         <label className={labelCls}>Barangay</label>
@@ -905,8 +930,9 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
               <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
                 {[
                   { label: "Barangay",       value: form.barangay },
-                  { label: "Brand",          value: form.brand },
+                  { label: "Brand",          value: form.brand === "Others" ? customBrand.trim() || "Others" : form.brand },
                   { label: "Representative", value: `${form.officerFirstName} ${form.officerLastName}`.trim() },
+                  { label: "Email",          value: form.googleEmail.trim().toLowerCase() },
                   { label: "Fuel Types",     value: `${activeFuels.length} enabled` },
                 ].map((d) => (
                   <div key={d.label} className="flex justify-between">

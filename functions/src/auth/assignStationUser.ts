@@ -25,7 +25,7 @@ type RegistrationTokenResponse = {
 };
 
 // Registration token expiry window. Change this to adjust token validity.
-const STATION_REGISTRATION_TOKEN_TTL_DAYS = 7;
+const STATION_REGISTRATION_TOKEN_TTL_DAYS = 3;
 
 function sendHttpsError(res: Response, err: HttpsError): void {
   const statusMap: Record<string, number> = {
@@ -129,7 +129,7 @@ function getRequiredEnv(name: string): string {
 }
 
 function getAppBaseUrl(): string {
-  return process.env.APP_BASE_URL?.trim() || "https://agas-fuel-rationing-system.web.app";
+  return process.env.APP_BASE_URL?.trim() || "https://agas.ph";
 }
 
 /**
@@ -206,7 +206,7 @@ async function sendStationRegistrationEmail(args: {
       "Use the secure link below to complete your registration and set your password:",
       args.registrationLink,
       "",
-      "This link will expire in 7 days.",
+      "This link will expire in 3 days.",
       "If you were not expecting this invite, you can ignore this message.",
     ].join("\n"),
     html: `
@@ -242,7 +242,7 @@ async function sendStationRegistrationEmail(args: {
 
             <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:18px;padding:16px 18px;margin-bottom:24px;">
               <p style="margin:0;font-size:13px;line-height:1.7;color:#0c4a6e;">
-                This link will expire in <strong>7 days</strong> and can only be used once.
+                This link will expire in <strong>3 days</strong> and can only be used once.
               </p>
             </div>
 
