@@ -4,10 +4,10 @@ import {z} from "zod";
 export const PLATE_MAX_LENGTH = 10;
 
 /**
- * Philippine plate format: alphanumeric, optional single space between groups.
- * Covers old (AB 1234), new (ABC 1234), motorcycle (DA93600), etc.
+ * Philippine plate format: alphanumeric with optional spaces or hyphens as separators.
+ * Covers old (AB 1234 / AB-1234), new (ABC 1234 / ABC-1234), motorcycle (DA93600), etc.
  */
-const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 ]*[A-Z0-9])?$/i;
+const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 -]*[A-Z0-9])?$/i;
 
 /** Strips ALL non-alphanumeric characters for duplicate comparison. */
 export function normalizePlate(plate: string): string {
@@ -75,7 +75,7 @@ export const registerResidentSchema = z.object({
     .trim()
     .min(1, "Plate number is required.")
     .max(PLATE_MAX_LENGTH, `Plate number must be at most ${PLATE_MAX_LENGTH} characters.`)
-    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and spaces (e.g. ABC 1234)."),
+    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, spaces, and hyphens (e.g. ABC-1234)."),
   gasType: z
     .string()
     .trim()
@@ -123,7 +123,7 @@ export const registerResidentSchema = z.object({
     .string()
     .trim()
     .max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`)
-    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and spaces (e.g. ABC 1234).")
+    .regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, spaces, and hyphens (e.g. ABC-1234).")
     .optional(),
   vehicle2GasType: z
     .string()
@@ -133,7 +133,7 @@ export const registerResidentSchema = z.object({
   vehicles: z.array(
     z.object({
       type: vehicleTypeSchema,
-      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`).regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, and spaces (e.g. ABC 1234)."),
+      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`).regex(PLATE_FORMAT_REGEX, "Plate number may only contain letters, numbers, spaces, and hyphens (e.g. ABC-1234)."),
       gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
     })
   ).min(1).max(5, "Maximum of 5 vehicles allowed.").optional(),

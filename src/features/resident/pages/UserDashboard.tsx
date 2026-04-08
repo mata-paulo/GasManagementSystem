@@ -619,7 +619,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 type="text"
                 value={v2Form.vehicle2Plate}
                 onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: sanitizePlateInput(e.target.value) }))}
-                placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC 1234"}
+                placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"}
                 maxLength={10}
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
               />
@@ -659,7 +659,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && isContainerType(v2Form.vehicle2Type)) { setV2Error("Container-type vehicles are not allowed in the AGAS program."); return; }
                 if (!["2w", "4w"].includes(v2Form.vehicle2Type) && !v2Form.vehicle2Type.trim()) { setV2Error("Please specify the vehicle type."); return; }
                 if (!v2Form.vehicle2Plate.trim()) { setV2Error(isGeneratorType(v2Form.vehicle2Type) ? "Please enter the serial number." : "Please enter the plate number."); return; }
-                if (!isGeneratorType(v2Form.vehicle2Type) && !isValidPlateFormat(v2Form.vehicle2Plate)) { setV2Error("Plate number may only contain letters, numbers, and spaces (e.g. ABC 1234)."); return; }
+                if (!isGeneratorType(v2Form.vehicle2Type) && !isValidPlateFormat(v2Form.vehicle2Plate)) { setV2Error("Plate number may only contain letters, numbers, spaces, and hyphens (e.g. ABC-1234)."); return; }
                 if (!v2Form.vehicle2GasType) { setV2Error("Please select a fuel type."); return; }
                 setV2Error("");
                 setConfirmingVehicle(true);

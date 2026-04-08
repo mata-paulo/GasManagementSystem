@@ -40,11 +40,11 @@ export function isGeneratorType(value: string): boolean {
 }
 
 /**
- * Philippine plate format: letters/digits, optional single space between groups.
- * Covers old format (AB 1234), new format (ABC 1234), motorcycle (DA93600), etc.
+ * Philippine plate format: letters/digits with optional spaces or hyphens as separators.
+ * Covers old (AB 1234 / AB-1234), new (ABC 1234 / ABC-1234), motorcycle (DA93600), etc.
  * Must start and end with an alphanumeric character.
  */
-const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 ]*[A-Z0-9])?$/i;
+const PLATE_FORMAT_REGEX = /^[A-Z0-9]([A-Z0-9 -]*[A-Z0-9])?$/i;
 
 /** True if the plate/serial value matches the expected format. */
 export function isValidPlateFormat(value: string): boolean {
@@ -54,16 +54,13 @@ export function isValidPlateFormat(value: string): boolean {
 
 /**
  * Sanitizes plate input on onChange:
- * - Converts hyphens to spaces (common user mistake: "ABC-1234" → "ABC 1234")
- * - Strips all other non-alphanumeric characters
- * - Collapses multiple spaces to one
- * - Strips leading spaces, uppercases
+ * - Keeps letters, digits, spaces, and hyphens (all valid in PH plates)
+ * - Strips any other special characters
+ * - Strips leading whitespace, uppercases
  */
 export function sanitizePlateInput(value: string): string {
   return value
-    .replace(/-/g, " ")
-    .replace(/[^A-Z0-9 ]/gi, "")
-    .replace(/\s+/g, " ")
+    .replace(/[^A-Z0-9 -]/gi, "")
     .trimStart()
     .toUpperCase();
 }
