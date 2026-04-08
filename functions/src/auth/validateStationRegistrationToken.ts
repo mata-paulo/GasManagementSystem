@@ -9,7 +9,7 @@ type ValidateResponse =
   | {valid: false; reason: string};
 
 export const validateStationRegistrationToken = onRequest(
-  {region: "asia-southeast1", cors: CORS},
+  {region: "asia-southeast1", cors: CORS, invoker: "private"},
   async (req, res) => {
     if (req.method !== "GET") {
       res.status(405).send("Method Not Allowed");

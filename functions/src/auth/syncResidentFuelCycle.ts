@@ -20,7 +20,7 @@ type SyncResult = {
  * Residents cannot write these fields from the client (Firestore rules); this uses Admin.
  * Idempotent when the doc is already on the current cycle key.
  */
-export const syncResidentFuelCycle = onCall({region: "asia-southeast1"}, async (request): Promise<SyncResult> => {
+export const syncResidentFuelCycle = onCall({region: "asia-southeast1", invoker: "private"}, async (request): Promise<SyncResult> => {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign in required.");

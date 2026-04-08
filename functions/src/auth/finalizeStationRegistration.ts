@@ -13,7 +13,7 @@ function extractBearerToken(req: {headers: {authorization?: string}}): string {
 }
 
 export const finalizeStationRegistration = onRequest(
-  {region: "asia-southeast1", cors: CORS},
+  {region: "asia-southeast1", cors: CORS, invoker: "private"},
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
@@ -112,19 +112,8 @@ export const finalizeStationRegistration = onRequest(
           {merge: true},
         );
 
-        tx.set(
-          pendingDoc.ref,
-          {
-            registrationToken: {
-              ...(typeof pendingRt === "object" && pendingRt ? pendingRt : {}),
-              used: true,
-              usedAt: FieldValue.serverTimestamp(),
-              claimedByUid: authUid,
-            },
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+        // Clean up the temporary "pending" account document used to store the invite token.
+        tx.delete(pendingDoc.ref);
       });
 
       res.status(200).json({success: true});
