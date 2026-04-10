@@ -175,7 +175,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     }).setView([location.lat, location.lon], 14);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: 'Â© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
       updateWhenIdle: false,
       updateWhenZooming: false,
@@ -499,7 +499,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                 <h2 className="text-sm font-headline font-bold text-[#003366]">Fuel Stations Nearby</h2>
                 {!loadingStations && filteredStations.length > 0 && (
                   <p className="text-[10px] text-slate-400">
-                    {currentPage * PAGE_SIZE + 1}â€“{Math.min((currentPage + 1) * PAGE_SIZE, filteredStations.length)} of {filteredStations.length} stations Â· nearest first
+                    {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, filteredStations.length)} of {filteredStations.length} stations · nearest first
                   </p>
                 )}
               </div>
@@ -520,7 +520,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
               ) : (
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-xs font-bold truncate">{selectedStation.name}</p>
-                  <p className="text-white/70 text-[10px]">{formatDist(routeInfo.distance)} Â· {formatDuration(routeInfo.duration)} drive</p>
+                  <p className="text-white/70 text-[10px]">{formatDist(routeInfo.distance)} · {formatDuration(routeInfo.duration)} drive</p>
                 </div>
               )}
               <button onClick={() => { clearRoute(); setSelectedStation(null); }} className="text-white/60 hover:text-white shrink-0">
@@ -589,7 +589,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                                     <p className={`text-sm font-bold truncate ${isSelected ? "text-[#003366]" : "text-slate-800"}`}>{st.name}</p>
                                     <p className="text-[10px] text-slate-400">
                                       {formatDist(st.distance)}
-                                      {isSelected && routeInfo && !loadingRoute && <span> Â· {formatDuration(routeInfo.duration)} drive</span>}
+                                      {isSelected && routeInfo && !loadingRoute && <span> · {formatDuration(routeInfo.duration)} drive</span>}
                                     </p>
                                   </div>
                                 </button>

@@ -26,7 +26,7 @@ service cloud.firestore {
     }
 
     match /accounts/{uid} {
-      allow read: if isOwner(uid) || isAdmin() || (isStation() && resource.data.role in ["resident", "station"]);
+      allow read: if isOwner(uid) || isAdmin() || (signedIn() && resource.data.role in ["resident", "station"]);
       allow create: if isOwner(uid)
         && request.resource.data.role == "station"
         && request.resource.data.email is string
@@ -46,9 +46,12 @@ service cloud.firestore {
           && request.resource.data.registrationToken.used is bool
         ));
       allow update: if (isOwner(uid) && isStation()
-        // Fuel settings live in `stationDirectory` now.
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["availableFuels", "fuelCapacities", "fuelInventory", "fuelPrices"]))
-        || (isOwner(uid) && isRole("resident") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vehicle2Type', 'vehicle2Plate', 'vehicle2GasType', 'vehicles']));
+        // Prevent direct manipulation of fuel config layout; fuelInventory + fuelPrices are allowed.
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["availableFuels", "fuelCapacities"]))
+        || (isOwner(uid) && isRole("resident") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vehicles', 'plateNormalizedList']))
+        // Allow station officers to update resident fuel tracking fields during dispense.
+        || (isStation() && resource.data.role == "resident"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["vehicles", "fuelUsed", "fuelWeekKey", "updatedAt"]));
       allow delete: if false;
     }
 

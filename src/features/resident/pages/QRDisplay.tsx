@@ -22,11 +22,17 @@ function formatVehicleTypeDisplay(raw: unknown): string {
   return s;
 }
 
-export default function QRDisplay({ resident, onDone }) {
-  const { uid, firstName, lastName, plate, barangay, vehicleType, gasType, registeredAt, fuelAllocation, fuelUsed } = resident;
+export default function QRDisplay({ resident, activeVehicle, onDone }) {
+  const { uid, firstName, lastName, barangay, registeredAt } = resident;
+  // Use activeVehicle (selected from dashboard) over top-level legacy resident fields
+  const plate = activeVehicle?.plate || resident?.plate || "N/A";
+  const vehicleType = activeVehicle?.vehicleType || activeVehicle?.type || "";
+  const gasType = activeVehicle?.gasType || resident?.gasType || "";
+  const fuelAllocation = activeVehicle?.fuelAllocated ?? resident?.fuelAllocation;
+  const fuelUsed = activeVehicle?.fuelUsed ?? resident?.fuelUsed;
   const vehicleTypeDisplay = formatVehicleTypeDisplay(vehicleType);
   const fullName = `${firstName} ${lastName}`;
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, vehicleType, barangay, fuelAllocation, fuelUsed);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, barangay, vehicleType, fuelAllocation, fuelUsed);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -84,7 +90,7 @@ export default function QRDisplay({ resident, onDone }) {
             {[
               { label: "Full Name",   value: fullName },
               { label: "Plate No.",   value: plate },
-              { label: "Vehicle",     value: vehicleType },
+              { label: "Vehicle",     value: vehicleTypeDisplay },
               { label: "Barangay",    value: barangay },
               ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
               { label: "Registered",  value: formatTimestamp(registeredAt) },
@@ -110,7 +116,7 @@ export default function QRDisplay({ resident, onDone }) {
           {[
             { label: "Full Name", value: fullName },
             { label: "Plate No.", value: plate },
-            { label: "Vehicle",   value: vehicleType },
+            { label: "Vehicle",   value: vehicleTypeDisplay },
             { label: "Barangay",  value: barangay },
             ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
           ].map((d) => (
@@ -166,7 +172,7 @@ export default function QRDisplay({ resident, onDone }) {
                 {[
                   { label: "Full Name",  value: fullName },
                   { label: "Plate No.", value: plate },
-                  { label: "Vehicle",   value: vehicleType },
+                  { label: "Vehicle",   value: vehicleTypeDisplay },
                   { label: "Barangay",  value: barangay },
                   ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
                   { label: "Registered", value: formatTimestamp(registeredAt) },

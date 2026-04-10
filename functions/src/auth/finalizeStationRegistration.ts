@@ -42,14 +42,33 @@ export const finalizeStationRegistration = onRequest(
       const db = admin.firestore();
       const authUid = decoded.uid;
 
+      // IMPORTANT:
+      // Only finalize against the *pending token doc* (registrationToken.used === false).
+      // This avoids accidentally matching the newly-created station account doc if it still
+      // carries a legacy registrationToken field from older deployments.
       const pendingSnap = await db
         .collection("accounts")
         .where("registrationToken.token", "==", registrationToken)
+        .where("registrationToken.used", "==", false)
         .limit(1)
         .get();
 
       const pendingDoc = pendingSnap.docs[0];
       if (!pendingDoc) {
+        // If a doc exists with this token but it's used, surface the correct error.
+        const anySnap = await db
+          .collection("accounts")
+          .where("registrationToken.token", "==", registrationToken)
+          .limit(1)
+          .get();
+        const anyDoc = anySnap.docs[0];
+        if (anyDoc) {
+          const anyData = anyDoc.data() as Record<string, unknown>;
+          const anyRt = (anyData.registrationToken ?? null) as null | {used?: unknown};
+          if (anyRt?.used === true) {
+            throw new HttpsError("failed-precondition", "Registration token has already been used.");
+          }
+        }
         throw new HttpsError("not-found", "Registration token not found.");
       }
 
@@ -60,10 +79,6 @@ export const finalizeStationRegistration = onRequest(
         used?: unknown;
         createdByUid?: unknown;
       };
-
-      if (pendingRt?.used === true) {
-        throw new HttpsError("failed-precondition", "Registration token has already been used.");
-      }
 
       const expiresAtRaw = pendingRt?.expiresAt;
       const expiresAt =
@@ -95,18 +110,17 @@ export const finalizeStationRegistration = onRequest(
           throw new HttpsError("failed-precondition", "Registration token has already been used.");
         }
 
+        // Finalize registration for the authenticated station user.
+        // IMPORTANT: do NOT persist the invite token on the station account (keeps the doc clean,
+        // and prevents "Token Already Used" from reappearing on refresh). The token lives only
+        // in the temporary pending doc, which we delete below.
         tx.set(
           accountRef,
           {
-            registrationToken: {
-              token: registrationToken,
-              createdAt: pendingRt?.createdAt ?? FieldValue.serverTimestamp(),
-              expiresAt: pendingRt?.expiresAt ?? Timestamp.fromDate(expiresAt),
-              createdByUid: typeof pendingRt?.createdByUid === "string" ? pendingRt.createdByUid : null,
-              used: true,
-              usedAt: FieldValue.serverTimestamp(),
-              claimedFromUid: pendingDoc.id,
-            },
+            assignmentStatus: "active",
+            inviteAcceptedAt: FieldValue.serverTimestamp(),
+            // Ensure any stray registrationToken field is removed.
+            registrationToken: FieldValue.delete(),
             updatedAt: FieldValue.serverTimestamp(),
           },
           {merge: true},

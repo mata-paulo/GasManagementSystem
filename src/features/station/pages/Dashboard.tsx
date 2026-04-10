@@ -126,7 +126,7 @@ export default function Dashboard({
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [stationStatus, setStationStatus] = useState<"online" | "offline">(
-    officer?.presenceStatus?.toLowerCase() === "online" ? "online" : "offline",
+    (officer?.presenceStatus ?? officer?.status)?.toLowerCase() === "online" ? "online" : "offline",
   );
 
   useEffect(() => {
@@ -142,9 +142,9 @@ export default function Dashboard({
 
   useEffect(() => {
     setStationStatus(
-      officer?.presenceStatus?.toLowerCase() === "online" ? "online" : "offline",
+      (officer?.presenceStatus ?? officer?.status)?.toLowerCase() === "online" ? "online" : "offline",
     );
-  }, [officer?.presenceStatus]);
+  }, [officer?.presenceStatus, officer?.status]);
 
   useEffect(() => {
     const stationUid = officer?.uid;

@@ -23,31 +23,46 @@ export const validateStationRegistrationToken = onRequest(
       }
 
       const db = admin.firestore();
-      const snap = await db
+      // IMPORTANT:
+      // Station accounts MUST NOT store `registrationToken` (that was legacy).
+      // To avoid false "already used" due to a station account doc matching the token,
+      // only treat tokens as valid if there exists a *pending* doc with used=false.
+      const pendingSnap = await db
         .collection("accounts")
         .where("registrationToken.token", "==", token)
+        .where("registrationToken.used", "==", false)
         .limit(1)
         .get();
 
-      const doc = snap.docs[0];
-      if (!doc) {
+      const pendingDoc = pendingSnap.docs[0];
+      if (!pendingDoc) {
+        // Fallback: if *any* doc still carries this token and it's used, surface "used";
+        // otherwise treat as not found. This helps with cleanup of older deployments.
+        const anySnap = await db
+          .collection("accounts")
+          .where("registrationToken.token", "==", token)
+          .limit(1)
+          .get();
+        const anyDoc = anySnap.docs[0];
+        if (anyDoc) {
+          const anyData = anyDoc.data() as Record<string, unknown>;
+          const anyRt = (anyData.registrationToken ?? null) as null | {used?: unknown};
+          if (anyRt?.used === true) {
+            const payload: ValidateResponse = {valid: false, reason: "Token has already been used."};
+            res.status(200).json(payload);
+            return;
+          }
+        }
         const payload: ValidateResponse = {valid: false, reason: "Token not found."};
         res.status(200).json(payload);
         return;
       }
 
-      const data = doc.data() as Record<string, unknown>;
+      const data = pendingDoc.data() as Record<string, unknown>;
       const rt = (data.registrationToken ?? null) as null | {
         expiresAt?: unknown;
         used?: unknown;
       };
-
-      const used = rt?.used === true;
-      if (used) {
-        const payload: ValidateResponse = {valid: false, reason: "Token has already been used."};
-        res.status(200).json(payload);
-        return;
-      }
 
       const expiresAtRaw = rt?.expiresAt;
       const expiresAt =

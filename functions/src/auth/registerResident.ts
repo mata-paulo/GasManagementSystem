@@ -8,6 +8,7 @@ import {
   formatPlateForStorage,
   normalizePlate,
   registerResidentSchema,
+  toFirestoreDouble,
   type RegisterResidentInput,
 } from "../utils/validators";
 
@@ -56,14 +57,10 @@ async function assertEmailAndPlateAvailable(
 
   // For each normalized plate, query:
   //   1. plateNormalizedList array-contains — covers all vehicles (1–5) on new accounts
-  //   2. plate exact match — legacy fallback for accounts without plateNormalizedList
-  //   3. vehicle2Plate exact match — legacy fallback for second vehicle on old accounts
   const [byEmail, ...snapshots] = await Promise.all([
     accounts.where("email", "==", normalizedEmail).limit(1).get(),
     ...uniqueNormalized.flatMap((np) => [
       accounts.where("plateNormalizedList", "array-contains", np).limit(1).get(),
-      accounts.where("plate", "==", np).limit(1).get(),
-      accounts.where("vehicle2Plate", "==", np).limit(1).get(),
     ]),
   ]);
 
@@ -75,7 +72,7 @@ async function assertEmailAndPlateAvailable(
   }
 
   for (let i = 0; i < uniqueNormalized.length; i++) {
-    const group = snapshots.slice(i * 3, i * 3 + 3);
+    const group = snapshots.slice(i, i + 1);
     if (group.some((snap) => !snap.empty)) {
       throw new HttpsError(
         "already-exists",
@@ -135,12 +132,13 @@ export const registerResident = onRequest(
       const data: RegisterResidentInput = parsed.data;
 
       const normalizedEmail = data.email.toLowerCase();
-      const normalizedPlate = formatPlateForStorage(data.plate);
+      const normalizedPlate = formatPlateForStorage(data.vehicles[0]?.plate ?? "").slice(0, 7);
+      if (!normalizedPlate) {
+        throw new HttpsError("invalid-argument", "Plate number is required.");
+      }
 
-      // Collect all plates being registered (primary + vehicles array), formatted for storage
-      const allPlates = data.vehicles && data.vehicles.length > 0
-        ? [...new Set(data.vehicles.map((v) => formatPlateForStorage(v.plate)))]
-        : [normalizedPlate];
+      // Collect all plates being registered (vehicles array), formatted for storage
+      const allPlates = [...new Set(data.vehicles.map((v) => formatPlateForStorage(v.plate).slice(0, 7)))];
 
       await assertResidentRegistrationLimitAvailable();
       await assertEmailAndPlateAvailable(normalizedEmail, allPlates);
@@ -180,15 +178,16 @@ export const registerResident = onRequest(
       }
 
       try {
-        // Build vehicles array: prefer sent array, fallback to primary fields
-        const vehiclesArray = (data.vehicles && data.vehicles.length > 0)
-          ? data.vehicles.map((v) => ({ ...v, plate: formatPlateForStorage(v.plate) }))
-          : [{ type: data.vehicleType, plate: normalizedPlate, gasType: data.gasType }];
+        const vehiclesArray = data.vehicles.map((v) => ({
+          ...v,
+          plate: formatPlateForStorage(v.plate).slice(0, 7),
+          fuelAllocated: toFirestoreDouble(typeof v.fuelAllocated === "number" && Number.isFinite(v.fuelAllocated) ? v.fuelAllocated : 20),
+          fuelUsed: toFirestoreDouble(0),
+          fuelWeekKey: "",
+        }));
 
         const docData: Record<string, unknown> = {
-          vehicleType: data.vehicleType,
-          plate: normalizedPlate,
-          gasType: data.gasType,
+          // Legacy top-level vehicle fields removed; use vehicles[] as source of truth.
           firstName: data.firstName,
           lastName: data.lastName,
           barangay: data.barangay,
@@ -199,12 +198,6 @@ export const registerResident = onRequest(
           // Single queryable list of normalized plates covering all vehicles (1–5)
           plateNormalizedList: vehiclesArray.map((v) => normalizePlate(v.plate)),
         };
-        // Keep legacy flat fields for vehicle 2 (backward compat with older code paths)
-        if (vehiclesArray.length > 1) {
-          docData.vehicle2Type = vehiclesArray[1].type;
-          docData.vehicle2Plate = vehiclesArray[1].plate;
-          docData.vehicle2GasType = vehiclesArray[1].gasType;
-        }
         await admin.firestore().collection("accounts").doc(uid).set(docData);
       } catch (err: unknown) {
         const fsErr = err as {code?: string | number; message?: string};

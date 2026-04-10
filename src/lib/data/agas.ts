@@ -27,15 +27,10 @@ export interface ResidentAccount extends AuthUser {
   role: "resident";
   firstName?: string;
   lastName?: string;
-  plate?: string;
   barangay?: string;
-  vehicleType?: string;
   gasType?: string;
   // Multi-vehicle support (jevguio PR #4)
-  vehicles?: Array<{ type: string; plate: string; gasType: string }>;
-  vehicle2Type?: string;    // legacy bridge — mirrors vehicles[1].type for old accounts
-  vehicle2Plate?: string;   // legacy bridge — mirrors vehicles[1].plate for old accounts
-  vehicle2GasType?: string; // legacy bridge — mirrors vehicles[1].gasType for old accounts
+  vehicles?: Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }>;
   fuelAllocation?: number;
   fuelUsed?: number;
   fuelWeekKey?: string;
@@ -184,6 +179,83 @@ export interface ResidentAllocationSummary {
   remainingLiters: number;
 }
 
+function normalizePlateKey(value: string): string {
+  return (value ?? "").trim().toUpperCase();
+}
+
+function getResidentVehicleByPlate(
+  resident: ResidentAccount,
+  plate: string,
+): { type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string } | null {
+  const target = normalizePlateKey(plate);
+  const vehicles = Array.isArray(resident.vehicles) ? resident.vehicles : [];
+  if (!target || vehicles.length === 0) return null;
+  return vehicles.find((v) => normalizePlateKey(v.plate) === target) ?? null;
+}
+
+function getResidentVehicleFuelAllocation(
+  resident: ResidentAccount,
+  plate: string,
+): number {
+  const v = getResidentVehicleByPlate(resident, plate);
+  const allocated = asNumber(v?.fuelAllocated);
+  return allocated ?? WEEKLY_FUEL_LIMIT;
+}
+
+function getResidentVehicleFuelUsed(
+  resident: ResidentAccount,
+  plate: string,
+  cycleKey = getResidentFuelCycleKey(resident),
+): number {
+  const v = getResidentVehicleByPlate(resident, plate);
+  const storedUsed = asNumber(v?.fuelUsed) ?? 0;
+  const storedWeekKey = asString(v?.fuelWeekKey);
+  if (storedWeekKey === cycleKey) return storedUsed;
+  // Backfill behavior: older/newer docs may have fuelUsed set but an empty/missing week key.
+  // Treat that value as current-cycle usage so "remaining" updates correctly.
+  if (!storedWeekKey && storedUsed > 0) return storedUsed;
+  return 0;
+}
+
+function getResidentVehicleCycleTransactionLiters(
+  resident: ResidentAccount | null | undefined,
+  transactions: DispenseTransaction[],
+  plate: string,
+  cycleKey = getResidentFuelCycleKey(resident),
+): number {
+  const target = normalizePlateKey(plate);
+  return roundLiters(
+    transactions
+      .filter((transaction) =>
+        normalizePlateKey(transaction.plate) === target &&
+        getResidentTransactionCycleKey(resident, transaction) === cycleKey
+      )
+      .reduce((sum, transaction) => sum + transaction.liters, 0),
+  );
+}
+
+function buildResidentVehicleAllocationSummary(
+  resident: ResidentAccount | null | undefined,
+  transactions: DispenseTransaction[],
+  plate: string,
+): ResidentAllocationSummary {
+  const currentCycleKey = getResidentFuelCycleKey(resident);
+  if (!resident) {
+    return { transactions, fuelAllocation: WEEKLY_FUEL_LIMIT, usedLiters: 0, remainingLiters: WEEKLY_FUEL_LIMIT };
+  }
+
+  const fuelAllocation = getResidentVehicleFuelAllocation(resident, plate);
+  const usedStored = getResidentVehicleFuelUsed(resident, plate, currentCycleKey);
+  const usedFromTx = getResidentVehicleCycleTransactionLiters(resident, transactions, plate, currentCycleKey);
+  const usedLiters = Math.max(usedStored, usedFromTx);
+  return {
+    transactions,
+    fuelAllocation,
+    usedLiters,
+    remainingLiters: Math.max(fuelAllocation - usedLiters, 0),
+  };
+}
+
 export interface ResolvedResidentScan extends ResidentAllocationSummary {
   resident: ResidentAccount;
 }
@@ -199,6 +271,10 @@ export interface RecordDispenseTransactionInput {
   residentUid: string;
   liters: number;
   fuelType: string;
+  /** Plate of the specific vehicle being fueled (from QR scan). Falls back to resident.vehicles[0].plate if omitted. */
+  plate?: string;
+  /** Vehicle type of the specific vehicle being fueled (from QR scan). */
+  vehicleType?: string;
 }
 
 export interface RecordDispenseTransactionResult {
@@ -389,16 +465,12 @@ function mapAccount(uid: string, data: Record<string, unknown>): AccountRecord |
     return {
       ...base,
       role,
-      plate: typeof data.plate === "string" ? data.plate : undefined,
       barangay: typeof data.barangay === "string" ? data.barangay : undefined,
-      vehicleType: typeof data.vehicleType === "string" ? data.vehicleType : undefined,
       gasType: typeof data.gasType === "string" ? data.gasType : undefined,
       vehicles: Array.isArray(data.vehicles)
-        ? (data.vehicles as Array<{ type: string; plate: string; gasType: string }>)
+        ? (data.vehicles as Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }>)
         : undefined,
-      vehicle2Type: typeof data.vehicle2Type === "string" ? data.vehicle2Type : undefined,
-      vehicle2Plate: typeof data.vehicle2Plate === "string" ? data.vehicle2Plate : undefined,
-      vehicle2GasType: typeof data.vehicle2GasType === "string" ? data.vehicle2GasType : undefined,
+      // Legacy vehicle2* fields intentionally ignored (vehicles[] is source of truth).
       fuelAllocation: asNumber(data.fuelAllocation) ?? WEEKLY_FUEL_LIMIT,
       fuelUsed: asNumber(data.fuelUsed) ?? 0,
       fuelWeekKey: asString(data.fuelWeekKey),
@@ -572,14 +644,15 @@ function stationFuelPricesToBrandPrices(
 }
 
 /** Admin "online" if lastSeenAt is newer than this (heartbeat runs every 60s while the app is open). */
-const STATION_ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const STATION_ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
 const QR_EXCEL_EPOCH = new Date(1899, 11, 30).getTime();
 
 export function isStationUserOnline(account: Partial<StationAccount>): boolean {
   if (account.role !== "station") return false;
   if ((account.assignmentStatus ?? "active") !== "active") return false;
   if (account.presenceStatus && account.presenceStatus.toLowerCase() !== "online") return false;
-  if (!account.lastSeenAt) return false;
+  // If presenceStatus is explicitly "online" but lastSeenAt is missing, trust the explicit status.
+  if (!account.lastSeenAt) return account.presenceStatus?.toLowerCase() === "online";
 
   const lastSeen = new Date(account.lastSeenAt);
   if (Number.isNaN(lastSeen.getTime())) return false;
@@ -619,6 +692,38 @@ function normalizeFuelType(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+function isFuelTypeCompatible(vehicleFuel: string | undefined, selectedFuel: string | undefined): boolean {
+  const v = normalizeFuelType(vehicleFuel);
+  const s = normalizeFuelType(selectedFuel);
+  if (!v || !s) return true;
+
+  // Exact or substring matches first.
+  if (v === s) return true;
+  if (v.includes(s) || s.includes(v)) return true;
+
+  const isDiesel = (x: string) => x.includes("diesel");
+  const isKerosene = (x: string) => x.includes("kerosene");
+  const isGasolineCategory = (x: string) =>
+    x.includes("gasoline") || x.includes("petrol") || x.includes("unleaded") || x.includes("regular") || x.includes("(91)") || x.includes("(95)") || x.includes("(97)") || x.includes("premium");
+
+  // Diesel categories
+  if (isDiesel(v)) return isDiesel(s);
+  // Kerosene is distinct
+  if (isKerosene(v)) return isKerosene(s);
+  // Gasoline category (resident often stores "Gasoline", station uses "Regular/Unleaded (91)" etc.)
+  if (isGasolineCategory(v)) return !isDiesel(s) && !isKerosene(s) && isGasolineCategory(s);
+
+  // Unknown category: keep strict.
+  return false;
+}
+
+// TODO [per-vehicle allocation]: Currently fuel allocation is account-level (one limit shared
+// across all vehicles). To make it per-vehicle, store allocation inside each vehicle object:
+//   vehicles: [{ type, plate, gasType, fuelAllocation: 20 }, ...]
+// Then this function should accept a plate/vehicle index and read from that entry.
+// The remaining fuel per vehicle can be calculated from transactions filtered by plate
+// (transactions already record the plate field), so no extra Firestore field is needed
+// for tracking usage — just sum transactions for the current cycle where plate matches.
 function getResidentFuelAllocation(account: ResidentAccount | null | undefined): number {
   return asNumber(account?.fuelAllocation) ?? WEEKLY_FUEL_LIMIT;
 }
@@ -651,6 +756,10 @@ function getResidentTransactionCycleKey(
   return "";
 }
 
+// TODO [per-vehicle allocation]: To calculate remaining fuel per vehicle, add a `plate`
+// parameter and filter transactions by both cycleKey AND plate. Each transaction already
+// stores the vehicle plate, so:
+//   .filter(tx => tx.plate === targetPlate && getCycleKey(tx) === cycleKey)
 function getResidentCycleTransactionLiters(
   resident: ResidentAccount | null | undefined,
   transactions: DispenseTransaction[],
@@ -1103,6 +1212,64 @@ export function subscribeResidentAllocationSummary(
   };
 }
 
+export function subscribeResidentVehicleAllocationSummary(
+  uid: string,
+  plate: string,
+  onNext: (summary: ResidentAllocationSummary) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  if (!uid) {
+    onNext(buildResidentVehicleAllocationSummary(null, [], plate));
+    return () => undefined;
+  }
+
+  let resident: ResidentAccount | null = null;
+  let transactions: DispenseTransaction[] = [];
+  let residentReady = false;
+  let transactionsReady = false;
+
+  const emitSummary = () => {
+    if (!residentReady && !transactionsReady) return;
+    onNext(buildResidentVehicleAllocationSummary(resident, transactions, plate));
+  };
+
+  const unsubscribeResident = onSnapshot(
+    doc(db, "accounts", uid),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        resident = null;
+      } else {
+        const account = mapAccount(snapshot.id, snapshot.data() as Record<string, unknown>);
+        resident = account?.role === "resident" ? account : null;
+      }
+      residentReady = true;
+      emitSummary();
+    },
+    (error) => onError?.(error),
+  );
+
+  const unsubscribeTransactions = onSnapshot(
+    query(
+      collection(db, "transactions"),
+      where("residentUid", "==", uid),
+      limit(500),
+    ),
+    (snapshot) => {
+      transactions = sortTransactions(
+        snapshot.docs.map((item) => mapTransaction(item.id, item.data() as Record<string, unknown>)),
+      );
+      transactionsReady = true;
+      emitSummary();
+    },
+    (error) => onError?.(error),
+  );
+
+  return () => {
+    unsubscribeResident();
+    unsubscribeTransactions();
+  };
+}
+
 export function subscribeResidentAccount(
   uid: string,
   onNext: (resident: ResidentAccount | null) => void,
@@ -1169,7 +1336,7 @@ export async function resolveResidentFromQR(decoded: DecodedQR): Promise<Resolve
   const resident =
     matchingResidents.find((item) => getQrSerial(item.registeredAt) === decoded.serial) ??
     (decoded.plate
-      ? matchingResidents.find((item) => item.plate?.trim().toUpperCase() === decoded.plate) ?? null
+      ? matchingResidents.find((item) => (item.vehicles ?? []).some((v) => (v.plate || "").trim().toUpperCase() === decoded.plate)) ?? null
       : (matchingResidents.length === 1 ? matchingResidents[0] : null));
 
   if (!resident) {
@@ -1302,11 +1469,28 @@ export async function recordDispenseTransaction(
 
   const createdAt = new Date();
   const currentCycleKey = getResidentFuelCycleKey(resident, createdAt);
-  const fuelAllocation = getResidentFuelAllocation(resident);
-  const usedLitersBefore = getResidentFuelUsed(resident, currentCycleKey);
+  // Use the specific vehicle plate/type from QR scan, falling back to first registered vehicle.
+  const txPlate = input.plate?.trim().toUpperCase() || resident.vehicles?.[0]?.plate || "";
+  const txVehicleType = input.vehicleType?.trim() || "";
+
+  // Validate transaction fields match a registered vehicle (when vehicles[] is present).
+  const matchedVehicle = txPlate ? getResidentVehicleByPlate(resident, txPlate) : null;
+  if (matchedVehicle) {
+    if (txVehicleType && matchedVehicle.type && txVehicleType.trim() !== matchedVehicle.type.trim()) {
+      throw new Error("Vehicle type does not match the registered vehicle for this plate.");
+    }
+    if (!isFuelTypeCompatible(matchedVehicle.gasType, selectedFuel)) {
+      throw new Error("Fuel type does not match the registered vehicle for this plate.");
+    }
+  } else if (Array.isArray(resident.vehicles) && resident.vehicles.length > 0 && txPlate) {
+    throw new Error("Scanned plate is not registered under this resident account.");
+  }
+
+  const fuelAllocation = txPlate ? getResidentVehicleFuelAllocation(resident, txPlate) : getResidentFuelAllocation(resident);
+  const usedLitersBefore = txPlate ? getResidentVehicleFuelUsed(resident, txPlate, currentCycleKey) : getResidentFuelUsed(resident, currentCycleKey);
   const remainingBefore = Math.max(fuelAllocation - usedLitersBefore, 0);
   if (liters > remainingBefore) {
-    throw new Error("This fuel request exceeds the resident's weekly allocation.");
+    throw new Error("This fuel request exceeds the vehicle's remaining allocation.");
   }
 
   const amount = Math.round(liters * pricePerLiter * 100) / 100;
@@ -1331,8 +1515,8 @@ export async function recordDispenseTransaction(
     stationBrand: station.brand ?? "",
     residentBarangay: resident.barangay ?? "",
     stationBarangay: station.barangay ?? "",
-    plate: resident.plate ?? "",
-    vehicleType: resident.vehicleType ?? "",
+    plate: txPlate,
+    vehicleType: txVehicleType,
     liters,
     fuelType: selectedFuel,
     pricePerLiter,
@@ -1393,8 +1577,21 @@ export async function recordDispenseTransaction(
   }
 
   batch.update(residentRef, {
-    fuelUsed: nextFuelUsed,
-    fuelWeekKey: currentCycleKey,
+    ...(txPlate
+      ? {
+          vehicles: (resident.vehicles ?? []).map((v) => {
+            if (normalizePlateKey(v.plate) !== normalizePlateKey(txPlate)) return v;
+            return {
+              ...v,
+              fuelUsed: nextFuelUsed,
+              fuelWeekKey: currentCycleKey,
+            };
+          }),
+        }
+      : {
+          fuelUsed: nextFuelUsed,
+          fuelWeekKey: currentCycleKey,
+        }),
     updatedAt: serverTimestamp(),
   });
 
@@ -1411,8 +1608,8 @@ export async function recordDispenseTransaction(
       stationBrand: station.brand ?? "",
       residentBarangay: resident.barangay ?? "",
       stationBarangay: station.barangay ?? "",
-      plate: resident.plate ?? "",
-      vehicleType: resident.vehicleType ?? "",
+      plate: txPlate,
+      vehicleType: txVehicleType,
       liters,
       fuelType: selectedFuel,
       pricePerLiter,
@@ -1426,8 +1623,21 @@ export async function recordDispenseTransaction(
     resident: {
       ...resident,
       fuelAllocation,
-      fuelUsed: nextFuelUsed,
-      fuelWeekKey: currentCycleKey,
+      ...(txPlate
+        ? {
+            vehicles: (resident.vehicles ?? []).map((v) => {
+              if (normalizePlateKey(v.plate) !== normalizePlateKey(txPlate)) return v;
+              return {
+                ...v,
+                fuelUsed: nextFuelUsed,
+                fuelWeekKey: currentCycleKey,
+              };
+            }),
+          }
+        : {
+            fuelUsed: nextFuelUsed,
+            fuelWeekKey: currentCycleKey,
+          }),
       updatedAt: createdAt.toISOString(),
     },
     station: {

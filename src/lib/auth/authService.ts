@@ -16,8 +16,7 @@ export interface AuthUser {
   loginAt: string;
   firstName?: string;
   lastName?: string;
-  plate?: string;
-  vehicles?: Array<{ type: string; plate: string; gasType: string }>;
+  vehicles?: Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }>;
   [key: string]: unknown;
 }
 
@@ -95,26 +94,12 @@ export function buildAuthUserFromAccountData(
     loginAt: new Date().toISOString(),
     firstName: data.firstName as string | undefined,
     lastName: data.lastName as string | undefined,
-    plate: data.plate as string | undefined,
     barangay: data.barangay as string | undefined,
-    vehicleType: data.vehicleType as string | undefined,
     gasType: data.gasType as string | undefined,
-    vehicle2Type: data.vehicle2Type as string | undefined,
-    vehicle2Plate: data.vehicle2Plate as string | undefined,
-    vehicle2GasType: data.vehicle2GasType as string | undefined,
     vehicles: (() => {
-      const arr = data.vehicles as Array<{ type: string; plate: string; gasType: string }> | undefined;
+      const arr = data.vehicles as Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }> | undefined;
       if (Array.isArray(arr) && arr.length > 0) return arr;
-      const result: Array<{ type: string; plate: string; gasType: string }> = [];
-      const migrateType = (t: string | undefined) => {
-        if (!t || t === "car") return "4w";
-        if (t === "motorcycle") return "2w";
-        if (t === "truck") return "others";
-        return t;
-      };
-      if (data.plate) result.push({ type: migrateType(data.vehicleType as string), plate: data.plate as string, gasType: (data.gasType as string) || "" });
-      if (data.vehicle2Plate) result.push({ type: migrateType(data.vehicle2Type as string), plate: data.vehicle2Plate as string, gasType: (data.vehicle2GasType as string) || "" });
-      return result;
+      return [];
     })(),
     registeredAt,
     brand: data.brand as string | undefined,
@@ -189,6 +174,10 @@ export async function login({ email, password }: { email: string; password: stri
       err && typeof err === "object" && "code" in err
         ? String((err as { code?: string }).code)
         : "";
+    if (import.meta.env.DEV) {
+      // Helps debug "wrong password" reports when project/emulator mismatches happen.
+      console.error("[authService.login] Firebase auth error:", msg, err);
+    }
     if (msg === "auth/invalid-email") return { success: false, error: "Invalid email address." };
     if (msg === "auth/user-not-found" || msg === "auth/wrong-password" || msg === "auth/invalid-credential") {
       return { success: false, error: "Invalid email or password." };

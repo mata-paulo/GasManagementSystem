@@ -6,12 +6,12 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
-import { arrayUnion, collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import {arrayUnion, collection, doc, getDoc, getDocs, query, updateDoc, where} from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { formatPlateForStorage, isContainerType, isGeneratorType, isValidPlate, normalizePlateForComparison, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import type { ResidentAllocationSummary } from "@/lib/data/agas";
-import { fetchStationDirectory, subscribeResidentAllocationSummary } from "@/lib/data/agas";
+import { fetchStationDirectory, subscribeResidentVehicleAllocationSummary, subscribeResidentAccount } from "@/lib/data/agas";
 
 
 const DEFAULT_LAT = 10.3157;
@@ -57,12 +57,12 @@ function formatTransactionTime(value) {
   });
 }
 
-export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 1, onSelectVehicle, onUpdateResident = undefined }) {
+export default function UserDashboard({ resident, activeTab, onTabChange, onShowQR, selectedVehicle = 0, onSelectVehicle, onUpdateResident = undefined }) {
   const mapPreviewRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const [announcementIdx, setAnnouncementIdx] = useState(0);
   const [showVehiclePicker, setShowVehiclePicker] = useState(false);
-  const [liveVehicles, setLiveVehicles] = useState<Array<{ type: string; plate: string; gasType: string }> | null>(null);
+  const [liveVehicles, setLiveVehicles] = useState<Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }> | null>(null);
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
   const [v2Form, setV2Form] = useState({ vehicle2Type: "4w", vehicle2Plate: "", vehicle2GasType: "" });
@@ -71,9 +71,9 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
   const [confirmingVehicle, setConfirmingVehicle] = useState(false);
   const [allocationSummary, setAllocationSummary] = useState<ResidentAllocationSummary>({
     transactions: [],
-    fuelAllocation: Number(resident?.fuelAllocation ?? 0),
+    fuelAllocation: Number((resident?.vehicles?.[0] as any)?.fuelAllocated ?? 20),
     usedLiters: 0,
-    remainingLiters: Number(resident?.fuelAllocation ?? 0),
+    remainingLiters: Number((resident?.vehicles?.[0] as any)?.fuelAllocated ?? 20),
   });
   const setSelectedVehicle = (v: number) => onSelectVehicle?.(v);
 
@@ -81,13 +81,13 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
     ? `${resident.firstName || ""} ${resident.lastName || ""}`.trim()
     : "Resident User";
 
-  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }>;
   const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "4w", plate: "N/A", gasType: "" };
   const plate = activeVehicle.plate || "N/A";
   const vehicleType = activeVehicle.type || "car";
   const activeGasType = activeVehicle.gasType || "";
   const barangay = resident?.barangay || "Not set";
-  const weeklyAllocation = allocationSummary.fuelAllocation || Number(resident?.fuelAllocation ?? 0);
+  const weeklyAllocation = allocationSummary.fuelAllocation || Number(activeVehicle?.fuelAllocated ?? 20);
   const usedLiters = allocationSummary.usedLiters;
   const remainingLiters = allocationSummary.remainingLiters;
   const usagePercent = weeklyAllocation > 0 ? Math.min((usedLiters / weeklyAllocation) * 100, 100) : 0;
@@ -138,23 +138,42 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         };
 
 
-  // Fetch live vehicles from Firestore when picker opens
+  // Subscribe to resident account for real-time vehicle/profile updates
   useEffect(() => {
     const uid = resident?.uid;
+    if (!uid || !onUpdateResident) return;
+
+    return subscribeResidentAccount(uid, (liveResident) => {
+      if (!liveResident) return;
+      onUpdateResident({
+        vehicles: liveResident.vehicles,
+        barangay: liveResident.barangay,
+        fuelAllocation: liveResident.fuelAllocation,
+        fuelUsed: liveResident.fuelUsed,
+        fuelWeekKey: liveResident.fuelWeekKey,
+        status: liveResident.status,
+      });
+    });
+  }, [resident?.uid]);
+
+  // Fetch allocation summary (per-vehicle, resets every 7 days from registeredAt)
+  useEffect(() => {
+    const uid = resident?.uid;
+    const plateKey = (activeVehicle?.plate || "").trim().toUpperCase();
     if (!uid) {
       setAllocationSummary({
         transactions: [],
-        fuelAllocation: Number(resident?.fuelAllocation ?? 0),
+        fuelAllocation: Number(activeVehicle?.fuelAllocated ?? 20),
         usedLiters: 0,
-        remainingLiters: Number(resident?.fuelAllocation ?? 0),
+        remainingLiters: Number(activeVehicle?.fuelAllocated ?? 20),
       });
       return () => undefined;
     }
 
-    return subscribeResidentAllocationSummary(uid, (nextSummary) => {
+    return subscribeResidentVehicleAllocationSummary(uid, plateKey, (nextSummary) => {
       setAllocationSummary(nextSummary);
     });
-  }, [resident?.uid, resident?.fuelAllocation]);
+  }, [resident?.uid, selectedVehicle, activeVehicle?.plate, activeVehicle?.fuelAllocated]);
 
   // Fetch live vehicles from Firestore when picker opens
   useEffect(() => {
@@ -167,11 +186,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
         if (Array.isArray(arr) && arr.length > 0) {
           setLiveVehicles(arr);
         } else {
-          // fallback: build from legacy fields
-          const result: Array<{ type: string; plate: string; gasType: string }> = [];
-          if (data.plate) result.push({ type: (data.vehicleType as string) || "4w", plate: data.plate as string, gasType: (data.gasType as string) || "" });
-          if (data.vehicle2Plate) result.push({ type: (data.vehicle2Type as string) || "4w", plate: data.vehicle2Plate as string, gasType: (data.vehicle2GasType as string) || "" });
-          setLiveVehicles(result.length > 0 ? result : vehicles);
+          setLiveVehicles(vehicles);
         }
       }
     }).catch(() => {
@@ -279,7 +294,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               onClick={() => setShowVehiclePicker(true)}
               className="flex items-center gap-1 text-xs text-slate-400 font-medium capitalize"
             >
-              <span>{vehicleType} Â· {resident?.status === "inactive" ? "Not Active" : "Active"}</span>
+              <span>{vehicleType} · {resident?.status === "inactive" ? "Not Active" : "Active"}</span>
               <span className="material-symbols-outlined text-[12px] text-primary-container">swap_vert</span>
             </button>
           </div>
@@ -360,7 +375,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
               </div>
             </div>
 
-            {/* Progress bar â€” width is a computed percentage, must use style */}
+            {/* Progress bar — width is a computed percentage, must use style */}
             <div className="h-5 w-full rounded-full bg-white/70 overflow-hidden shadow-inner">
               <div
                 className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 ${statusConfig.barClass}`}
@@ -416,7 +431,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-on-surface leading-tight">{tx.station}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} Â· {tx.time}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{tx.date} · {tx.time}</p>
                       <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
                         {tx.fuelType}
                       </span>
@@ -524,7 +539,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             {vehiclesLoading ? (
               <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
                 <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
-                <span className="text-sm">Loading vehiclesâ€¦</span>
+                <span className="text-sm">Loading vehicles…</span>
               </div>
             ) : (liveVehicles ?? vehicles).map((v, i) => {
               const badPlate = !isGeneratorType(v.type) && !isValidPlate(v.plate);
@@ -547,7 +562,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     <p className={`font-black font-headline uppercase tracking-wider text-base ${badPlate ? "text-red-500" : selectedVehicle === i ? "text-[#003366]" : "text-gray-700"}`}>{v.plate}</p>
                     <p className="text-xs text-gray-400 capitalize">{v.type} · {v.gasType}</p>
                     {badPlate && (
-                      <p className="text-[10px] text-red-400 font-bold mt-0.5">Invalid plate format — must be ABC-1234</p>
+                      <p className="text-[10px] text-red-400 font-bold mt-0.5">Invalid plate format — must be ABC1234</p>
                     )}
                   </div>
                   {!badPlate && selectedVehicle === i && (
@@ -651,12 +666,12 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 type="text"
                 value={v2Form.vehicle2Plate}
                 onChange={(e) => setV2Form((f) => ({ ...f, vehicle2Plate: isGeneratorType(f.vehicle2Type) ? e.target.value.toUpperCase() : sanitizePlate(e.target.value) }))}
-                placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"}
-                maxLength={10}
+                placeholder={isGeneratorType(v2Form.vehicle2Type) ? "e.g. GEN-2024-001" : "e.g. ABC1234"}
+                maxLength={7}
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-[#003366]"
               />
               {!isGeneratorType(v2Form.vehicle2Type) && (
-                <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC-1234</span> (letters, dash, numbers)</p>
+                <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC1234</span> (letters and numbers only)</p>
               )}
             </div>
 
@@ -766,36 +781,35 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     const plate2 = formatPlateForStorage(v2Form.vehicle2Plate);
                     const plate2Normalized = normalizePlateForComparison(plate2);
 
+                    // Prevent duplicates within the same account (even with different type).
+                    const existingPlates = (liveVehicles ?? vehicles)
+                      .map((v) => normalizePlateForComparison(formatPlateForStorage(v.plate)));
+                    if (existingPlates.includes(plate2Normalized)) {
+                      setV2Error("This plate number is already added to your account.");
+                      return;
+                    }
+
                     // Check if plate already exists in another account.
                     // plateNormalizedList covers all vehicles (1–5) on new accounts;
-                    // plate/vehicle2Plate are legacy fallbacks for old accounts.
-                    const [byList, byPlateLegacy, byV2Legacy] = await Promise.all([
+                    // plate is a legacy fallback for old accounts.
+                    const [byList] = await Promise.all([
                       getDocs(query(collection(db, "accounts"), where("plateNormalizedList", "array-contains", plate2Normalized))),
-                      getDocs(query(collection(db, "accounts"), where("plate", "==", plate2Normalized))),
-                      getDocs(query(collection(db, "accounts"), where("vehicle2Plate", "==", plate2Normalized))),
                     ]);
                     const takenByOther = [
                       ...byList.docs,
-                      ...byPlateLegacy.docs,
-                      ...byV2Legacy.docs,
                     ].some((d) => d.id !== resident.uid);
                     if (takenByOther) {
                       setV2Error("This plate number is already registered to another account.");
                       return;
                     }
 
-                    const newVehicles = [...(liveVehicles ?? vehicles), { type: v2Form.vehicle2Type, plate: plate2, gasType: v2Form.vehicle2GasType }];
+                    const newVehicles = [...(liveVehicles ?? vehicles), { type: v2Form.vehicle2Type, plate: plate2, gasType: v2Form.vehicle2GasType, fuelAllocated: 20, fuelUsed: 0, fuelWeekKey: "" }];
                     await updateDoc(doc(db, "accounts", resident.uid as string), {
                       vehicles: newVehicles,
                       // Append normalized plate to the queryable list (works for vehicles 2–5)
                       plateNormalizedList: arrayUnion(plate2Normalized),
-                      ...(newVehicles.length === 2 && {
-                        vehicle2Type: v2Form.vehicle2Type,
-                        vehicle2Plate: plate2,
-                        vehicle2GasType: v2Form.vehicle2GasType,
-                      }),
                     });
-                    onUpdateResident?.({ vehicles: newVehicles, vehicle2Type: v2Form.vehicle2Type, vehicle2Plate: plate2, vehicle2GasType: v2Form.vehicle2GasType });
+                    onUpdateResident?.({ vehicles: newVehicles });
                     setLiveVehicles(newVehicles);
                     setSelectedVehicle(newVehicles.length - 1);
                     setConfirmingVehicle(false);

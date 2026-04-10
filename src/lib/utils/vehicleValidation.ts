@@ -40,28 +40,25 @@ export function isGeneratorType(value: string): boolean {
 }
 
 /**
- * Philippine plate number format: 2–4 letters, a dash, then 3–5 digits.
- * e.g. ABC-1234, AB-123, ABCD-12345
- * Returns true if valid.
+ * Philippine plate number: any 2–7 ASCII alphanumeric characters.
+ * Covers all LTO formats after separators are removed (e.g. ABC1234, FA03101, 1234567).
  */
 export function isValidPlate(value: string): boolean {
-  return /^[A-Z]{2,4}-\d{3,5}$/.test(value.trim().toUpperCase());
+  const stripped = value.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return /^[A-Z0-9]{2,7}$/.test(stripped);
 }
 
 /**
  * Sanitizes a plate number input on every keystroke:
- * - Converts spaces to dashes
- * - Uppercases, strips anything that isn't a letter, digit, or dash
- * - Enforces only ONE dash (strips subsequent ones)
+ * - Uppercases
+ * - Strips anything that isn't ASCII alphanumeric
+ * - Caps at 7 alphanumeric characters (max Philippine plate length)
  */
 export function sanitizePlate(raw: string): string {
-  let v = raw.replace(/ /g, "-").toUpperCase().replace(/[^A-Z0-9-]/g, "");
-  v = v.replace(/^-+/, "");
-  const firstDash = v.indexOf("-");
-  if (firstDash !== -1) {
-    v = v.slice(0, firstDash + 1) + v.slice(firstDash + 1).replace(/-/g, "");
-  }
-  return v;
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 7);
 }
 
 /**
@@ -70,27 +67,25 @@ export function sanitizePlate(raw: string): string {
  */
 export function plateError(plate: string, vehicleType: string): string | null {
   if (isGeneratorType(vehicleType)) return null;
-  const trimmed = plate.trim().toUpperCase();
+  const trimmed = plate.trim();
   if (!trimmed) return "Please enter the plate number.";
-  if (!isValidPlate(trimmed)) return "Plate number must follow the format: ABC-1234 (letters, dash, numbers).";
+  if (!/^[A-Z0-9]+$/i.test(trimmed)) return "Plate can only contain letters and numbers (no spaces or symbols).";
+  if (!isValidPlate(trimmed)) return "Plate must be 2–7 alphanumeric characters (e.g. ABC1234).";
   return null;
 }
 
 /**
  * Strips ALL non-alphanumeric characters for duplicate comparison.
- * "ABC-1234" → "ABC1234". Use when checking if two plates are the same vehicle.
+ * Example: "ABC1234" stays "ABC1234". Use when checking if two plates are the same vehicle.
  */
 export function normalizePlateForComparison(plate: string): string {
   return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
 /**
- * Formats a plate for canonical storage: strips separators then inserts a
- * hyphen at the letter→digit boundary ("ABC 1234" → "ABC-1234").
+ * Formats a plate for canonical storage: strips all separators, uppercase.
+ * Example: "ABC1234" → "ABC1234", "FA0-3101" → "FA03101"
  */
 export function formatPlateForStorage(plate: string): string {
-  const cleaned = plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const match = cleaned.match(/^([A-Z]+)([0-9]+)$/i);
-  if (match) return `${match[1]}-${match[2]}`;
-  return cleaned;
+  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }

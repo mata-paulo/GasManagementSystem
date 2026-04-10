@@ -14,6 +14,18 @@ import { auth, db } from "@/lib/firebase/client";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 
+/** Force a number to Firestore double (not int64). See functions/src/utils/validators.ts. */
+function toFirestoreDouble(n: number): number {
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return n;
+  if (n === 0) return Number.MIN_VALUE;
+  const buf = new Float64Array(1);
+  buf[0] = n;
+  const view = new DataView(buf.buffer);
+  const bits = view.getBigUint64(0, true);
+  view.setBigUint64(0, bits + 1n, true);
+  return buf[0];
+}
+
 // Official 80 barangays of Cebu City
 const CEBU_BARANGAYS = [
   "Adlaon", "Agsungot", "Apas", "Babag", "Bacayan", "Banilad",
@@ -573,6 +585,8 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
         barangay,
         assignmentStatus: "active",
         status: "online",
+        presenceStatus: "online",
+        lastSeenAt: serverTimestamp(),
         registeredAt: serverTimestamp(),
         stationDirectoryId: uid,
       };
@@ -585,10 +599,10 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
         lon,
         fuels: activeFuels.map((label) => ({
           label,
-          capacityLiters: fuelCapacityNumbers[label] ?? 0,
-          currentCapacity: fuelCapacityNumbers[label] ?? 0,
-          price: 0,
-          dispensed: 0,
+          capacityLiters: toFirestoreDouble(fuelCapacityNumbers[label] ?? 0),
+          currentCapacity: toFirestoreDouble(fuelCapacityNumbers[label] ?? 0),
+          price: toFirestoreDouble(0),
+          dispensed: toFirestoreDouble(0),
         })),
         barangay,
         officer: [nextOfficerFirstName, nextOfficerLastName].filter(Boolean).join(" ").trim(),
@@ -603,11 +617,6 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
       const batch = writeBatch(db);
       batch.set(doc(db, "accounts", uid), {
         ...firestoreData,
-        registrationToken: {
-          token: registrationToken,
-          used: true,
-          usedAt: serverTimestamp(),
-        },
       });
       batch.set(doc(db, "stationDirectory", uid), stationDirectoryData);
       await batch.commit();
