@@ -134,12 +134,24 @@ export default function QRDisplay({ resident, onDone }) {
           <h1 className="font-headline font-black text-white text-5xl tracking-[0.15em] uppercase leading-tight">
             {plate}
           </h1>
-          {gasType && (
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <span className="material-symbols-outlined text-yellow-300 icon-filled text-[22px]">local_gas_station</span>
-              <p className="text-white font-bold text-lg tracking-wide">{gasType}</p>
-            </div>
-          )}
+          <div className="flex items-center justify-center gap-6 mt-2">
+            {vehicleType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-white/80 icon-filled text-[20px]">
+                  {vehicleType === "2w" ? "two_wheeler" : "directions_car"}
+                </span>
+                <p className="text-white/80 font-semibold text-base tracking-wide">
+                  {vehicleType === "2w" ? "2W" : vehicleType === "4w" ? "4W" : vehicleType}
+                </p>
+              </div>
+            )}
+            {gasType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined icon-filled text-[20px] text-white/80">local_gas_station</span>
+                <p className="text-white font-bold text-base tracking-wide">{gasType}</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* White card */}
@@ -162,20 +174,9 @@ export default function QRDisplay({ resident, onDone }) {
 
             {/* Info */}
             <div className="px-4 pb-3 flex flex-col gap-2">
-              <div className="w-full grid grid-cols-2 gap-2">
-                {[
-                  { label: "Full Name",  value: fullName },
-                  { label: "Plate No.", value: plate },
-                  { label: "Vehicle",   value: vehicleType },
-                  { label: "Barangay",  value: barangay },
-                  ...(gasType ? [{ label: "Fuel Type", value: gasType }] : []),
-                  { label: "Registered", value: formatTimestamp(registeredAt) },
-                ].map((d) => (
-                  <div key={d.label} className="bg-slate-50 rounded-xl px-3 py-2">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{d.label}</p>
-                    <p className="text-xs font-bold text-slate-800 leading-tight">{d.value}</p>
-                  </div>
-                ))}
+              <div className="bg-slate-50 rounded-xl px-3 py-2 text-center">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Registered</p>
+                <p className="text-xs font-bold text-slate-800 leading-tight">{formatTimestamp(registeredAt)}</p>
               </div>
 
               {/* Tip — inside the card, below info fields */}
