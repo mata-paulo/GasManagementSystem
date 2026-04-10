@@ -275,6 +275,8 @@ export interface RecordDispenseTransactionInput {
   plate?: string;
   /** Vehicle type of the specific vehicle being fueled (from QR scan). */
   vehicleType?: string;
+  /** Idempotency key generated per QR scan — prevents duplicate transactions from the same scan. */
+  scanId?: string;
 }
 
 export interface RecordDispenseTransactionResult {
@@ -643,20 +645,23 @@ function stationFuelPricesToBrandPrices(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Admin "online" if lastSeenAt is newer than this (heartbeat runs every 60s while the app is open). */
+/** Heartbeat threshold — only used when no explicit presenceStatus is set. */
 const STATION_ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
 const QR_EXCEL_EPOCH = new Date(1899, 11, 30).getTime();
 
 export function isStationUserOnline(account: Partial<StationAccount>): boolean {
   if (account.role !== "station") return false;
   if ((account.assignmentStatus ?? "active") !== "active") return false;
-  if (account.presenceStatus && account.presenceStatus.toLowerCase() !== "online") return false;
-  // If presenceStatus is explicitly "online" but lastSeenAt is missing, trust the explicit status.
-  if (!account.lastSeenAt) return account.presenceStatus?.toLowerCase() === "online";
 
+  const ps = account.presenceStatus?.toLowerCase();
+  // Explicit manual status is authoritative — matches what the station dashboard shows.
+  if (ps === "offline") return false;
+  if (ps === "online") return true;
+
+  // No presenceStatus set — fall back to heartbeat freshness.
+  if (!account.lastSeenAt) return false;
   const lastSeen = new Date(account.lastSeenAt);
   if (Number.isNaN(lastSeen.getTime())) return false;
-
   return Date.now() - lastSeen.getTime() <= STATION_ONLINE_THRESHOLD_MS;
 }
 
@@ -1493,6 +1498,43 @@ export async function recordDispenseTransaction(
     throw new Error("This fuel request exceeds the vehicle's remaining allocation.");
   }
 
+  // ── Layer 1: Idempotency — reject duplicate submissions from the same QR scan ──
+  if (input.scanId) {
+    const dupSnap = await getDocs(query(
+      collection(db, "transactions"),
+      where("scanId", "==", input.scanId),
+      limit(1),
+    ));
+    if (!dupSnap.empty) {
+      throw new Error("This scan has already been processed. Please scan a new QR code.");
+    }
+  }
+
+  // ── Layer 2: Cooldown — prevent re-dispense to the same vehicle within 15 minutes ──
+  const COOLDOWN_MS = 15 * 60 * 1000;
+  if (txPlate) {
+    const recentSnap = await getDocs(query(
+      collection(db, "transactions"),
+      where("residentUid", "==", resident.uid),
+      where("plate", "==", txPlate),
+      orderBy("occurredAt", "desc"),
+      limit(1),
+    ));
+    if (!recentSnap.empty) {
+      const lastTx = recentSnap.docs[0].data();
+      const lastTime = lastTx.occurredAt?.toDate?.() ?? lastTx.occurredAt;
+      if (lastTime instanceof Date) {
+        const elapsed = createdAt.getTime() - lastTime.getTime();
+        if (elapsed < COOLDOWN_MS) {
+          const minsLeft = Math.ceil((COOLDOWN_MS - elapsed) / 60_000);
+          throw new Error(
+            `A transaction for this vehicle was recorded ${Math.floor(elapsed / 60_000)} minute(s) ago. Please wait ~${minsLeft} more minute(s) before dispensing again.`,
+          );
+        }
+      }
+    }
+  }
+
   const amount = Math.round(liters * pricePerLiter * 100) / 100;
   const nextFuelInventory = {
     ...(station.fuelInventory ?? {}),
@@ -1526,6 +1568,7 @@ export async function recordDispenseTransaction(
     createdAt: serverTimestamp(),
     weekKey: getWeekKey(createdAt),
     status: "dispensed",
+    ...(input.scanId ? { scanId: input.scanId } : {}),
   });
 
   batch.update(stationRef, {

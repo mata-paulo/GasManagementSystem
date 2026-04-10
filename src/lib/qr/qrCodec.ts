@@ -34,6 +34,8 @@ export interface DecodedQR {
   registeredAt: string | null;
   fuelAllocation: number | null;
   fuelUsed: number | null;
+  /** Unique ID generated per QR scan — used as idempotency key for dispense transactions. */
+  scanId: string;
 }
 
 function namePart(name: string): string {
@@ -119,6 +121,7 @@ export function decodeQR(encoded: string): DecodedQR | null {
       registeredAt: null,
       fuelAllocation: null,
       fuelUsed: null,
+      scanId: crypto.randomUUID(),
     };
   }
 
@@ -153,6 +156,7 @@ export function decodeQR(encoded: string): DecodedQR | null {
         registeredAt: parsed.registeredAt || null,
         fuelAllocation: typeof parsed.fuelAllocation === "number" ? parsed.fuelAllocation : null,
         fuelUsed: typeof parsed.fuelUsed === "number" ? parsed.fuelUsed : null,
+        scanId: crypto.randomUUID(),
       };
     } catch {
       return null;
@@ -181,6 +185,7 @@ export function decodeQR(encoded: string): DecodedQR | null {
     registeredAt: date.toISOString(),
     fuelAllocation: null,
     fuelUsed: null,
+    scanId: crypto.randomUUID(),
   };
 }
 

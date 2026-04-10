@@ -642,8 +642,13 @@ export default function AdminDashboard({ onLogout }) {
 
     void loadDashboardData();
 
+    // Refresh every 60s so station online/offline status stays current
+    // (aligns with the station heartbeat interval in AuthContext.tsx)
+    const refreshInterval = setInterval(() => { void loadDashboardData(); }, 60_000);
+
     return () => {
       cancelled = true;
+      clearInterval(refreshInterval);
     };
   }, []);
 
@@ -1449,9 +1454,9 @@ export default function AdminDashboard({ onLogout }) {
               <div className="grid grid-cols-5 gap-4">
                 <StatCard icon="groups"                label="Total Residents"    value={RESIDENTS.length}                         sub={`${maxedResidents} maxed quota`}                iconVariant="navy"   />
                 <StatCard icon="store"                 label="Active Stations"    value={`${onlineStations} / ${STATIONS.length}`} sub={`${STATIONS.length - onlineStations} offline`}  iconVariant="green"  />
-                <StatCard icon="local_fire_department" label="Total Dispensed"    value={`${totalDispensed.toLocaleString()} L`}   sub="Weekly growth trend: +5%"                       iconVariant="orange" />
-                <StatCard icon="bar_chart"             label="Quota Utilization"  value={`${utilizationPct}% Used`}                sub={`${(weeklyQuota - totalUsed).toLocaleString()} L remaining`} iconVariant="purple" />
-                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString()} L`}  sub="available this week"                            iconVariant="navy"   />
+                <StatCard icon="local_fire_department" label="Total Dispensed"    value={`${totalDispensed.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}   sub="Weekly growth trend: +5%"                       iconVariant="orange" />
+                <StatCard icon="bar_chart"             label="Quota Utilization"  value={`${utilizationPct}% Used`}                sub={`${(weeklyQuota - totalUsed).toLocaleString(undefined, { maximumFractionDigits: 4 })} L remaining`} iconVariant="purple" />
+                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}  sub="available this week"                            iconVariant="navy"   />
               </div>
 
               {/* ── Main two-column layout ── */}
@@ -1536,7 +1541,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
                           <span className="text-lg font-black text-[#003366] leading-none">{utilizationPct}%</span>
                           <span className="text-[9px] text-slate-400 font-bold">Used</span>
-                          <span className="text-[8px] text-slate-400">{weeklyQuota.toLocaleString()} L</span>
+                          <span className="text-[8px] text-slate-400">{weeklyQuota.toLocaleString(undefined, { maximumFractionDigits: 4 })} L</span>
                           <span className="text-[8px] text-slate-400">Total Quota</span>
                         </div>
                       </div>

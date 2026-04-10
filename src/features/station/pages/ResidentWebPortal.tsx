@@ -11,6 +11,7 @@ import html2canvas from "html2canvas";
 import type { ResidentAccount, ResidentAllocationSummary, StationDirectoryRecord } from "@/lib/data/agas";
 import { fetchStationDirectory, subscribeResidentAccount, subscribeResidentVehicleAllocationSummary } from "@/lib/data/agas";
 import { encodeQR } from "@/lib/qr/qrCodec";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -558,7 +559,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     </div>
                     <div className="flex justify-between text-xs border-t border-slate-100 pt-2">
                       <span className="text-slate-500 font-medium">Weekly Total</span>
-                      <span className="font-black text-slate-700">{weeklyQuota} L</span>
+                      <span className="font-black text-slate-700">{formatLitersQuantity(weeklyQuota)} L</span>
                     </div>
                   </div>
                   <button
@@ -608,7 +609,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
 
               {/* Two-column */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Left â€” QR code */}
+                {/* Left - QR code */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col items-center gap-2 self-start">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan at participating stations</p>
                   <div ref={qrRef} className="bg-white rounded-2xl border border-slate-100 shadow-inner p-4">
@@ -629,7 +630,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   </div>
                 </div>
 
-                {/* Right â€” Details */}
+                {/* Right - Details */}
                 <div className="space-y-3">
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50">
@@ -683,7 +684,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         </div>
                         <div className="flex justify-between text-sm border-t pt-2">
                           <span className="text-slate-500">Weekly Quota</span>
-                          <span className="font-black text-slate-700">{weeklyQuota} L</span>
+                          <span className="font-black text-slate-700">{formatLitersQuantity(weeklyQuota)} L</span>
                         </div>
                       </div>
                     </div>
@@ -815,7 +816,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   {/* Station list */}
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                     <div className="px-4 py-3 border-b border-slate-100">
-                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations â€“ Cebu City</h3>
+                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations &mdash; Cebu City</h3>
                       <p className="text-xs text-slate-400 mt-0.5">{filtered.length} of {liveStations.length} stations</p>
                       {/* Brand filter */}
                       <div className="flex flex-wrap gap-1.5 mt-2.5">

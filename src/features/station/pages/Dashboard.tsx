@@ -303,7 +303,7 @@ export default function Dashboard({
           {/* Stats row */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: "Total Capacity",    value: `${totalCapacity.toLocaleString()} L`, icon: "water_drop",      iconBg: "bg-blue-50",   iconColor: "text-blue-600",   valColor: "text-blue-700" },
+              { label: "Total Capacity",    value: `${totalCapacity.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`, icon: "water_drop",      iconBg: "bg-blue-50",   iconColor: "text-blue-600",   valColor: "text-blue-700" },
               { label: "Total Transactions",value: `${recentTransactions.length}`,         icon: "receipt_long",    iconBg: "bg-amber-50",  iconColor: "text-amber-600",  valColor: "text-amber-700" },
               { label: "Total Dispensed",   value: `${formatLitersQuantity(totalDispensed)} L`,       icon: "local_gas_station",iconBg: "bg-green-50",  iconColor: "text-green-600",  valColor: "text-green-700" },
               { label: "Total Revenue",     value: `₱${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: "payments", iconBg: "bg-purple-50", iconColor: "text-purple-500", valColor: "text-purple-700" },
@@ -360,8 +360,8 @@ export default function Dashboard({
                             style={{ width: `${pct}%`, background: theme.gradient }} />
                         </div>
                         <div className="flex justify-between mt-1">
-                          <span className="text-[10px] text-slate-400">{Number(inv).toLocaleString()} L current</span>
-                          <span className="text-[10px] text-slate-400">{Number(cap).toLocaleString()} L cap</span>
+                          <span className="text-[10px] text-slate-400">{Number(inv).toLocaleString(undefined, { maximumFractionDigits: 4 })} L current</span>
+                          <span className="text-[10px] text-slate-400">{Number(cap).toLocaleString(undefined, { maximumFractionDigits: 4 })} L cap</span>
                         </div>
                       </div>
                     </div>
@@ -473,7 +473,7 @@ export default function Dashboard({
                 <div className="flex justify-between pt-3 border-t border-white/10">
                   <div>
                     <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Total Capacity</p>
-                    <p className="font-black text-white text-base leading-tight mt-0.5">{totalCapacity.toLocaleString()} L</p>
+                    <p className="font-black text-white text-base leading-tight mt-0.5">{totalCapacity.toLocaleString(undefined, { maximumFractionDigits: 4 })} L</p>
                   </div>
                   <div>
                     <p className="text-[9px] font-bold uppercase tracking-wider text-white/40">Last Update</p>
@@ -508,9 +508,9 @@ export default function Dashboard({
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <span className="font-black text-sm text-white">{Number(inv).toLocaleString()} L</span>
+                        <span className="font-black text-sm text-white">{Number(inv).toLocaleString(undefined, { maximumFractionDigits: 4 })} L</span>
                         <span className="material-symbols-outlined text-white/60" style={{ fontSize: "18px" }}>trending_flat</span>
-                        <span className="font-black text-sm text-white">{Number(cap).toLocaleString()} L</span>
+                        <span className="font-black text-sm text-white">{Number(cap).toLocaleString(undefined, { maximumFractionDigits: 4 })} L</span>
                       </div>
                       <div className="flex justify-between gap-2 mt-0.5">
                         <p className="text-[9px] px-1 font-bold uppercase tracking-wider text-white/60">Current</p>

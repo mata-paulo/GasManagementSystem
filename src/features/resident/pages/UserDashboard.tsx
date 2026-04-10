@@ -12,6 +12,7 @@ import { formatPlateForStorage, isContainerType, isGeneratorType, isValidPlate, 
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import type { ResidentAllocationSummary } from "@/lib/data/agas";
 import { fetchStationDirectory, subscribeResidentVehicleAllocationSummary, subscribeResidentAccount } from "@/lib/data/agas";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 
 const DEFAULT_LAT = 10.3157;
@@ -382,12 +383,12 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 style={{ width: `${usagePercent}%` }}
               >
                 {usagePercent > 20 && (
-                  <span className="text-[9px] font-black text-white">{usedLiters}L used</span>
+                  <span className="text-[9px] font-black text-white">{formatLitersQuantity(usedLiters)}L used</span>
                 )}
               </div>
             </div>
             <div className={statusConfig.rowClass}>
-              <span className="ml-auto">Total: {weeklyAllocation} L / week</span>
+              <span className="ml-auto">Total: {formatLitersQuantity(weeklyAllocation)} L / week</span>
             </div>
           </section>
 
@@ -438,7 +439,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">â‚±{tx.pricePerLiter}/L</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">₱{Number(tx.pricePerLiter).toFixed(2)}/L</p>
                       <p className="text-sm font-black text-[#003366] mt-0.5">â‚±{total.toFixed(2)}</p>
                     </div>
                   </div>
@@ -790,14 +791,16 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     }
 
                     // Check if plate already exists in another account.
-                    // plateNormalizedList covers all vehicles (1–5) on new accounts;
-                    // plate is a legacy fallback for old accounts.
-                    const [byList] = await Promise.all([
-                      getDocs(query(collection(db, "accounts"), where("plateNormalizedList", "array-contains", plate2Normalized))),
-                    ]);
-                    const takenByOther = [
-                      ...byList.docs,
-                    ].some((d) => d.id !== resident.uid);
+                    // role=="resident" filter lets Firestore security rules evaluate the query
+                    // (rules require resource.data.role to be in ["resident","station"]).
+                    const byList = await getDocs(
+                      query(
+                        collection(db, "accounts"),
+                        where("role", "==", "resident"),
+                        where("plateNormalizedList", "array-contains", plate2Normalized),
+                      )
+                    );
+                    const takenByOther = byList.docs.some((d) => d.id !== resident.uid);
                     if (takenByOther) {
                       setV2Error("This plate number is already registered to another account.");
                       return;

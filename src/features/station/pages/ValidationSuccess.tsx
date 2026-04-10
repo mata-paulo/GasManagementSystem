@@ -373,6 +373,7 @@ export default function ValidationSuccess({
         fuelType: selectedFuelOption,
         plate: plateNumber !== "---" ? plateNumber : undefined,
         vehicleType: vehicleType !== "---" ? vehicleType : undefined,
+        scanId: scannedResident?.scanId,
       });
       setFuelConsumed(result.usedLiters);
       onDispenseSuccess?.();
@@ -606,11 +607,11 @@ export default function ValidationSuccess({
                     <div className="mt-3 h-4 w-full rounded-full bg-white/70 overflow-hidden">
                       <div className="h-full rounded-full flex items-center justify-end pr-2"
                         style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}>
-                        <span className="text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
+                        <span className="text-[9px] font-black text-white whitespace-nowrap">{formatLitersQuantity(fuelConsumed)}L used</span>
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-end text-2xl font-bold" style={{ color: textColor }}>
-                      <span>Total: {fuelLimit} L / week</span>
+                      <span>Total: {formatLitersQuantity(fuelLimit)} L / week</span>
                     </div>
                   </div>
                 </div>
@@ -905,12 +906,12 @@ export default function ValidationSuccess({
                     className="h-full rounded-full flex items-center justify-end pr-2"
                     style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}
                   >
-                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
+                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{formatLitersQuantity(fuelConsumed)}L used</span>
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-end text-base sm:text-2xl font-bold" style={{ color: textColor }}>
 
-                  <span className="text-right">Total: {fuelLimit} L / week</span>
+                  <span className="text-right">Total: {formatLitersQuantity(fuelLimit)} L / week</span>
                 </div>
               </div>
 
@@ -1188,8 +1189,8 @@ export default function ValidationSuccess({
                 This fuel request exceeds the allowed limit for this resident.
               </p>
               <div className="mt-4 w-full rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                <p><span className="font-semibold">Consumed:</span> {fuelConsumed}L</p>
-                <p><span className="font-semibold">Limit:</span> {fuelLimit}L</p>
+                <p><span className="font-semibold">Consumed:</span> {formatLitersQuantity(fuelConsumed)}L</p>
+                <p><span className="font-semibold">Limit:</span> {formatLitersQuantity(fuelLimit)}L</p>
               </div>
               <button
                 type="button"
