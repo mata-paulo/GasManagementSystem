@@ -140,12 +140,24 @@ export default function QRDisplay({ resident, activeVehicle, onDone }) {
           <h1 className="font-headline font-black text-white text-5xl tracking-[0.15em] uppercase leading-tight">
             {plate}
           </h1>
-          {gasType && (
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <span className="material-symbols-outlined text-yellow-300 icon-filled text-[22px]">local_gas_station</span>
-              <p className="text-white font-bold text-lg tracking-wide">{gasType}</p>
-            </div>
-          )}
+          <div className="flex items-center justify-center gap-6 mt-2">
+            {vehicleType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-white/80 icon-filled text-[20px]">
+                  {vehicleType === "2w" ? "two_wheeler" : "directions_car"}
+                </span>
+                <p className="text-white/80 font-semibold text-base tracking-wide">
+                  {vehicleType === "2w" ? "2W" : vehicleType === "4w" ? "4W" : vehicleType}
+                </p>
+              </div>
+            )}
+            {gasType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined icon-filled text-[20px] text-white/80">local_gas_station</span>
+                <p className="text-white font-bold text-base tracking-wide">{gasType}</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* White card */}
