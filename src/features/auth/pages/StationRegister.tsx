@@ -11,20 +11,9 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import type { AuthUser } from "@/lib/auth/authService";
 import { finalizeStationRegistrationToken, validateStationRegistrationToken } from "@/lib/data/agas";
 import { auth, db } from "@/lib/firebase/client";
+import { ensureFirestoreDouble as toFirestoreDouble } from "@/utils/firestoreNumber";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
-
-/** Force a number to Firestore double (not int64). See functions/src/utils/validators.ts. */
-function toFirestoreDouble(n: number): number {
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return n;
-  if (n === 0) return Number.MIN_VALUE;
-  const buf = new Float64Array(1);
-  buf[0] = n;
-  const view = new DataView(buf.buffer);
-  const bits = view.getBigUint64(0, true);
-  view.setBigUint64(0, bits + 1n, true);
-  return buf[0];
-}
 
 // Official 80 barangays of Cebu City
 const CEBU_BARANGAYS = [

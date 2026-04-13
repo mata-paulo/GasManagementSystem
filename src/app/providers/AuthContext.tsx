@@ -54,7 +54,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     const uid = auth.user.uid;
-    void setStationPresenceStatus(uid, "online").catch(() => undefined);
+
+    // Do not force presenceStatus to "online" here — that overwrote an officer's "offline"
+    // choice on every refresh and raced with manual Online/Offline toggles. Presence is
+    // loaded from `accounts` via `fetchStationAccount` when the station portal hydrates.
 
     const heartbeat = window.setInterval(() => {
       void stampStationLastSeen(uid).catch(() => undefined);

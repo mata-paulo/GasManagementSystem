@@ -7,7 +7,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 import BottomNav from "@/shared/components/navigation/BottomNav";
-import { fetchStationDirectory } from "@/lib/data/agas";
+import { fetchStationDirectory, type StationDirectoryRecord } from "@/lib/data/agas";
 
 const BRAND_LOGO: Record<string, { bg: string; fg: string; abbr: string }> = {
   Shell:      { bg: "#FBCE07", fg: "#DD1D21", abbr: "SH" },
@@ -37,14 +37,16 @@ const FUEL_TYPE_COLORS: Record<string, { bg: string; text: string; dot: string }
   Gasoline:     { bg: "bg-blue-50",   text: "text-blue-700",   dot: "bg-blue-500"   },
   Premium95:    { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
   Premium97:    { bg: "bg-rose-50",   text: "text-rose-700",   dot: "bg-rose-500"   },
+  Kerosene:     { bg: "bg-violet-50", text: "text-violet-700", dot: "bg-violet-500" },
 };
 
 function normalizeBrandKey(value) {
   return (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function inferFuelType(label) {
+function inferFuelType(label: string): string {
   const normalized = (label || "").toLowerCase();
+  if (normalized.includes("kerosene")) return "Kerosene";
   if (normalized.includes("premium diesel")) return "PremiumDiesel";
   if (normalized.includes("diesel")) return "Diesel";
   if (normalized.includes("97") || normalized.includes("racing")) return "Premium97";
@@ -57,10 +59,34 @@ function normalizeStationBrand(brand) {
   if (normalized === "seaoil") return "Sea Oil";
   return brand;
 }
-function mapDirectoryStation(station) {
+type StationRowFuel = { name: string; type: string; price: number };
+
+/** Per-station fuels: prefer `stationDirectory.fuels[]` (canonical); else legacy `brandPrices`. */
+function mapDirectoryStation(station: StationDirectoryRecord) {
+  const fromFuels: StationRowFuel[] | null =
+    Array.isArray(station.fuels) && station.fuels.length > 0
+      ? station.fuels.map((f) => {
+          const price = typeof f.price === "number" && Number.isFinite(f.price) ? f.price : Number(f.price) || 0;
+          return {
+            name: f.label,
+            type: inferFuelType(f.label),
+            price,
+          };
+        })
+      : null;
+
+  const fromBrandPrices: StationRowFuel[] = Array.isArray(station.brandPrices)
+    ? station.brandPrices.map((item) => ({
+        name: item.label,
+        type: inferFuelType(item.label),
+        price: typeof item.price === "number" && Number.isFinite(item.price) ? item.price : Number(item.price) || 0,
+      }))
+    : [];
+
+  const brandPrices: StationRowFuel[] = fromFuels ?? fromBrandPrices;
+
   return {
     id: station.id,
-    sourceId: station.sourceId,
     name: station.name,
     brand: normalizeStationBrand(station.brand),
     address: station.address,
@@ -68,13 +94,7 @@ function mapDirectoryStation(station) {
     hours: station.hours,
     lat: station.lat,
     lon: station.lon,
-    brandPrices: Array.isArray(station.brandPrices)
-      ? station.brandPrices.map((item) => ({
-          name: item.label,
-          type: inferFuelType(item.label),
-          price: item.price,
-        }))
-      : [],
+    brandPrices,
   };
 }
 
@@ -140,7 +160,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     el.style.transition = isDragging ? "none" : "height 0.3s cubic-bezier(0.32,0.72,0,1)";
   }, [drawerHeight, isDragging]);
 
-  // â”€â”€ Location â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Location
   useEffect(() => {
     if (!navigator.geolocation) {
       setGeoError("Geolocation not supported. Showing Cebu City center.");
@@ -194,7 +214,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     return () => { map.remove(); mapRef.current = null; };
   }, [location]);
 
-  // â”€â”€ Load live stations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Load live stations
   useEffect(() => {
     if (!location) return;
     let cancelled = false;
@@ -246,7 +266,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
   // Reset to first page when filter changes
   useEffect(() => { setCurrentPage(0); }, [activeFilter]);
 
-  // â”€â”€ Markers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -268,7 +288,8 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);
         cursor:pointer;font-size:16px;
       `;
-      el.innerHTML = "â›½";
+      // U+26FD FUEL PUMP — use \\u26FD so the symbol is not corrupted if the file is saved as non-UTF-8
+      el.innerHTML = "\u26FD";
       el.addEventListener("click", () => handleSelectStation(st));
 
       markerElsRef.current[st.id] = el;
@@ -289,7 +310,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     });
   }, [filteredStations]);
 
-  // â”€â”€ Sync marker highlight with selectedStation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Sync marker highlight with selectedStation
   useEffect(() => {
     markersRef.current.forEach((m, idx) => {
       const st = filteredStations[idx];
@@ -302,7 +323,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     });
   }, [selectedStation, filteredStations]);
 
-  // â”€â”€ Route drawing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Route drawing
   const drawRoute = async (st) => {
     if (!location) return;
     const map = mapRef.current;
@@ -325,7 +346,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         routePolylineRef.current = null;
       }
 
-      // GeoJSON coords are [lng, lat] â€” flip to Leaflet [lat, lng]
+      // GeoJSON coords are [lng, lat] - flip to Leaflet [lat, lng]
       const latLngs: L.LatLngExpression[] = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
       // Outline (white, wider)
@@ -367,7 +388,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
     }
   };
 
-  // â”€â”€ Drawer drag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Drawer drag
   const handleDragStart = (clientY) => {
     dragStartY.current = clientY;
     dragStartHeight.current = drawerHeight;
@@ -419,12 +440,12 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         </span>
       </div>
 
-      {/* Map â€” fills remaining space */}
+      {/* Map  -  fills remaining space */}
       <div className="relative flex-1">
         {locating && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-container-lowest z-10 gap-3">
             <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-on-surface-variant font-medium">Getting your locationâ€¦</p>
+            <p className="text-sm text-on-surface-variant font-medium">Getting your location...</p>
           </div>
         )}
 
@@ -473,12 +494,12 @@ export default function NearbyStations({ activeTab, onTabChange }) {
           </div>
         )}
 
-        {/* â”€â”€ Drawer â”€â”€ */}
+        {/* Drawer */}
         <div
           ref={drawerRef}
           className="absolute left-0 right-0 bottom-0 z-30 bg-white rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
         >
-          {/* Handle bar â€” draggable */}
+          {/* Handle bar  -  draggable */}
           <div
             ref={handleBarRef}
             className="flex flex-col items-center pt-3 pb-1 shrink-0 cursor-grab active:cursor-grabbing select-none"
@@ -516,7 +537,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
             <div className="mx-4 mb-2 px-4 py-2.5 bg-[#003366] rounded-xl flex items-center gap-3 shrink-0">
               <span className="material-symbols-outlined text-white icon-filled text-[20px]">route</span>
               {loadingRoute ? (
-                <p className="text-white text-xs font-medium">Calculating routeâ€¦</p>
+                <p className="text-white text-xs font-medium">Calculating route...</p>
               ) : (
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-xs font-bold truncate">{selectedStation.name}</p>
@@ -529,7 +550,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
             </div>
           )}
 
-          {/* Carousel â€” horizontal scroll, one page of 5 stations per slide */}
+          {/* Carousel  -  horizontal scroll, one page of 5 stations per slide */}
           <div className="flex-1 flex flex-col min-h-0">
             {loadingStations && (
               <div className="px-4 space-y-2 pt-2">
@@ -609,7 +630,9 @@ export default function NearbyStations({ activeTab, onTabChange }) {
                                       <div key={fuel.name} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg ${colors.bg}`}>
                                         <div className={`w-2 h-2 rounded-full shrink-0 ${colors.dot}`} />
                                         <p className={`text-xs font-semibold flex-1 ${colors.text}`}>{fuel.name}</p>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 ${colors.text}`}>â‚±{fuel.price ?? 0}</span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 ${colors.text}`}>
+                                          ₱{Number(fuel.price ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
                                       </div>
                                     );
                                   }) : (
@@ -645,7 +668,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
         </div>
       </div>
 
-      {/* Spacer â€” reserves the fixed bottom nav's height in the flex layout so the map container stops above it */}
+      {/* Spacer  -  reserves the fixed bottom nav's height in the flex layout so the map container stops above it */}
       <div className="shrink-0 h-[100px]" />
       <BottomNav active={activeTab} onChange={onTabChange} tabs={USER_TABS} />
     </div>

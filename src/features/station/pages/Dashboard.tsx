@@ -126,7 +126,7 @@ export default function Dashboard({
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [stationStatus, setStationStatus] = useState<"online" | "offline">(
-    (officer?.presenceStatus ?? officer?.status)?.toLowerCase() === "online" ? "online" : "offline",
+    (officer?.presenceStatus?.toLowerCase() === "online" || officer?.presenceStatus == null) ? "online" : "offline",
   );
 
   useEffect(() => {
@@ -142,9 +142,9 @@ export default function Dashboard({
 
   useEffect(() => {
     setStationStatus(
-      (officer?.presenceStatus ?? officer?.status)?.toLowerCase() === "online" ? "online" : "offline",
+      (officer?.presenceStatus?.toLowerCase() === "online" || officer?.presenceStatus == null) ? "online" : "offline",
     );
-  }, [officer?.presenceStatus, officer?.status]);
+  }, [officer?.presenceStatus]);
 
   useEffect(() => {
     const stationUid = officer?.uid;
@@ -171,19 +171,17 @@ export default function Dashboard({
   const fuelPrices     = officer?.fuelPrices     || {};
   const fuelInventory  = officer?.fuelInventory  || {};
 
-  const dieselCapacity = ["Diesel", "Premium Diesel"].reduce((acc, f) => {
-    const v = fuelCapacities[f]; return acc + (typeof v === "number" ? v : Number(v) || 0);
-  }, 0);
-  const gasolineCapacity = ["Regular/Unleaded (91)", "Premium (95)", "Super Premium (97)"].reduce((acc, f) => {
-    const v = fuelCapacities[f]; return acc + (typeof v === "number" ? v : Number(v) || 0);
-  }, 0);
-  const totalCapacity = dieselCapacity + gasolineCapacity;
-
   const activeFuels = ORDERED_FUELS.filter((f) => {
     const af = officer?.availableFuels;
     if (!Array.isArray(af) || af.length === 0) return true;
     return af.includes(f);
   });
+
+  /** Sum `capacityLiters` for each active fuel (matches stationDirectory.fuels[]). */
+  const totalCapacity = activeFuels.reduce((sum, f) => {
+    const v = fuelCapacities[f];
+    return sum + (typeof v === "number" ? v : Number(v) || 0);
+  }, 0);
 
   const sortedTx = [...recentTransactions].sort(
     (a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime()
