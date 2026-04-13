@@ -1,7 +1,32 @@
 import {z} from "zod";
 
-/** Align with `Register.tsx` plate input `maxLength={10}`. */
-export const PLATE_MAX_LENGTH = 10;
+/** Align with client plate input maxLength={7} (2–7 alphanumeric, no separators). */
+export const PLATE_MAX_LENGTH = 7;
+
+/** Strips ALL non-alphanumeric characters for duplicate comparison. */
+export function normalizePlate(plate: string): string {
+  return plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+}
+
+/** Formats a plate for canonical storage: strips all separators, uppercase. */
+export function formatPlateForStorage(plate: string): string {
+  return normalizePlate(plate);
+}
+
+function sanitizePlateInput(value: unknown): string {
+  if (value == null) return "";
+  const raw = String(value).trim();
+  // Canonical: strip dashes/spaces/special chars, uppercase, max 7
+  return normalizePlate(raw).slice(0, PLATE_MAX_LENGTH);
+}
+
+const plateSchema = z.preprocess(
+  sanitizePlateInput,
+  z.string()
+    .min(1, "Plate number is required.")
+    .refine((v) => /^[A-Z0-9]+$/.test(v), "Plate may only contain letters and numbers.")
+    .refine((v) => v.length >= 2 && v.length <= PLATE_MAX_LENGTH, "Plate must be 2–7 alphanumeric characters (e.g. ABC1234)."),
+);
 
 export const NAME_MAX_LENGTH = 50;
 export const CORS = [
@@ -58,20 +83,7 @@ const vehicleTypeSchema = z.string().trim().min(1, "Vehicle type is required.");
  * Uses `plate` and `gasType` (same as the UI). Unknown keys rejected.
  */
 export const registerResidentSchema = z.object({
-  vehicleType: vehicleTypeSchema,
-  plate: z
-    .string()
-    .trim()
-    .min(1, "Plate number is required.")
-    .max(
-      PLATE_MAX_LENGTH,
-      `Plate number must be at most ${PLATE_MAX_LENGTH} characters.`
-    ),
-  gasType: z
-    .string()
-    .trim()
-    .min(1, "Fuel type is required.")
-    .refine((v) => GASES.includes(v), "Invalid fuel type selected."),
+  // Legacy `vehicleType` removed; use `vehicles[].type` instead.
   firstName: z
     .string()
     .trim()
@@ -108,25 +120,14 @@ export const registerResidentSchema = z.object({
       PASSWORD_MAX_LENGTH,
       `Password must be at most ${PASSWORD_MAX_LENGTH} characters.`
     ),
-  // Optional second vehicle
-  vehicle2Type: vehicleTypeSchema.optional(),
-  vehicle2Plate: z
-    .string()
-    .trim()
-    .max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`)
-    .optional(),
-  vehicle2GasType: z
-    .string()
-    .trim()
-    .refine((v) => GASES.includes(v), "Invalid fuel type.")
-    .optional(),
   vehicles: z.array(
     z.object({
       type: vehicleTypeSchema,
-      plate: z.string().trim().min(1, "Plate is required.").max(PLATE_MAX_LENGTH, `Plate must be at most ${PLATE_MAX_LENGTH} characters.`),
+      plate: plateSchema,
       gasType: z.string().trim().refine((v) => GASES.includes(v), "Invalid fuel type."),
+      fuelAllocated: z.number().finite().min(0, "Fuel allocated must be zero or greater.").optional(),
     })
-  ).min(1).max(5, "Maximum of 5 vehicles allowed.").optional(),
+  ).min(1).max(5, "Maximum of 5 vehicles allowed."),
 });
 
 export type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
@@ -166,3 +167,30 @@ export const assignStationUserSchema = z.object({
 });
 
 export type AssignStationUserInput = z.infer<typeof assignStationUserSchema>;
+
+/**
+ * Force a JS number to be stored as Firestore `doubleValue` instead of `integerValue`.
+ *
+ * The Node.js Firestore SDK stores `Number.isInteger(n)` values as int64.
+ * This helper adds a negligible offset (≤ 1 ULP) so the serializer picks doubleValue.
+ * The perturbation is invisible to application logic (fuel volumes in liters).
+ */
+export function toFirestoreDouble(n: number): number {
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return n;
+  // Keep literal zero as 0. Mapping 0 → Number.MIN_VALUE forced double encoding but showed as 5e-324
+  // in the Emulator/UI; int64 0 and double 0 are identical for all fuel math in JS.
+  if (n === 0) return 0;
+  // For non-zero integers, nudge by 1 ULP so Number.isInteger returns false.
+  const buf = new Float64Array(1);
+  buf[0] = n;
+  const bytes = new Uint8Array(buf.buffer);
+  // Increment the least significant byte of the IEEE 754 representation.
+  // This adds 1 ULP (unit in last place) — the smallest possible change.
+  let carry = 1;
+  for (let i = 0; carry && i < 8; i++) {
+    const sum = bytes[i] + carry;
+    bytes[i] = sum & 0xff;
+    carry = sum >> 8;
+  }
+  return buf[0];
+}

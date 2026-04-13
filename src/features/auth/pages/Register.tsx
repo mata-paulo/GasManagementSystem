@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { FirebaseError } from "firebase/app";
-import { isContainerType, isGeneratorType, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
+import { formatPlateForStorage, isContainerType, isGeneratorType, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
 import { auth } from "@/lib/firebase/client";
@@ -168,11 +168,66 @@ function BarangayPicker({ value, onChange }: { value: string; onChange: (b: stri
 export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () => void; onSuccess: (data: Record<string, unknown>) => void; onSignIn?: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const MAX_VEHICLES = 5;
-  const [vehicles, setVehicles] = useState([{ type: "4w", plate: "", gasType: "" }]);
+  const DEFAULT_FUEL_ALLOCATED = 20;
+  const [vehicles, setVehicles] = useState([{ type: "4w", plate: "", gasType: "", fuelAllocated: DEFAULT_FUEL_ALLOCATED }]);
+  const [vehicleFieldErrors, setVehicleFieldErrors] = useState<Record<number, { plate?: string }>>({});
+
+  const recomputeDuplicatePlateErrors = (nextVehicles: typeof vehicles) => {
+    const counts = new Map<string, number>();
+    nextVehicles.forEach((v) => {
+      if (isGeneratorType(v.type)) return;
+      const key = formatPlateForStorage(v.plate);
+      if (!key) return;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    setVehicleFieldErrors((prev) => {
+      const next: Record<number, { plate?: string }> = { ...prev };
+      nextVehicles.forEach((v, idx) => {
+        if (isGeneratorType(v.type)) return;
+        const key = formatPlateForStorage(v.plate);
+        const isDup = key && (counts.get(key) ?? 0) > 1;
+        const existing = next[idx]?.plate;
+        const invalidMsg = "Only letters and numbers are allowed (no spaces or symbols).";
+        // Overwrite with duplicate message unless the "invalid characters" message is present.
+        if (isDup && existing !== invalidMsg) {
+          next[idx] = { ...(next[idx] ?? {}), plate: "Duplicate plate number." };
+        } else if (!isDup && existing === "Duplicate plate number.") {
+          next[idx] = { ...(next[idx] ?? {}), plate: undefined };
+        }
+      });
+      return next;
+    });
+  };
+
   const updateVehicle = (i: number, field: string, value: string) =>
-    setVehicles((prev) => prev.map((v, idx) => idx === i ? { ...v, [field]: value } : v));
-  const addVehicle = () => setVehicles((prev) => [...prev, { type: "4w", plate: "", gasType: "" }]);
-  const removeVehicle = (i: number) => setVehicles((prev) => prev.filter((_, idx) => idx !== i));
+    setVehicles((prev) => {
+      const next = prev.map((v, idx) => idx === i ? { ...v, [field]: value } : v);
+      if (field === "plate" || field === "type") recomputeDuplicatePlateErrors(next);
+      return next;
+    });
+  const addVehicle = () => setVehicles((prev) => {
+    const next = [...prev, { type: "4w", plate: "", gasType: "", fuelAllocated: DEFAULT_FUEL_ALLOCATED }];
+    recomputeDuplicatePlateErrors(next);
+    return next;
+  });
+  const removeVehicle = (i: number) => {
+    setVehicles((prev) => {
+      const nextVehicles = prev.filter((_, idx) => idx !== i);
+      recomputeDuplicatePlateErrors(nextVehicles);
+      return nextVehicles;
+    });
+    setVehicleFieldErrors((prev) => {
+      const next: Record<number, { plate?: string }> = {};
+      const keep = Object.entries(prev)
+        .map(([k, v]) => [Number(k), v] as const)
+        .filter(([idx]) => idx !== i)
+        .sort(([a], [b]) => a - b);
+      keep.forEach(([idx, v]) => {
+        next[idx > i ? idx - 1 : idx] = v;
+      });
+      return next;
+    });
+  };
 
   const [form, setForm] = useState({ lastName: "", firstName: "", barangay: "", email: "", password: "", confirmPassword: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -208,11 +263,25 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
 
   const handleStep2 = (e: React.FormEvent) => {
     e.preventDefault();
+    const seenPlates = new Set<string>();
     for (const v of vehicles) {
       if (!["2w", "4w"].includes(v.type) && isContainerType(v.type)) { setError("Container-type vehicles are not allowed in the AGAS program."); return; }
       const pErr = plateError(v.plate, v.type);
       if (pErr) { setError(pErr); return; }
       if (!v.gasType) { setError("Please select a fuel type for each vehicle."); return; }
+
+      // Prevent duplicate plates within the same registration payload.
+      if (!isGeneratorType(v.type)) {
+        const normalized = formatPlateForStorage(v.plate);
+        if (normalized) {
+          if (seenPlates.has(normalized)) {
+            recomputeDuplicatePlateErrors(vehicles);
+            setError("Duplicate plate number found. Please ensure each vehicle has a unique plate.");
+            return;
+          }
+          seenPlates.add(normalized);
+        }
+      }
     }
     if (!agreedToTerms) { setError("You must agree to the Terms and Conditions to register."); return; }
     setError("");
@@ -225,11 +294,12 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
     setRegistering(true);
     const email = form.email.trim().toLowerCase();
     try {
-      const mappedVehicles = vehicles.map((v) => ({ ...v, plate: v.plate.trim().toUpperCase() }));
+      const mappedVehicles = vehicles.map((v) => ({
+        ...v,
+        plate: formatPlateForStorage(v.plate),
+        fuelAllocated: Number.isFinite(Number(v.fuelAllocated)) ? Number(v.fuelAllocated) : DEFAULT_FUEL_ALLOCATED,
+      }));
       const payload: Record<string, unknown> = {
-        vehicleType: mappedVehicles[0].type,
-        plate: mappedVehicles[0].plate,
-        gasType: mappedVehicles[0].gasType,
         vehicles: mappedVehicles,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -243,14 +313,9 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
         email, role: "resident", loginAt: new Date().toISOString(),
         firstName: form.firstName.trim(), lastName: form.lastName.trim(),
         plate: mappedVehicles[0].plate, barangay: form.barangay,
-        vehicleType: mappedVehicles[0].type, gasType: mappedVehicles[0].gasType,
+        gasType: mappedVehicles[0].gasType,
         vehicles: mappedVehicles, registeredAt: new Date().toISOString(),
         uid: data.uid ?? cred.user.uid,
-        ...(mappedVehicles.length > 1 && {
-          vehicle2Type: mappedVehicles[1].type,
-          vehicle2Plate: mappedVehicles[1].plate,
-          vehicle2GasType: mappedVehicles[1].gasType,
-        }),
       };
       setShowConfirm(false);
       onSuccess({ ...authUser });
@@ -385,12 +450,34 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
                 {v.type === "2w" ? "two_wheeler" : v.type === "4w" ? "directions_car" : "commute"}
               </span>
               <input type="text" value={v.plate}
-                onChange={(e) => { updateVehicle(i, "plate", isGeneratorType(v.type) ? e.target.value.toUpperCase() : sanitizePlate(e.target.value)); setError(""); }}
-                placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC-1234"} maxLength={10}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (!isGeneratorType(v.type)) {
+                    const hasInvalid = /[^a-z0-9]/i.test(raw);
+                    setVehicleFieldErrors((prev) => ({
+                      ...prev,
+                      [i]: {
+                        ...(prev[i] ?? {}),
+                        plate: hasInvalid ? "Only letters and numbers are allowed (no spaces or symbols)." : prev[i]?.plate === "Only letters and numbers are allowed (no spaces or symbols)." ? undefined : prev[i]?.plate,
+                      },
+                    }));
+                  }
+                  updateVehicle(i, "plate", isGeneratorType(v.type) ? raw.toUpperCase() : sanitizePlate(raw));
+                  setError("");
+                }}
+                placeholder={isGeneratorType(v.type) ? "e.g. GEN-2024-001" : "e.g. ABC1234"} maxLength={7}
                 className={`${inputCls} pl-12 uppercase tracking-widest font-bold`} />
             </div>
             {!isGeneratorType(v.type) && (
-              <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC-1234</span> (letters, dash, numbers)</p>
+              <>
+                {vehicleFieldErrors[i]?.plate && (
+                  <div className="flex items-start gap-2 bg-error-container/30 border border-error/30 text-error px-3 py-2 rounded-xl text-xs mt-2">
+                    <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+                    <span>{vehicleFieldErrors[i]?.plate}</span>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 mt-1">Format: <span className="font-bold tracking-wider">ABC1234</span> (letters and numbers only)</p>
+              </>
             )}
           </div>
           <div className="space-y-1.5">
@@ -441,17 +528,17 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
 
   // ── Confirm modal ─────────────────────────────────────────────────────────
   const ConfirmModal = showConfirm ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6 py-6 overflow-y-auto">
       <div className="absolute inset-0 bg-black/50" onClick={() => setShowConfirm(false)} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="bg-[#003366] px-5 py-4 flex items-center gap-3">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90dvh]">
+        <div className="bg-[#003366] px-5 py-4 flex items-center gap-3 shrink-0">
           <span className="material-symbols-outlined text-yellow-300 icon-fill text-[24px]">help</span>
           <div>
             <p className="text-white font-headline font-black text-sm leading-none">Confirm Registration</p>
             <p className="text-white/60 text-[10px] mt-0.5">Please review your information before submitting</p>
           </div>
         </div>
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1 min-h-0 overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
           <div className="flex flex-col items-center bg-[#1a4f8a] rounded-xl py-3 px-6">
             <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Plate Number</p>
             <p className="font-headline font-black text-white text-2xl tracking-[0.2em] uppercase">{vehicles[0]?.plate || "—"}</p>
@@ -472,12 +559,12 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
           </div>
         </div>
         {confirmError && (
-          <div className="flex items-center gap-2 bg-error-container text-on-error-container px-5 py-3 text-sm">
+          <div className="flex items-center gap-2 bg-error-container text-on-error-container px-5 py-3 text-sm shrink-0">
             <span className="material-symbols-outlined text-base shrink-0">error</span>
             {confirmError}
           </div>
         )}
-        <div className="flex gap-3 px-5 pb-5">
+        <div className="flex gap-3 px-5 pb-5 shrink-0">
           <button type="button" disabled={registering} onClick={() => setShowConfirm(false)}
             className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl text-sm active:scale-95 transition-all disabled:opacity-50">
             Go Back

@@ -177,39 +177,6 @@ export default function QRScanner({ onClose, onSuccess }: QRScannerProps) {
           </>
         )}
 
-        {/* Upload mode */}
-        {mode === "upload" && !decoded && (
-          <>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-4 border-2 border-dashed border-white/30 rounded-2xl py-12 text-white/70 hover:border-white/60 hover:text-white transition-all active:scale-95"
-            >
-              <span className="material-symbols-outlined text-5xl text-white/50 icon-filled">
-                qr_code_scanner
-              </span>
-              <div className="text-center">
-                <p className="font-bold text-sm text-white">Tap to upload QR image</p>
-                <p className="text-xs text-white/50 mt-1">PNG, JPG, or screenshot</p>
-              </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              aria-label="Upload QR image"
-              className="hidden"
-            />
-
-            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-              <p className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Expected QR Format</p>
-              <p className="text-white font-mono text-sm tracking-widest">AGAS_UID|resident-user-id</p>
-              <p className="text-white/40 text-[10px] mt-1">
-                Legacy and current AGAS resident QR formats are supported
-              </p>
-            </div>
-          </>
-        )}
         {/* Error */}
         {error && (
           <div className="flex items-center gap-2 bg-red-900/40 border border-red-500/30 px-4 py-3 rounded-xl text-red-300 text-sm">

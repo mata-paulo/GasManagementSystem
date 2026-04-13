@@ -9,8 +9,9 @@ L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, 
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
 import type { ResidentAccount, ResidentAllocationSummary, StationDirectoryRecord } from "@/lib/data/agas";
-import { fetchStationDirectory, subscribeResidentAccount, subscribeResidentAllocationSummary } from "@/lib/data/agas";
+import { fetchStationDirectory, subscribeResidentAccount, subscribeResidentVehicleAllocationSummary } from "@/lib/data/agas";
 import { encodeQR } from "@/lib/qr/qrCodec";
+import { formatLitersQuantity } from "@/utils/fuelVolume";
 
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", {
@@ -154,16 +155,11 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const firstName    = currentResident?.firstName || "Resident";
   const lastName     = currentResident?.lastName  || "";
   const fullName     = `${firstName} ${lastName}`.trim();
-  const vehicles     = (currentResident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
-  const fallbackVehicle = {
-    type: currentResident?.vehicleType || "Car",
-    plate: currentResident?.plate || "N/A",
-    gasType: currentResident?.gasType || "Regular",
-  };
-  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? fallbackVehicle;
-  const plate        = activeVehicle.plate || fallbackVehicle.plate;
-  const vehicleType  = formatVehicleTypeLabel(activeVehicle.type || fallbackVehicle.type) || "Car";
-  const gasType      = activeVehicle.gasType || fallbackVehicle.gasType;
+  const vehicles     = (currentResident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string; fuelAllocated?: number; fuelUsed?: number; fuelWeekKey?: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "4w", plate: "N/A", gasType: "" };
+  const plate        = activeVehicle.plate || "N/A";
+  const vehicleType  = formatVehicleTypeLabel(activeVehicle.type) || "Car";
+  const gasType      = activeVehicle.gasType || "";
   const barangay     = currentResident?.barangay || "Not set";
   const registeredAt = currentResident?.registeredAt || new Date().toISOString();
   const initials     = `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
@@ -176,12 +172,12 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     : liveTransactions;
   const visibleTransactions = scopedTransactions.filter((transaction) => matchesTransactionFilter(transaction.createdAt, txFilter));
   const remaining    = allocationSummary.remainingLiters;
-  const weeklyQuota  = allocationSummary.fuelAllocation || Number(currentResident?.fuelAllocation ?? 20);
-  const used         = allocationSummary.usedLiters;
+  const weeklyQuota  = Number(activeVehicle?.fuelAllocated ?? allocationSummary.fuelAllocation ?? currentResident?.fuelAllocation ?? 20);
+  const used         = Number(activeVehicle?.fuelUsed ?? allocationSummary.usedLiters ?? 0);
   const pct          = weeklyQuota > 0 ? Math.round((remaining / weeklyQuota) * 100) : 0;
   const totalSpent   = scopedTransactions.reduce((sum, transaction) => sum + ((transaction.totalPaid ?? (transaction.liters * transaction.pricePerLiter)) || 0), 0);
 
-  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, currentResident?.uid, plate, vehicleType, barangay, weeklyQuota, used);
+  const qrData = encodeQR(firstName, lastName, registeredAt, gasType, currentResident?.uid, plate, barangay, activeVehicle?.type, weeklyQuota, used);
   const circumference = 2 * Math.PI * 22;
 
   useEffect(() => {
@@ -207,8 +203,10 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     const uid = resident?.uid;
     if (!uid) return () => undefined;
 
-    return subscribeResidentAllocationSummary(
+    const plateKey = (plate || "").trim().toUpperCase();
+    return subscribeResidentVehicleAllocationSummary(
       uid,
+      plateKey,
       (nextSummary) => {
         setAllocationSummary(nextSummary);
       },
@@ -216,7 +214,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
         setPortalMessage("Transaction updates are temporarily delayed.");
       },
     );
-  }, [resident]);
+  }, [resident, plate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,7 +249,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
       markerZoomAnimation: false,
     }).setView([10.3200, 123.8950], 11.5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: 'Â© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
       updateWhenIdle: false,
       updateWhenZooming: false,
@@ -336,7 +334,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
       >
         {/* Navy header */}
         <div style={{ background: "#001e40", padding: "22px 28px", textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S Â· Gas Allocation QR</p>
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S · Gas Allocation QR</p>
           <p style={{ color: "#ffffff", fontWeight: 900, fontSize: 32, letterSpacing: 6, textTransform: "uppercase", margin: 0 }}>{plate}</p>
           {gasType && (
             <p style={{ color: "#fde047", fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 0 }}>{gasType}</p>
@@ -363,7 +361,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
         </div>
         {/* Footer */}
         <div style={{ background: "#f1f5f9", padding: "10px 28px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
-          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>Â© 2026 Mata Technologies Inc. Â· A.G.A.S â€” Access to Goods and Assistance System</p>
+          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>© 2026 Mata Technologies Inc. · A.G.A.S — Access to Goods and Assistance System</p>
         </div>
       </div>
 
@@ -394,7 +392,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-white text-sm font-bold leading-none truncate">{fullName}</p>
-              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} Â· {vehicleType}</p>
+              <p className="text-white/50 text-[10px] mt-0.5 truncate">{plate} · {vehicleType}</p>
             </div>
           )}
         </div>
@@ -460,7 +458,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
             <h1 className="text-[#003366] font-headline font-black text-lg leading-none">
               {NAV_ITEMS.find(n => n.id === activePage)?.label}
             </h1>
-            <p className="text-slate-400 text-xs mt-0.5">Cebu City A.G.A.S Â· Resident Portal</p>
+            <p className="text-slate-400 text-xs mt-0.5">Cebu City A.G.A.S · Resident Portal</p>
           </div>
         </header>
 
@@ -514,7 +512,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-slate-800">{tx.station}</p>
-                          <p className="text-xs text-slate-400">{tx.plate || plate} Â· {tx.date} Â· {tx.time}</p>
+                          <p className="text-xs text-slate-400">{tx.plate || plate} · {tx.date} · {tx.time}</p>
                           <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${FUEL_BADGE[tx.fuelType] ?? "bg-slate-100 text-slate-600"}`}>
                             {tx.fuelType}
                           </span>
@@ -561,7 +559,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                     </div>
                     <div className="flex justify-between text-xs border-t border-slate-100 pt-2">
                       <span className="text-slate-500 font-medium">Weekly Total</span>
-                      <span className="font-black text-slate-700">{weeklyQuota} L</span>
+                      <span className="font-black text-slate-700">{formatLitersQuantity(weeklyQuota)} L</span>
                     </div>
                   </div>
                   <button
@@ -604,14 +602,14 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   )}
                   <span className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-xs font-bold px-3 py-1.5 rounded-full border border-green-400/30">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-                    {residentStatus} Â· Verified
+                    {residentStatus} · Verified
                   </span>
                 </div>
               </div>
 
               {/* Two-column */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Left â€” QR code */}
+                {/* Left - QR code */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col items-center gap-2 self-start">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan at participating stations</p>
                   <div ref={qrRef} className="bg-white rounded-2xl border border-slate-100 shadow-inner p-4">
@@ -632,7 +630,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   </div>
                 </div>
 
-                {/* Right â€” Details */}
+                {/* Right - Details */}
                 <div className="space-y-3">
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50">
@@ -686,7 +684,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                         </div>
                         <div className="flex justify-between text-sm border-t pt-2">
                           <span className="text-slate-500">Weekly Quota</span>
-                          <span className="font-black text-slate-700">{weeklyQuota} L</span>
+                          <span className="font-black text-slate-700">{formatLitersQuantity(weeklyQuota)} L</span>
                         </div>
                       </div>
                     </div>
@@ -818,7 +816,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                   {/* Station list */}
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                     <div className="px-4 py-3 border-b border-slate-100">
-                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations â€“ Cebu City</h3>
+                      <h3 className="font-headline font-bold text-[#003366]">Gas Stations &mdash; Cebu City</h3>
                       <p className="text-xs text-slate-400 mt-0.5">{filtered.length} of {liveStations.length} stations</p>
                       {/* Brand filter */}
                       <div className="flex flex-wrap gap-1.5 mt-2.5">
@@ -881,8 +879,8 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-headline font-black text-xl leading-tight">{fullName}</p>
-                  <p className="text-white/60 text-sm mt-0.5">{plate} Â· {vehicleType}</p>
-                  <p className="text-white/50 text-xs mt-0.5">{barangay} Â· {gasType}</p>
+              <p className="text-white/60 text-sm mt-0.5">{plate} · {vehicleType}</p>
+                  <p className="text-white/50 text-xs mt-0.5">{barangay} · {gasType}</p>
                 </div>
                 <div className="shrink-0 flex flex-col items-end gap-2">
                   {vehicles.length > 1 && (
@@ -956,7 +954,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
               </button>
 
               <p className="text-center text-slate-300 text-[10px] pb-2">
-                Â© 2026 Mata Technologies Inc. Â· A.G.A.S
+                © 2026 Mata Technologies Inc. · A.G.A.S
               </p>
             </div>
           )}

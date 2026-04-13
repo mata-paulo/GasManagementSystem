@@ -77,10 +77,16 @@ export default function StationFuelSetup({ officer, onBack, onSave, activeTab = 
         : fc && typeof (fc as Record<string, number>)[k] === "number"
           ? (fc as Record<string, number>)[k]
           : undefined;
-      nextInv[k] = invVal != null ? String(invVal) : "0";
-      nextPrice[k] = fp && typeof (fp as Record<string, number>)[k] === "number"
-        ? String((fp as Record<string, number>)[k])
-        : "72.50";
+      // Round to 2 decimal places to avoid float noise (e.g. 1000.0000000)
+      const invRounded = invVal != null ? Math.round(invVal * 100) / 100 : null;
+      nextInv[k] = invRounded != null ? String(invRounded) : "0";
+
+      const rawPrice = fp && typeof (fp as Record<string, number>)[k] === "number"
+        ? (fp as Record<string, number>)[k]
+        : null;
+      // Treat Number.MIN_VALUE (5e-324) and near-zero floats stored as int64→double workaround as 0
+      const cleanPrice = rawPrice != null && rawPrice < 1e-10 ? 0 : rawPrice;
+      nextPrice[k] = cleanPrice != null ? String(Math.round(cleanPrice * 100) / 100) : "72.50";
     }
 
     setInventory(nextInv);

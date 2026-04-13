@@ -572,7 +572,11 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleUserTabChange}
           onLogout={handleLogout}
-          onShowQR={() => setScreen("qr-display")}
+          onShowQR={() => {
+            const v = (resident?.vehicles ?? [])[selectedVehicle] ?? (resident?.vehicles ?? [])[0];
+            setActiveVehicle(v ?? null);
+            setScreen("qr-display");
+          }}
           onChangePassword={() => setScreen("change-password")}
           onUpdateProfile={(updated) => setResident((prev) => ({ ...prev, ...updated }))}
           selectedVehicle={selectedVehicle}
@@ -596,7 +600,11 @@ export default function App() {
           selectedVehicle={selectedVehicle}
           activeTab={activeTab}
           onTabChange={handleUserTabChange}
-          onShowQR={() => setScreen("qr-display")}
+          onShowQR={() => {
+            const v = (resident?.vehicles ?? [])[selectedVehicle] ?? (resident?.vehicles ?? [])[0];
+            setActiveVehicle(v ?? null);
+            setScreen("qr-display");
+          }}
         />
       </RoleGuard>
     );

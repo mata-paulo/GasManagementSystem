@@ -99,7 +99,7 @@ export default function ValidationSuccess({
   const [accountGasType, setAccountGasType] = useState("");
 
   const [plateNumber, setPlateNumber] = useState(scannedResident?.plate || "---");
-  const [vehicleType, setVehicleType] = useState(scannedResident?.vehicleType || "---");
+  const [vehicleType, setVehicleType] = useState("---");
   const [fuelConsumed, setFuelConsumed] = useState(scannedResident?.fuelUsed ?? 0);
   const [fuelLimit, setFuelLimit] = useState(scannedResident?.fuelAllocation ?? 20);
   const [accountLoading, setAccountLoading] = useState(false);
@@ -119,7 +119,7 @@ export default function ValidationSuccess({
       ?? (fromDecodedDate && !isEpochDate(fromDecodedDate) ? fromDecodedDate : null);
     setProfileRegisteredAt(initialReg);
     setPlateNumber(scannedResident?.plate || "---");
-    setVehicleType(scannedResident?.vehicleType || "---");
+    setVehicleType(scannedResident?.vehicleType?.trim() || "---");
     setFuelConsumed(scannedResident?.fuelUsed ?? 0);
     setFuelLimit(scannedResident?.fuelAllocation ?? 20);
     setResidentUid(scannedResident?.uid ?? null);
@@ -142,52 +142,106 @@ export default function ValidationSuccess({
     const uid = scannedResident?.uid;
     const fName = scannedResident?.firstName;
     const lName = scannedResident?.lastName;
-    if (!uid && !fName) return;
+    const qrPlate = scannedResident?.plate;
+    if (!uid && !fName && !qrPlate) return;
     let cancelled = false;
     setAccountLoading(true);
 
     const applyData = (docId: string, d: Record<string, unknown>) => {
       setResidentUid(docId);
-      if (d.plate) setPlateNumber(String(d.plate).trim().toUpperCase());
-      if (d.vehicleType) setVehicleType(String(d.vehicleType));
-      const alloc = typeof d.fuelAllocation === "number" ? d.fuelAllocation : Number(d.fuelAllocation ?? NaN);
-      const used = typeof d.fuelUsed === "number" ? d.fuelUsed : Number(d.fuelUsed ?? NaN);
-      if (Number.isFinite(alloc)) setFuelLimit(alloc);
-      if (Number.isFinite(used)) setFuelConsumed(used);
+
+      // Fill plate/vehicleType from Firestore, matching by the QR plate when available.
+      const vehicles = Array.isArray((d as {vehicles?: unknown}).vehicles)
+        ? (d as {vehicles: Array<{plate?: unknown; type?: unknown}>}).vehicles
+        : [];
+      if (!qrPlate) {
+        const primary = vehicles[0] && typeof vehicles[0] === "object" ? (vehicles[0] as {plate?: unknown}).plate : null;
+        if (typeof primary === "string" && primary.trim()) {
+          setPlateNumber(primary.trim().toUpperCase());
+        }
+      }
+      const qrVehicleType = scannedResident?.vehicleType;
+      if (!qrVehicleType) {
+        const target = (qrPlate || plateNumber || "").trim().toUpperCase();
+        const match = target
+          ? vehicles.find((v) => typeof v?.plate === "string" && v.plate.trim().toUpperCase() === target)
+          : vehicles[0];
+        const nextType = match && typeof match === "object" ? (match as {type?: unknown}).type : null;
+        if (typeof nextType === "string" && nextType.trim()) {
+          setVehicleType(nextType.trim());
+        }
+      }
+
+      // Fuel allocation/used — prefer per-vehicle values matched by plate.
+      const target = (qrPlate || "").trim().toUpperCase();
+      const matchedVehicle = target
+        ? vehicles.find((v) => typeof v?.plate === "string" && v.plate.trim().toUpperCase() === target)
+        : vehicles[0];
+      if (matchedVehicle && typeof matchedVehicle === "object") {
+        const vAlloc = (matchedVehicle as {fuelAllocated?: unknown}).fuelAllocated;
+        const vUsed = (matchedVehicle as {fuelUsed?: unknown}).fuelUsed;
+        if (typeof vAlloc === "number" && Number.isFinite(vAlloc)) setFuelLimit(vAlloc);
+        if (typeof vUsed === "number" && Number.isFinite(vUsed)) setFuelConsumed(vUsed);
+      } else {
+        const alloc = typeof d.fuelAllocation === "number" ? d.fuelAllocation : Number(d.fuelAllocation ?? NaN);
+        const used = typeof d.fuelUsed === "number" ? d.fuelUsed : Number(d.fuelUsed ?? NaN);
+        if (Number.isFinite(alloc)) setFuelLimit(alloc);
+        if (Number.isFinite(used)) setFuelConsumed(used);
+      }
+
       const fn = typeof d.firstName === "string" ? d.firstName.trim() : "";
       const ln = typeof d.lastName === "string" ? d.lastName.trim() : "";
       if (fn) setProfileFirstName(fn);
       if (ln) setProfileLastName(ln);
       const reg = coerceFirestoreDate(d.registeredAt);
       if (reg && !isEpochDate(reg)) setProfileRegisteredAt(reg);
-      const gt =
-        typeof d.gasType === "string"
-          ? d.gasType.trim()
-          : d.gasType != null
-            ? String(d.gasType).trim()
-            : "";
-      if (gt) setAccountGasType(gt);
+
+      // Only use Firestore gasType if the QR didn't provide one
+      const qrGasType = scannedResident?.gasType;
+      if (!qrGasType) {
+        const gt =
+          typeof d.gasType === "string"
+            ? d.gasType.trim()
+            : d.gasType != null
+              ? String(d.gasType).trim()
+              : "";
+        if (gt) setAccountGasType(gt);
+      }
     };
 
-    const fetchAccount = uid
-      ? getDoc(doc(db, "accounts", uid)).then((snap) => {
-          if (!cancelled && snap.exists()) applyData(snap.id, snap.data());
-        })
-      : getDocs(query(
-          collection(db, "accounts"),
-          where("firstName", "==", fName),
-          where("lastName", "==", lName),
-          where("role", "==", "resident"),
-          limit(1),
-        )).then((snap) => {
-          if (!cancelled && !snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
-        });
+    // Lookup priority: uid (direct) → plate (query plateNormalizedList) → name (legacy)
+    let fetchAccount: Promise<void>;
+    if (uid) {
+      fetchAccount = getDoc(doc(db, "accounts", uid)).then((snap) => {
+        if (!cancelled && snap.exists()) applyData(snap.id, snap.data());
+      });
+    } else if (qrPlate) {
+      const normalized = qrPlate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      fetchAccount = getDocs(query(
+        collection(db, "accounts"),
+        where("plateNormalizedList", "array-contains", normalized),
+        where("role", "==", "resident"),
+        limit(1),
+      )).then((snap) => {
+        if (!cancelled && !snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+      });
+    } else {
+      fetchAccount = getDocs(query(
+        collection(db, "accounts"),
+        where("firstName", "==", fName),
+        where("lastName", "==", lName),
+        where("role", "==", "resident"),
+        limit(1),
+      )).then((snap) => {
+        if (!cancelled && !snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+      });
+    }
 
     fetchAccount
       .catch((err) => console.error("[ValidationSuccess] Failed to fetch account:", err))
       .finally(() => { if (!cancelled) setAccountLoading(false); });
     return () => { cancelled = true; };
-  }, [scannedResident?.uid, scannedResident?.firstName, scannedResident?.lastName]);
+  }, [scannedResident?.uid, scannedResident?.firstName, scannedResident?.lastName, scannedResident?.plate]);
   const [literInput, setLiterInput] = useState("");
   const [cashInput, setCashInput] = useState("");
   const [inputMode, setInputMode] = useState<"liters" | "cash">("liters");
@@ -317,6 +371,9 @@ export default function ValidationSuccess({
         residentUid,
         liters: litersToDispense,
         fuelType: selectedFuelOption,
+        plate: plateNumber !== "---" ? plateNumber : undefined,
+        vehicleType: vehicleType !== "---" ? vehicleType : undefined,
+        scanId: scannedResident?.scanId,
       });
       setFuelConsumed(result.usedLiters);
       onDispenseSuccess?.();
@@ -550,11 +607,11 @@ export default function ValidationSuccess({
                     <div className="mt-3 h-4 w-full rounded-full bg-white/70 overflow-hidden">
                       <div className="h-full rounded-full flex items-center justify-end pr-2"
                         style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}>
-                        <span className="text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
+                        <span className="text-[9px] font-black text-white whitespace-nowrap">{formatLitersQuantity(fuelConsumed)}L used</span>
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-end text-2xl font-bold" style={{ color: textColor }}>
-                      <span>Total: {fuelLimit} L / week</span>
+                      <span>Total: {formatLitersQuantity(fuelLimit)} L / week</span>
                     </div>
                   </div>
                 </div>
@@ -849,12 +906,12 @@ export default function ValidationSuccess({
                     className="h-full rounded-full flex items-center justify-end pr-2"
                     style={{ backgroundColor: barColor, width: `${Math.min((fuelConsumed / fuelLimit) * 100, 100)}%` }}
                   >
-                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{fuelConsumed}L used</span>
+                    <span className="text-[8px] sm:text-[9px] font-black text-white whitespace-nowrap">{formatLitersQuantity(fuelConsumed)}L used</span>
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-end text-base sm:text-2xl font-bold" style={{ color: textColor }}>
 
-                  <span className="text-right">Total: {fuelLimit} L / week</span>
+                  <span className="text-right">Total: {formatLitersQuantity(fuelLimit)} L / week</span>
                 </div>
               </div>
 
@@ -1132,8 +1189,8 @@ export default function ValidationSuccess({
                 This fuel request exceeds the allowed limit for this resident.
               </p>
               <div className="mt-4 w-full rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                <p><span className="font-semibold">Consumed:</span> {fuelConsumed}L</p>
-                <p><span className="font-semibold">Limit:</span> {fuelLimit}L</p>
+                <p><span className="font-semibold">Consumed:</span> {formatLitersQuantity(fuelConsumed)}L</p>
+                <p><span className="font-semibold">Limit:</span> {formatLitersQuantity(fuelLimit)}L</p>
               </div>
               <button
                 type="button"

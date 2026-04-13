@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import type { ResidentAllocationSummary } from "@/lib/data/agas";
-import { subscribeResidentAllocationSummary } from "@/lib/data/agas";
+import { subscribeResidentVehicleAllocationSummary } from "@/lib/data/agas";
 
 const USER_TABS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
@@ -71,20 +71,16 @@ export default function UserScanHistory({ activeTab, onTabChange, resident, onSh
     remainingLiters: Number(resident?.fuelAllocation ?? 20),
   });
 
+  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
+  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? { type: "4w", plate: "", gasType: "" };
+  const activePlate = (activeVehicle?.plate || "").trim().toUpperCase();
+
   useEffect(() => {
     const uid = resident?.uid;
     if (!uid) return () => undefined;
-    return subscribeResidentAllocationSummary(uid, setSummary);
-  }, [resident?.uid]);
-
-  const vehicles = (resident?.vehicles ?? []) as Array<{ type: string; plate: string; gasType: string }>;
-  const fallbackVehicle = {
-    type: resident?.vehicleType || "",
-    plate: resident?.plate || "",
-    gasType: resident?.gasType || "",
-  };
-  const activeVehicle = vehicles[selectedVehicle] ?? vehicles[0] ?? fallbackVehicle;
-  const activePlate = (activeVehicle?.plate || fallbackVehicle.plate || "").trim().toUpperCase();
+    const plateKey = (activePlate || "").trim().toUpperCase();
+    return subscribeResidentVehicleAllocationSummary(uid, plateKey, setSummary);
+  }, [resident?.uid, activePlate]);
 
   const filtered = useMemo(() => {
     return summary.transactions
