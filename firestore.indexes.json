@@ -12,13 +12,6 @@
       "collectionGroup": "transactions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "scanId", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
-      "fields": [
         { "fieldPath": "residentUid", "order": "ASCENDING" },
         { "fieldPath": "plate", "order": "ASCENDING" },
         { "fieldPath": "occurredAt", "order": "DESCENDING" }

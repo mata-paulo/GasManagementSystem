@@ -177,7 +177,9 @@ export type AssignStationUserInput = z.infer<typeof assignStationUserSchema>;
  */
 export function toFirestoreDouble(n: number): number {
   if (!Number.isFinite(n) || !Number.isInteger(n)) return n;
-  if (n === 0) return Number.MIN_VALUE; // 5e-324 — stored as double, rounds to 0 in all fuel math
+  // Keep literal zero as 0. Mapping 0 → Number.MIN_VALUE forced double encoding but showed as 5e-324
+  // in the Emulator/UI; int64 0 and double 0 are identical for all fuel math in JS.
+  if (n === 0) return 0;
   // For non-zero integers, nudge by 1 ULP so Number.isInteger returns false.
   const buf = new Float64Array(1);
   buf[0] = n;

@@ -77,7 +77,7 @@ service cloud.firestore {
         && request.resource.data.fuels is list;
       allow update: if signedIn()
         && request.auth.uid == stationId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fuels", "updatedAt"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fuels", "updatedAt", "status", "capacity"]);
       allow delete: if false;
     }
 
