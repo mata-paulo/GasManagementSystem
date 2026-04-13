@@ -1220,6 +1220,20 @@ export default function AdminDashboard({ onLogout }) {
         .reduce((sum, tx) => sum + tx.liters, 0) * 10,
     ) / 10;
   }, [currentWeekKey, dashboardData.transactions]);
+
+  const remainingStationSupplyLiters = useMemo(() => {
+    // Remaining inventory across all stations (stationDirectory.fuels[].currentCapacity).
+    let total = 0;
+    for (const station of dashboardData.stationDirectory) {
+      const fuels = station.fuels;
+      if (!Array.isArray(fuels)) continue;
+      for (const fuel of fuels) {
+        const v = Number(fuel.currentCapacity ?? 0);
+        if (Number.isFinite(v)) total += v;
+      }
+    }
+    return Math.round(total * 10) / 10;
+  }, [dashboardData.stationDirectory]);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
   const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
   const weeklyQuota     = RESIDENTS.length * WEEKLY_FUEL_LIMIT;
@@ -1436,7 +1450,7 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ OVERVIEW ══ */}
           {activePage === "overview" && (() => {
-            const remainingSupply = weeklyQuota - totalUsed;
+            const remainingSupply = remainingStationSupplyLiters;
             const trendMax = Math.max(...TREND_DATA.map(d => d.value));
             const W = 300, H = 100, pad = 10;
             const pts = TREND_DATA.map((d, i) => {
@@ -1455,7 +1469,7 @@ export default function AdminDashboard({ onLogout }) {
                 <StatCard icon="store"                 label="Active Stations"    value={`${onlineStations} / ${STATIONS.length}`} sub={`${STATIONS.length - onlineStations} offline`}  iconVariant="green"  />
                 <StatCard icon="local_fire_department" label="Total Dispensed"    value={`${totalDispensed.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}   sub={weekGrowthPct === null ? "New this week" : weekGrowthPct === 0 ? "Same as last week" : `${weekGrowthPct > 0 ? "+" : ""}${weekGrowthPct}% vs last week`} iconVariant="orange" />
                 <StatCard icon="bar_chart"             label="Quota Utilization"  value={`${utilizationPct}% Used`}                sub={`${(weeklyQuota - totalUsed).toLocaleString(undefined, { maximumFractionDigits: 4 })} L remaining`} iconVariant="purple" />
-                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}  sub="available this week"                            iconVariant="navy"   />
+                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}  sub="station inventory remaining"                   iconVariant="navy"   />
               </div>
 
               {/* ── Main two-column layout ── */}
@@ -1577,7 +1591,13 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-sm font-black text-[#003366]">Consumption Trends</p>
                         <p className="text-xs text-slate-400">Daily fuel dispensed this week (L)</p>
                       </div>
-                      <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-100 px-2 py-1 rounded-full">+5% vs last week</span>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                        weekGrowthPct == null || weekGrowthPct >= 0
+                          ? "text-green-700 bg-green-50 border-green-100"
+                          : "text-red-700 bg-red-50 border-red-100"
+                      }`}>
+                        {weekGrowthPct === null ? "New vs last week" : `${weekGrowthPct > 0 ? "+" : ""}${weekGrowthPct}% vs last week`}
+                      </span>
                     </div>
                     {(() => {
                       const CW = 460, CH = 150, pL = 38, pR = 8, pT = 18, pB = 28;
@@ -1633,7 +1653,7 @@ export default function AdminDashboard({ onLogout }) {
                           {TREND_DATA.map((d,i) => (
                             <text key={i} x={tx(i)} y={ty(d.value) - 6} textAnchor="middle"
                               fontSize="7.5" fill="#003366" fontWeight="800">
-                              {(d.value/1000).toFixed(1)}k
+                              {d.value >= 1000 ? `${(d.value/1000).toFixed(1)}k` : `${Math.round(d.value)}L`}
                             </text>
                           ))}
                           {/* X-axis labels */}
