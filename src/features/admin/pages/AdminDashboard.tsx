@@ -2855,26 +2855,22 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
 
-                {/* Vehicle Distribution */}
+                {/* Vehicle Distribution — same buckets as vehicleCategoryInstanceCounts (Tricycle, Unknown, etc. → Others) */}
                 <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
                   <p className="text-sm font-black text-[#003366] mb-1">Vehicle Distribution</p>
                   <p className="text-xs text-slate-400 mb-4">All registered vehicles by type</p>
                   <div className="space-y-3">
-                    {[
-                      { label: "2 Wheelers", icon: "two_wheeler",    color: "text-purple-600", bg: "bg-purple-50", bar: "bg-purple-500" },
-                      { label: "4 Wheelers", icon: "directions_car", color: "text-blue-600",   bg: "bg-blue-50",   bar: "bg-blue-500"   },
-                      { label: "Others",     icon: "local_shipping", color: "text-orange-600", bg: "bg-orange-50", bar: "bg-orange-500" },
+                    {(() => {
+                      const vehicleDistTotal =
+                        vehicleCategoryInstanceCounts.wheel2 +
+                        vehicleCategoryInstanceCounts.wheel4 +
+                        vehicleCategoryInstanceCounts.other;
+                      return [
+                      { label: "2 Wheelers", icon: "two_wheeler",    color: "text-purple-600", bg: "bg-purple-50", bar: "bg-purple-500", cnt: vehicleCategoryInstanceCounts.wheel2 },
+                      { label: "4 Wheelers", icon: "directions_car", color: "text-blue-600",   bg: "bg-blue-50",   bar: "bg-blue-500",   cnt: vehicleCategoryInstanceCounts.wheel4 },
+                      { label: "Others",     icon: "local_shipping", color: "text-orange-600", bg: "bg-orange-50", bar: "bg-orange-500", cnt: vehicleCategoryInstanceCounts.other },
                     ].map(v => {
-                      // Count all vehicle instances (residents can have multiple vehicles)
-                      const cnt = dashboardData.residents.reduce((sum, resident) => {
-                        if (!Array.isArray(resident.vehicles)) return sum;
-                        return sum + resident.vehicles.filter(veh => formatVehicleLabel(veh.type as string) === v.label).length;
-                      }, 0);
-                      // Total vehicle instances
-                      const totalVehicles = dashboardData.residents.reduce((sum, resident) => {
-                        return sum + (Array.isArray(resident.vehicles) ? resident.vehicles.length : 0);
-                      }, 0);
-                      const pct = totalVehicles > 0 ? Math.round((cnt / totalVehicles) * 100) : 0;
+                      const pct = vehicleDistTotal > 0 ? Math.round((v.cnt / vehicleDistTotal) * 100) : 0;
                       return (
                         <div key={v.label} className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg ${v.bg} flex items-center justify-center shrink-0`}>
@@ -2883,7 +2879,7 @@ export default function AdminDashboard({ onLogout }) {
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-xs font-bold mb-1">
                               <span className="text-slate-700">{v.label}</span>
-                              <span className="text-slate-400">{cnt} · {pct}%</span>
+                              <span className="text-slate-400">{v.cnt} · {pct}%</span>
                             </div>
                             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full ${v.bar}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
@@ -2891,7 +2887,8 @@ export default function AdminDashboard({ onLogout }) {
                           </div>
                         </div>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 </div>
 

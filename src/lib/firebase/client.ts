@@ -92,14 +92,18 @@ export const functions = getFunctions(
 );
 export const db = getFirestore(app);
 
+export const firebaseEmulatorHost =
+  envValue("VITE_PUBLIC_FIREBASE_EMULATOR_HOST", "VITE_FIREBASE_EMULATOR_HOST") ?? "127.0.0.1";
+
 const useEmulator =
   envValue("VITE_USE_FIREBASE_EMULATORS", "VITE_PUBLIC_USE_EMULATOR") === "true";
 
 // `vite build` sets DEV=false; hosting emulator + `VITE_PUBLIC_USE_EMULATOR=true` still needs these hooks.
 if (useEmulator) {
-  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
-  connectAuthEmulator(auth, "http://127.0.0.1:9099");
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  const h = firebaseEmulatorHost;
+  connectFunctionsEmulator(functions, h, 5001);
+  connectAuthEmulator(auth, `http://${h}:9099`);
+  connectFirestoreEmulator(db, h, 8080);
 }
 
 export async function signInWithGoogle(): Promise<User> {

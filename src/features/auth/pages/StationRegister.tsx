@@ -575,7 +575,6 @@ export default function StationRegister({ onBack, onSuccess, onSignIn }: Station
         assignmentStatus: "active",
         status: "online",
         presenceStatus: "online",
-        lastSeenAt: serverTimestamp(),
         registeredAt: serverTimestamp(),
         stationDirectoryId: uid,
       };
