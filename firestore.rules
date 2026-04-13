@@ -9,8 +9,13 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/accounts/$(request.auth.uid));
     }
 
+    function userAccountExists() {
+      return exists(/databases/$(database)/documents/accounts/$(request.auth.uid));
+    }
+
+    // Avoid Null value error: never read .data on get() when the doc is missing.
     function isRole(role) {
-      return signedIn() && currentUserDoc().data.role == role;
+      return signedIn() && userAccountExists() && currentUserDoc().data.role == role;
     }
 
     function isAdmin() {
@@ -26,7 +31,8 @@ service cloud.firestore {
     }
 
     match /accounts/{uid} {
-      allow read: if isOwner(uid) || isAdmin() || (signedIn() && resource.data.role in ["resident", "station"]);
+      allow read: if isOwner(uid) || isAdmin()
+        || (signedIn() && resource.data.role in ["resident", "station", "Resident", "Station", "RESIDENT"]);
       allow create: if isOwner(uid)
         && request.resource.data.role == "station"
         && request.resource.data.email is string
@@ -40,11 +46,15 @@ service cloud.firestore {
         && !("assignedAt" in request.resource.data)
         && !("inviteAcceptedAt" in request.resource.data)
         && !("lastSeenAt" in request.resource.data)
-        // Allow registrationToken to be set during station registration
-        && (request.resource.data.registrationToken == null || (
-          request.resource.data.registrationToken.token is string
-          && request.resource.data.registrationToken.used is bool
-        ));
+        // Optional map; omitting the key must be allowed (reading .registrationToken when absent errors).
+        && (
+          !("registrationToken" in request.resource.data)
+          || request.resource.data.registrationToken == null
+          || (
+            request.resource.data.registrationToken.token is string
+            && request.resource.data.registrationToken.used is bool
+          )
+        );
       allow update: if (isOwner(uid) && isStation()
         // Prevent direct manipulation of fuel config layout; fuelInventory + fuelPrices are allowed.
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["availableFuels", "fuelCapacities"]))

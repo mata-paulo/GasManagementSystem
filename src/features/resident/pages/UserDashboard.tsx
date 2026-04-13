@@ -392,7 +392,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Map preview â€” tap to open full map */}
+          {/* Map preview — tap to open full map */}
           <section
             className="rounded-2xl overflow-hidden shadow-sm border border-outline-variant/20 relative h-[180px] isolate cursor-pointer active:opacity-90"
             onClick={() => onTabChange("map")}
@@ -440,7 +440,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                     <div className="text-right shrink-0">
                       <p className="text-base font-black text-on-surface leading-none">{tx.liters.toFixed(1)} L</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">₱{Number(tx.pricePerLiter).toFixed(2)}/L</p>
-                      <p className="text-sm font-black text-[#003366] mt-0.5">â‚±{total.toFixed(2)}</p>
+                      <p className="text-sm font-black text-[#003366] mt-0.5">₱{total.toFixed(2)}</p>
                     </div>
                   </div>
                 );
@@ -453,7 +453,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
             </div>
           </section>
 
-          {/* Announcements â€” swipeable banner carousel */}
+          {/* Announcements — swipeable banner carousel */}
           <section className="space-y-3 pb-2">
             <h3 className="text-xs font-headline font-bold text-on-surface-variant uppercase tracking-wider">
               Announcements
@@ -827,7 +827,7 @@ export default function UserDashboard({ resident, activeTab, onTabChange, onShow
                 className="flex-1 bg-[#003366] text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {v2Saving
-                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Savingâ€¦</>
+                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Saving…</>
                   : <><span className="material-symbols-outlined text-[16px]">check_circle</span>Confirm</>}
               </button>
             </div>

@@ -3,7 +3,7 @@ import { FirebaseError } from "firebase/app";
 import { formatPlateForStorage, isContainerType, isGeneratorType, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import type { AuthUser } from "@/lib/auth/authService";
-import { auth } from "@/lib/firebase/client";
+import { auth, firebaseEmulatorHost } from "@/lib/firebase/client";
 
 function httpErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -34,7 +34,7 @@ function getRegisterResidentUrl(): string {
     envValue("VITE_FIREBASE_FUNCTIONS_REGION", "VITE_PUBLIC_FIREBASE_FUNCTIONS_REGION") ?? "asia-southeast1";
 
   if (import.meta.env.DEV && useEmu && projectId)
-    return `http://127.0.0.1:5001/${projectId}/${region}/registerResident`;
+    return `http://${firebaseEmulatorHost}:5001/${projectId}/${region}/registerResident`;
   if (import.meta.env.DEV && projectId)
     return `https://${region}-${projectId}.cloudfunctions.net/registerResident`;
   return "/api/registerResident";

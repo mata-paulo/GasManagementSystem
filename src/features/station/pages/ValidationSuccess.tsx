@@ -103,6 +103,8 @@ export default function ValidationSuccess({
   const [fuelConsumed, setFuelConsumed] = useState(scannedResident?.fuelUsed ?? 0);
   const [fuelLimit, setFuelLimit] = useState(scannedResident?.fuelAllocation ?? 20);
   const [accountLoading, setAccountLoading] = useState(false);
+  /** Firestore account fetch for names/vehicle: idle → loading → found | miss */
+  const [residentAccountLookup, setResidentAccountLookup] = useState<"idle" | "loading" | "found" | "miss">("idle");
   const [residentUid, setResidentUid] = useState<string | null>(scannedResident?.uid ?? null);
   const [dispensing, setDispensing] = useState(false);
 
@@ -123,16 +125,36 @@ export default function ValidationSuccess({
     setFuelConsumed(scannedResident?.fuelUsed ?? 0);
     setFuelLimit(scannedResident?.fuelAllocation ?? 20);
     setResidentUid(scannedResident?.uid ?? null);
+    setResidentAccountLookup("idle");
   }, [scannedResident]);
 
-  /** 3-letter QR identity (not full legal names) for station validation UI. */
+  /** 3-letter QR identity: qrNameCode() = first 3 letters A–Z from each name on file (not from vehicles). */
   const rawFirst = profileFirstName || scannedResident?.firstName || "";
   const rawLast = profileLastName || scannedResident?.lastName || "";
   const legacyFirst = scannedResident?.firstCode?.trim();
   const legacyLast = scannedResident?.lastCode?.trim();
-  const displayFirstQr = rawFirst.trim() ? qrNameCode(rawFirst) : legacyFirst ? qrNameCode(legacyFirst) : "---";
-  const displayLastQr = rawLast.trim() ? qrNameCode(rawLast) : legacyLast ? qrNameCode(legacyLast) : "---";
+  const nameCodePending =
+    residentAccountLookup === "loading" && !rawFirst.trim() && !legacyFirst;
+  const nameCodePendingLast =
+    residentAccountLookup === "loading" && !rawLast.trim() && !legacyLast;
+  const displayFirstQr = rawFirst.trim()
+    ? qrNameCode(rawFirst)
+    : legacyFirst
+      ? qrNameCode(legacyFirst)
+      : nameCodePending
+        ? "···"
+        : "---";
+  const displayLastQr = rawLast.trim()
+    ? qrNameCode(rawLast)
+    : legacyLast
+      ? qrNameCode(legacyLast)
+      : nameCodePendingLast
+        ? "···"
+        : "---";
   const vehicleTypeDisplay = displayVehicleTypeLabel(vehicleType);
+  const normalizedPlateHint = scannedResident?.plate
+    ? scannedResident.plate.replace(/[^A-Z0-9]/gi, "").toUpperCase()
+    : "";
   const registeredAtLabel =
     profileRegisteredAt && !isEpochDate(profileRegisteredAt)
       ? formatDecodedDate(profileRegisteredAt)
@@ -143,11 +165,17 @@ export default function ValidationSuccess({
     const fName = scannedResident?.firstName;
     const lName = scannedResident?.lastName;
     const qrPlate = scannedResident?.plate;
-    if (!uid && !fName && !qrPlate) return;
+    if (!uid && !fName && !qrPlate) {
+      setAccountLoading(false);
+      setResidentAccountLookup("idle");
+      return;
+    }
     let cancelled = false;
     setAccountLoading(true);
+    setResidentAccountLookup("loading");
 
     const applyData = (docId: string, d: Record<string, unknown>) => {
+      setResidentAccountLookup("found");
       setResidentUid(docId);
 
       // Fill plate/vehicleType from Firestore, matching by the QR plate when available.
@@ -199,46 +227,61 @@ export default function ValidationSuccess({
       // Only use Firestore gasType if the QR didn't provide one
       const qrGasType = scannedResident?.gasType;
       if (!qrGasType) {
-        const gt =
-          typeof d.gasType === "string"
-            ? d.gasType.trim()
-            : d.gasType != null
-              ? String(d.gasType).trim()
-              : "";
-        if (gt) setAccountGasType(gt);
+        const vGasType = matchedVehicle && typeof matchedVehicle === "object" ? (matchedVehicle as {gasType?: unknown}).gasType : null;
+        if (typeof vGasType === "string" && vGasType.trim()) {
+          setAccountGasType(vGasType.trim());
+        } else {
+          const gt =
+            typeof d.gasType === "string"
+              ? d.gasType.trim()
+              : d.gasType != null
+                ? String(d.gasType).trim()
+                : "";
+          if (gt) setAccountGasType(gt);
+        }
       }
     };
 
     // Lookup priority: uid (direct) → plate (query plateNormalizedList) → name (legacy)
     let fetchAccount: Promise<void>;
+    const residentRoleVariants = ["resident", "Resident", "RESIDENT"];
     if (uid) {
       fetchAccount = getDoc(doc(db, "accounts", uid)).then((snap) => {
-        if (!cancelled && snap.exists()) applyData(snap.id, snap.data());
+        if (cancelled) return;
+        if (snap.exists()) applyData(snap.id, snap.data());
+        else setResidentAccountLookup("miss");
       });
     } else if (qrPlate) {
       const normalized = qrPlate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       fetchAccount = getDocs(query(
         collection(db, "accounts"),
         where("plateNormalizedList", "array-contains", normalized),
-        where("role", "==", "resident"),
+        where("role", "in", residentRoleVariants),
         limit(1),
       )).then((snap) => {
-        if (!cancelled && !snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+        if (cancelled) return;
+        if (!snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+        else setResidentAccountLookup("miss");
       });
     } else {
       fetchAccount = getDocs(query(
         collection(db, "accounts"),
         where("firstName", "==", fName),
         where("lastName", "==", lName),
-        where("role", "==", "resident"),
+        where("role", "in", residentRoleVariants),
         limit(1),
       )).then((snap) => {
-        if (!cancelled && !snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+        if (cancelled) return;
+        if (!snap.empty) applyData(snap.docs[0].id, snap.docs[0].data());
+        else setResidentAccountLookup("miss");
       });
     }
 
     fetchAccount
-      .catch((err) => console.error("[ValidationSuccess] Failed to fetch account:", err))
+      .catch((err) => {
+        console.error("[ValidationSuccess] Failed to fetch account:", err);
+        if (!cancelled) setResidentAccountLookup("miss");
+      })
       .finally(() => { if (!cancelled) setAccountLoading(false); });
     return () => { cancelled = true; };
   }, [scannedResident?.uid, scannedResident?.firstName, scannedResident?.lastName, scannedResident?.plate]);
@@ -531,15 +574,24 @@ export default function ValidationSuccess({
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100">
                   <p className="text-outline text-xs font-bold tracking-widest uppercase">Verified Resident</p>
+                  {residentAccountLookup === "found" && (rawFirst.trim() || rawLast.trim()) && (
+                    <p className="text-[10px] text-slate-400 mt-1">Codes show first 3 letters (A–Z) from each name on file.</p>
+                  )}
+                  {residentAccountLookup === "miss" && normalizedPlateHint && (
+                    <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                      No account lists plate <span className="font-mono font-bold">{normalizedPlateHint}</span> in{" "}
+                      <span className="font-mono">plateNormalizedList</span>. Add it (and a matching vehicle) in Firestore, or regenerate the QR for a plate already on file.
+                    </p>
+                  )}
                 </div>
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
-                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">First Name</p>
+                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">First (code)</p>
                       <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5 break-words">{displayFirstQr}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
-                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Last Name</p>
+                      <p className="text-outline text-[10px] font-bold uppercase tracking-wider">Last (code)</p>
                       <p className="font-headline font-black text-2xl text-[#003366] tracking-widest mt-0.5 break-words">{displayLastQr}</p>
                     </div>
                   </div>
@@ -811,13 +863,22 @@ export default function ValidationSuccess({
             {/* Resident Identity */}
             <div className="bg-surface-container-low rounded-xl p-4 space-y-3">
               <p className="text-outline text-xs font-bold tracking-widest uppercase text-center">Verified Resident</p>
+              {residentAccountLookup === "found" && (rawFirst.trim() || rawLast.trim()) && (
+                <p className="text-[9px] text-slate-400 text-center px-1">First 3 letters (A–Z) from each name on file.</p>
+              )}
+              {residentAccountLookup === "miss" && normalizedPlateHint && (
+                <p className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
+                  No account lists <span className="font-mono font-bold">{normalizedPlateHint}</span> in{" "}
+                  <span className="font-mono">plateNormalizedList</span>. Add it in Firestore or use a QR for a registered plate.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white p-2.5">
-                  <p className="text-outline text-[9px] font-bold uppercase tracking-wider">First Name</p>
+                  <p className="text-outline text-[9px] font-bold uppercase tracking-wider">First (code)</p>
                   <p className="font-headline font-black text-xl text-[#003366] tracking-widest break-words">{displayFirstQr}</p>
                 </div>
                 <div className="rounded-lg bg-white p-2.5">
-                  <p className="text-outline text-[9px] font-bold uppercase tracking-wider">Last Name</p>
+                  <p className="text-outline text-[9px] font-bold uppercase tracking-wider">Last (code)</p>
                   <p className="font-headline font-black text-xl text-[#003366] tracking-widest break-words">{displayLastQr}</p>
                 </div>
               </div>

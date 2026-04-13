@@ -16,7 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import type { AuthUser } from "@/lib/auth/authService";
-import { auth, db } from "@/lib/firebase/client";
+import { auth, db, firebaseEmulatorHost } from "@/lib/firebase/client";
 import type { DecodedQR } from "@/lib/qr/qrCodec";
 import { roundLiters } from "@/utils/fuelVolume";
 import { ensureFirestoreDouble } from "@/utils/firestoreNumber";
@@ -477,7 +477,7 @@ function getAssignStationUserUrl(): string {
 
   // Production `vite build` sets DEV=false; hosting emulator still needs direct Functions URLs when emulators are on.
   if (useEmulators) {
-    return `http://127.0.0.1:5001/${projectId}/${region}/assignStationUser`;
+    return `http://${firebaseEmulatorHost}:5001/${projectId}/${region}/assignStationUser`;
   }
 
   if (import.meta.env.DEV && projectId) {
@@ -495,7 +495,7 @@ function getValidateStationRegistrationTokenUrl(token: string): string {
     import.meta.env.VITE_PUBLIC_USE_EMULATOR === "true";
 
   const base = useEmulators
-    ? `http://127.0.0.1:5001/${projectId}/${region}/validateStationRegistrationToken`
+    ? `http://${firebaseEmulatorHost}:5001/${projectId}/${region}/validateStationRegistrationToken`
     : import.meta.env.DEV
       ? `https://${region}-${projectId}.cloudfunctions.net/validateStationRegistrationToken`
       : "/api/validateStationRegistrationToken";
@@ -512,7 +512,7 @@ function getFinalizeStationRegistrationUrl(): string {
     import.meta.env.VITE_PUBLIC_USE_EMULATOR === "true";
 
   if (useEmulators) {
-    return `http://127.0.0.1:5001/${projectId}/${region}/finalizeStationRegistration`;
+    return `http://${firebaseEmulatorHost}:5001/${projectId}/${region}/finalizeStationRegistration`;
   }
   if (import.meta.env.DEV && projectId) {
     return `https://${region}-${projectId}.cloudfunctions.net/finalizeStationRegistration`;
@@ -1653,10 +1653,12 @@ export async function recordDispenseTransaction(
     throw new Error("This fuel request exceeds the vehicle's remaining allocation.");
   }
 
-  // ── Layer 1: Idempotency — reject duplicate submissions from the same QR scan ──
+  // ── Layer 1: Idempotency — reject duplicate submissions from the same QR scan (this station only).
+  // Same rationale as cooldown: a scanId-only query can match txs from other stations → permission denied.
   if (input.scanId) {
     const dupSnap = await getDocs(query(
       collection(db, "transactions"),
+      where("stationUid", "==", input.stationUid),
       where("scanId", "==", input.scanId),
       limit(1),
     ));
@@ -1665,11 +1667,14 @@ export async function recordDispenseTransaction(
     }
   }
 
-  // ── Layer 2: Cooldown — prevent re-dispense to the same vehicle within 1 minute ──
+  // ── Layer 2: Cooldown — prevent re-dispense to the same vehicle within 1 minute (this station only).
+  // Query must only return docs the station can read per firestore.rules (stationUid == auth.uid);
+  // a global resident+plate query would include other stations' txs and fail with permission denied.
   const COOLDOWN_MS = 1 * 60 * 1000;
   if (txPlate) {
     const recentSnap = await getDocs(query(
       collection(db, "transactions"),
+      where("stationUid", "==", input.stationUid),
       where("residentUid", "==", resident.uid),
       where("plate", "==", txPlate),
       orderBy("occurredAt", "desc"),
