@@ -211,6 +211,60 @@ export interface ResidentAllocationSummary {
   remainingLiters: number;
 }
 
+/** Per-station entry inside a `weeklyHeatmap/{weekKey}` document. */
+export interface HeatmapStationEntry {
+  stationUid: string;
+  stationId: string;
+  stationName: string;
+  stationBrand: string;
+  /** Number of dispense transactions this week. Used for color gradient. */
+  txCount: number;
+  /** Total liters dispensed this week. Used for marker radius. */
+  liters: number;
+}
+
+/** Shape of the `weeklyHeatmap/{weekKey}` Firestore document. */
+export interface WeeklyHeatmapDoc {
+  weekKey: string;
+  computedAt: Date | null;
+  stations: HeatmapStationEntry[];
+}
+
+/**
+ * Fetches the pre-aggregated heatmap document for the given week key.
+ * Falls back to the most recently computed document when the exact key
+ * is not found (e.g. the aggregation ran on a different UTC day boundary).
+ * Returns null if no heatmap document exists at all.
+ */
+export async function fetchWeeklyHeatmap(weekKey: string): Promise<WeeklyHeatmapDoc | null> {
+  let snap = await getDoc(doc(db, "weeklyHeatmap", weekKey));
+  if (!snap.exists()) {
+    // Fallback: grab the most recently written heatmap document.
+    const fallbackSnap = await getDocs(
+      query(collection(db, "weeklyHeatmap"), orderBy("computedAt", "desc"), limit(1)),
+    );
+    if (fallbackSnap.empty) return null;
+    snap = fallbackSnap.docs[0];
+  }
+  const d = snap.data() as Record<string, unknown>;
+  const computedAt = d.computedAt instanceof Timestamp
+    ? d.computedAt.toDate()
+    : typeof d.computedAt === "string"
+      ? new Date(d.computedAt)
+      : null;
+  const stations: HeatmapStationEntry[] = Array.isArray(d.stations)
+    ? (d.stations as Record<string, unknown>[]).map((s) => ({
+        stationUid: String(s.stationUid ?? ""),
+        stationId: String(s.stationId ?? ""),
+        stationName: String(s.stationName ?? ""),
+        stationBrand: String(s.stationBrand ?? ""),
+        txCount: typeof s.txCount === "number" ? s.txCount : 0,
+        liters: typeof s.liters === "number" ? s.liters : 0,
+      }))
+    : [];
+  return {weekKey: String(d.weekKey ?? weekKey), computedAt, stations};
+}
+
 function mapStationInviteRecord(
   id: string,
   data: Record<string, unknown>,

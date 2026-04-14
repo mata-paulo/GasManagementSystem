@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { forwardRef, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import html2canvas from "html2canvas";
 import { encodeQR } from "@/lib/qr/qrCodec";
@@ -11,6 +11,16 @@ function formatTimestamp(iso: string) {
 }
 
 /** First letter uppercase; if the first character is already uppercase, leave the string unchanged. */
+function safeDownloadFileStem(plate: string): string {
+  const s = String(plate || "N/A").replace(/[/\\?%*:|"<>]/g, "-").trim();
+  return s || "N/A";
+}
+
+/** e.g. `AGAS_QR_ABC1236.png` — same for mobile app and desktop portal. */
+export function getQRIdentityPngFilename(plate: string): string {
+  return `AGAS_QR_${safeDownloadFileStem(plate)}.png`;
+}
+
 function formatVehicleTypeDisplay(raw: unknown): string {
   if (raw == null) return "";
   const s = String(raw).trim();
@@ -21,6 +31,112 @@ function formatVehicleTypeDisplay(raw: unknown): string {
   if (isLatinLetter) return first.toLocaleUpperCase("en-US") + s.slice(1);
   return s;
 }
+
+/** Single canonical export size so PNG matches on phone app and desktop portal (no extra letterboxing). */
+export const QR_IDENTITY_EXPORT_WIDTH_PX = 390;
+export const QR_IDENTITY_EXPORT_QR_SIZE = Math.min(QR_IDENTITY_EXPORT_WIDTH_PX - 16, 380);
+
+export type QRIdentityCaptureProps = {
+  plate: string;
+  vehicleType: string;
+  gasType: string;
+  registeredAt: string;
+  qrData: string;
+  /** Defaults to mobile-style sizing (viewport-based). Use `QR_IDENTITY_EXPORT_QR_SIZE` for downloads. */
+  qrSize?: number;
+  className?: string;
+  /** When true, card height fits content only (use for PNG capture — avoids full-viewport blank area). */
+  exportLayout?: boolean;
+};
+
+/** Same layout as the on-screen A.G.A.S QR card; use with html2canvas for PNG export (resident mobile + portal). */
+export const QRIdentityCaptureCard = forwardRef<HTMLDivElement, QRIdentityCaptureProps>(
+  function QRIdentityCaptureCard(
+    { plate, vehicleType, gasType, registeredAt, qrData, qrSize, className, exportLayout },
+    ref,
+  ) {
+    const resolvedQrSize =
+      qrSize ?? (typeof window !== "undefined" ? Math.min(window.innerWidth - 16, 380) : 380);
+
+    const rootClass = exportLayout
+      ? "flex h-auto flex-col overflow-visible bg-primary-container"
+      : "flex min-h-0 flex-1 flex-col overflow-hidden bg-primary-container";
+
+    const sheetClass = exportLayout
+      ? "flex flex-col overflow-visible rounded-t-3xl bg-background"
+      : "flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-3xl bg-background";
+
+    const cardClass = exportLayout
+      ? "bg-white mx-4 mt-4 flex flex-col overflow-visible rounded-2xl shadow-md"
+      : "bg-white mx-4 mt-4 flex min-h-0 flex-col overflow-hidden rounded-2xl shadow-md";
+
+    return (
+      <div
+        ref={ref}
+        style={exportLayout ? { width: QR_IDENTITY_EXPORT_WIDTH_PX } : undefined}
+        className={`${rootClass}${className ? ` ${className}` : ""}`}
+      >
+        <div className="shrink-0 px-5 py-7 text-center">
+          <p className="text-on-primary-container text-sm font-bold uppercase tracking-widest mb-1.5 opacity-70">
+            A.G.A.S QR Code
+          </p>
+          <h1 className="font-headline font-black text-white text-5xl tracking-[0.15em] uppercase leading-tight">
+            {plate}
+          </h1>
+          <div className="flex items-center justify-center gap-6 mt-2">
+            {vehicleType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-white/80 icon-filled text-[20px]">
+                  {vehicleType === "2w" ? "two_wheeler" : "directions_car"}
+                </span>
+                <p className="text-white/80 font-semibold text-base tracking-wide">
+                  {vehicleType === "2w" ? "2W" : vehicleType === "4w" ? "4W" : vehicleType}
+                </p>
+              </div>
+            )}
+            {gasType && (
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined icon-filled text-[20px] text-white/80">local_gas_station</span>
+                <p className="text-white font-bold text-base tracking-wide">{gasType}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={sheetClass}>
+          <div className={cardClass}>
+            <div className="shrink-0 flex justify-center px-4 pb-2 pt-4">
+              <QRCodeSVG
+                value={qrData}
+                size={resolvedQrSize}
+                level="M"
+                marginSize={1}
+                fgColor="#001e40"
+                bgColor="#ffffff"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 px-4 pb-3">
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">Registered</p>
+                <p className="text-xs font-bold leading-tight text-slate-800">{formatTimestamp(registeredAt)}</p>
+              </div>
+
+              <div className="flex gap-2 rounded-r-xl border-l-4 border-tertiary bg-tertiary-fixed/30 px-3 py-2 items-start">
+                <span className="material-symbols-outlined shrink-0 text-[13px] text-tertiary">info</span>
+                <p className="text-[10px] leading-relaxed text-on-tertiary-fixed-variant">
+                  Show this QR at any participating station for fuel allocation. Download or print to save.
+                </p>
+              </div>
+
+              <p className="text-center text-[9px] text-slate-300">© 2026 Mata Technologies Inc. · A.G.A.S</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
 
 export default function QRDisplay({ resident, activeVehicle, onDone }) {
   const { uid, firstName, lastName, barangay, registeredAt } = resident;
@@ -34,15 +150,15 @@ export default function QRDisplay({ resident, activeVehicle, onDone }) {
   const fullName = `${firstName} ${lastName}`;
   const qrData = encodeQR(firstName, lastName, registeredAt, gasType, uid, plate, barangay, vehicleType, fuelAllocation, fuelUsed);
 
-  /** Region that matches on-screen QR view (header + card); used for Save as Image. */
-  const downloadCaptureRef = useRef<HTMLDivElement>(null);
+  /** Canonical PNG export (fixed size — same file as desktop portal). */
+  const pngExportRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
 
   const handleDownload = async () => {
-    if (!downloadCaptureRef.current) return;
+    if (!pngExportRef.current) return;
     setSaving(true);
     try {
-      const canvas = await html2canvas(downloadCaptureRef.current, {
+      const canvas = await html2canvas(pngExportRef.current, {
         scale: 3,
         useCORS: true,
         // Match `primary-container` (#003366) — must match capture root bg so header text stays visible.
@@ -52,7 +168,7 @@ export default function QRDisplay({ resident, activeVehicle, onDone }) {
       const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
       a.href = url;
-      a.download = `AGAS_QR_${plate}.png`;
+      a.download = getQRIdentityPngFilename(plate);
       a.click();
     } finally {
       setSaving(false);
@@ -95,73 +211,26 @@ export default function QRDisplay({ resident, activeVehicle, onDone }) {
 
       {/* ── Main UI ── */}
       <div className="flex flex-col h-dvh bg-primary-container overflow-hidden">
-        {/* Everything here is captured for Save as Image (matches on-screen QR view). */}
-        <div
-          ref={downloadCaptureRef}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden bg-primary-container"
-        >
-          {/* Header */}
-          <div className="shrink-0 px-5 py-7 text-center">
-            <p className="text-on-primary-container text-sm font-bold uppercase tracking-widest mb-1.5 opacity-70">
-              A.G.A.S QR Code
-            </p>
-            <h1 className="font-headline font-black text-white text-5xl tracking-[0.15em] uppercase leading-tight">
-              {plate}
-            </h1>
-            <div className="flex items-center justify-center gap-6 mt-2">
-              {vehicleType && (
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-white/80 icon-filled text-[20px]">
-                    {vehicleType === "2w" ? "two_wheeler" : "directions_car"}
-                  </span>
-                  <p className="text-white/80 font-semibold text-base tracking-wide">
-                    {vehicleType === "2w" ? "2W" : vehicleType === "4w" ? "4W" : vehicleType}
-                  </p>
-                </div>
-              )}
-              {gasType && (
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined icon-filled text-[20px] text-white/80">local_gas_station</span>
-                  <p className="text-white font-bold text-base tracking-wide">{gasType}</p>
-                </div>
-              )}
-            </div>
-          </div>
+        {/* Hidden: PNG export only — same dimensions as desktop portal (no full-screen letterboxing). */}
+        <QRIdentityCaptureCard
+          ref={pngExportRef}
+          exportLayout
+          plate={plate}
+          vehicleType={vehicleType}
+          gasType={gasType}
+          registeredAt={registeredAt}
+          qrData={qrData}
+          qrSize={QR_IDENTITY_EXPORT_QR_SIZE}
+          className="fixed -left-[9999px] top-0 z-0 pointer-events-none"
+        />
 
-          {/* White card + sheet (no action buttons inside capture) */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-3xl bg-background">
-            <div className="bg-white mx-4 mt-4 flex min-h-0 flex-col overflow-hidden rounded-2xl shadow-md">
-              {/* QR — fixed, never scrolls */}
-              <div className="shrink-0 flex justify-center px-4 pb-2 pt-4">
-                <QRCodeSVG
-                  value={qrData}
-                  size={Math.min(window.innerWidth - 16, 380)}
-                  level="M"
-                  marginSize={1}
-                  fgColor="#001e40"
-                  bgColor="#ffffff"
-                />
-              </div>
-
-              {/* Info */}
-              <div className="flex flex-col gap-2 px-4 pb-3">
-                <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
-                  <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">Registered</p>
-                  <p className="text-xs font-bold leading-tight text-slate-800">{formatTimestamp(registeredAt)}</p>
-                </div>
-
-                <div className="flex gap-2 rounded-r-xl border-l-4 border-tertiary bg-tertiary-fixed/30 px-3 py-2 items-start">
-                  <span className="material-symbols-outlined shrink-0 text-[13px] text-tertiary">info</span>
-                  <p className="text-[10px] leading-relaxed text-on-tertiary-fixed-variant">
-                    Show this QR at any participating station for fuel allocation. Download or print to save.
-                  </p>
-                </div>
-
-                <p className="text-center text-[9px] text-slate-300">© 2026 Mata Technologies Inc. · A.G.A.S</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <QRIdentityCaptureCard
+          plate={plate}
+          vehicleType={vehicleType}
+          gasType={gasType}
+          registeredAt={registeredAt}
+          qrData={qrData}
+        />
 
         {/* Buttons — outside capture so they never appear in the PNG */}
         <div className="shrink-0 px-4 pt-2 pb-5 bg-background border-t border-outline-variant/20 flex flex-col gap-2">

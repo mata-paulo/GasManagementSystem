@@ -433,7 +433,7 @@ export default function NearbyStations({ activeTab, onTabChange }) {
       <div className="flex items-center px-6 py-4 bg-primary-container shadow-sm shrink-0">
         <div className="flex-1 flex flex-col items-center">
           <h1 className="text-white font-headline font-bold text-lg leading-none">Nearby Stations</h1>
-          <p className="text-[10px] text-white/70 font-bold uppercase tracking-wider mt-0.5">Gas stations within 5 km</p>
+          <p className="text-[10px] text-white/70 font-bold uppercase tracking-wider mt-0.5">Find gas stations near you</p>
         </div>
         <span className="material-symbols-outlined text-tertiary-fixed icon-filled text-[28px]">
           local_gas_station
