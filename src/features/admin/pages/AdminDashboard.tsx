@@ -193,9 +193,6 @@ type AdminTransactionRow = {
   createdAt: Date | null;
 };
 
-const DEFAULT_LAT = 10.3157;
-const DEFAULT_LNG = 123.8854;
-
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -273,10 +270,6 @@ function matchesPeriod(date: Date | null, filter: string): boolean {
   if (filter === "Week") return diffDays >= 0 && diffDays < 7;
   if (filter === "Month") return date >= startOfMonth;
   return true;
-}
-
-function getStationSummaryKey(station: Pick<AdminStationRow, "uid" | "id">): string {
-  return `${station.uid}:${station.id}`;
 }
 
 function normalizeAdminPage(page: string | null | undefined): string {
@@ -454,20 +447,40 @@ function findDirectoryStation(
   );
 }
 
+/**
+ * Canonical grouping key for “one station” in admin: `stationDirectory` document id.
+ * Matches accounts via `stationDirectoryId` or `uid` when it equals the directory doc id.
+ */
+function getStationDirectoryGroupId(
+  row: Pick<AdminStationRow, "uid" | "name" | "brand" | "barangay">,
+  stationDirectory: AdminDashboardData["stationDirectory"],
+  stationAccounts: AdminDashboardData["stations"],
+): string | null {
+  if (row.uid.startsWith("directory:")) {
+    return row.uid.slice("directory:".length);
+  }
+
+  const rowOwner = stationAccounts.find((a) => a.uid === row.uid);
+  if (rowOwner?.stationDirectoryId) {
+    return rowOwner.stationDirectoryId;
+  }
+  if (rowOwner && stationDirectory.some((d) => d.id === rowOwner.uid)) {
+    return rowOwner.uid;
+  }
+
+  const dir = findDirectoryStation(stationDirectory, row.name, row.brand, row.barangay);
+  return dir?.id ?? null;
+}
+
 function stationAccountMatchesStationRow(
   station: AdminDashboardData["stations"][number],
-  row: Pick<AdminStationRow, "id" | "name" | "brand" | "barangay">,
+  row: Pick<AdminStationRow, "uid" | "id" | "name" | "brand" | "barangay">,
   stationDirectory: AdminDashboardData["stationDirectory"],
+  stationAccounts: AdminDashboardData["stations"],
 ) {
-  const directoryMatch = findDirectoryStation(
-    stationDirectory,
-    getAccountDisplayName(station),
-    normalizeBrand(station.brand),
-    station.barangay ?? "Unknown",
-  );
-
-  if (directoryMatch) {
-    return directoryMatch.sourceId === row.id;
+  const groupId = getStationDirectoryGroupId(row, stationDirectory, stationAccounts);
+  if (groupId) {
+    return station.stationDirectoryId === groupId || station.uid === groupId;
   }
 
   return (
@@ -475,6 +488,16 @@ function stationAccountMatchesStationRow(
     normalizeBrand(station.brand) === normalizeBrand(row.brand) &&
     normalizeText(station.barangay ?? "Unknown") === normalizeText(row.barangay)
   );
+}
+
+/** Stable numeric row id when Firestore has no `sourceId` on directory docs. */
+function directoryRowStableNumericId(directoryId: string, sourceId?: number): number {
+  if (sourceId != null && Number.isFinite(sourceId)) return sourceId;
+  let h = 0;
+  for (let i = 0; i < directoryId.length; i++) {
+    h = (Math.imul(31, h) + directoryId.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
 }
 
 export default function AdminDashboard({ onLogout }) {
@@ -648,185 +671,81 @@ export default function AdminDashboard({ onLogout }) {
     }, new Map());
   }, [currentWeekKey, dashboardData.transactions]);
 
-  const ACCOUNT_STATIONS = useMemo<AdminStationRow[]>(() => {
-    return dashboardData.stations
-      .map((station, index) => {
-        const name = getAccountDisplayName(station);
-        const brand = normalizeBrand(station.brand);
-        const barangay = station.barangay ?? "Unknown";
-        const directoryMatch = findDirectoryStation(
-          dashboardData.stationDirectory,
-          name,
-          brand,
-          barangay,
-        );
-        const officer =
-          [station.officerFirstName, station.officerLastName].filter(Boolean).join(" ").trim() ||
-          [station.firstName, station.lastName].filter(Boolean).join(" ").trim() ||
-          "—";
-        const status: AdminStationRow["status"] = isStationUserOnline(station) ? "Online" : "Offline";
-
-        // Canonical source: stationDirectory.fuels[] (written by saveStationFuelSettings)
-        const dirFuels = directoryMatch?.fuels;
-        const hasDirFuels = Array.isArray(dirFuels) && dirFuels.length > 0;
-        const fuelCapacities = hasDirFuels
-          ? Object.fromEntries(dirFuels.map((f) => [f.label, f.capacityLiters]))
-          : (station.fuelCapacities ?? {});
-        const capacity = Object.values(fuelCapacities).reduce((sum, v) => sum + v, 0);
-
-        return {
-          id: station.stationSourceId ?? directoryMatch?.sourceId ?? index + 1,
-          uid: station.uid,
-          name,
-          brand,
-          barangay,
-          officer,
-          capacity,
-          dispensed: Math.round((stationWeeklyDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
-          lat: directoryMatch?.lat ?? DEFAULT_LAT,
-          lng: directoryMatch?.lon ?? DEFAULT_LNG,
-          status,
-          userCount: 0,
-          fuelCapacities,
-          priceEntries: getStationRowPriceEntries(station, directoryMatch),
-        };
-      })
-      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
-  }, [dashboardData.stationDirectory, dashboardData.stations, stationWeeklyDispensedByUid]);
-
+  /** One row per `stationDirectory` doc — canonical count matches Firestore. Accounts are merged for users / weekly dispensed. */
   const STATIONS = useMemo<AdminStationRow[]>(() => {
-    const matchedDirectoryIds = new Set<string>();
-    const stationUserSummaryByRowKey = new Map<string, { userCount: number; onlineCount: number }>();
-
-    for (const row of ACCOUNT_STATIONS) {
-      const matchedUsers = dashboardData.stations.filter((account) =>
-        stationAccountMatchesStationRow(account, row, dashboardData.stationDirectory)
-      );
-      stationUserSummaryByRowKey.set(getStationSummaryKey(row), {
-        userCount: matchedUsers.length,
-        onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
-      });
-    }
-
-    for (const directoryStation of dashboardData.stationDirectory) {
-      const key = `directory:${directoryStation.id}:${directoryStation.sourceId}`;
-      if (!stationUserSummaryByRowKey.has(key)) {
-        const pseudoRow = {
-          id: directoryStation.sourceId,
-          uid: `directory:${directoryStation.id}`,
-          name: directoryStation.name,
-          brand: normalizeBrand(directoryStation.brand),
-          barangay: directoryStation.barangay ?? "Unknown",
-          officer: directoryStation.officer ?? "—",
-          capacity: directoryStation.capacity ?? 0,
-          dispensed: directoryStation.dispensed ?? 0,
-          lat: directoryStation.lat,
-          lng: directoryStation.lon,
-          status: "Offline" as const,
-          userCount: 0,
-        };
-        const matchedUsers = dashboardData.stations.filter((account) =>
-          stationAccountMatchesStationRow(account, pseudoRow, dashboardData.stationDirectory)
+    return [...dashboardData.stationDirectory]
+      .map((directoryStation) => {
+        const linked = dashboardData.stations.filter(
+          (a) =>
+            a.stationDirectoryId === directoryStation.id || a.uid === directoryStation.id,
         );
-        stationUserSummaryByRowKey.set(key, {
-          userCount: matchedUsers.length,
-          onlineCount: matchedUsers.filter((account) => isStationUserOnline(account)).length,
-        });
-      }
-    }
+        const userCount = linked.length;
+        const onlineCount = linked.filter((a) => isStationUserOnline(a)).length;
+        const status: AdminStationRow["status"] = onlineCount > 0 ? "Online" : "Offline";
 
-    const mergedAccountRows = ACCOUNT_STATIONS.map((station) => {
-      const directoryMatch = findDirectoryStation(
-        dashboardData.stationDirectory,
-        station.name,
-        station.brand,
-        station.barangay,
-      );
-
-      if (directoryMatch) {
-        matchedDirectoryIds.add(directoryMatch.id);
-      }
-
-      const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(station));
-
-      return {
-        ...station,
-        id: directoryMatch?.sourceId ?? station.id,
-        barangay: directoryMatch?.barangay ?? station.barangay,
-        officer: directoryMatch?.officer ?? station.officer,
-        capacity: station.capacity
-          || (directoryMatch?.fuels?.reduce((s, f) => s + f.capacityLiters, 0) ?? 0)
-          || directoryMatch?.capacity
-          || 0,
-        // Weekly liters from transactions only — do not fall back to lifetime directory totals when 0.
-        dispensed: Math.round((stationWeeklyDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
-        lat: directoryMatch?.lat ?? station.lat,
-        lng: directoryMatch?.lon ?? station.lng,
-        // Use presenceStatus-based status from ACCOUNT_STATIONS directly.
-        // The onlineCount matching logic was broken (returned 0 users), always forcing Offline.
-        status: station.status,
-        userCount: summary?.userCount ?? 0,
-        fuelCapacities: station.fuelCapacities,
-        priceEntries: station.priceEntries.length > 0
-          ? station.priceEntries
-          : getStationRowPriceEntries(null, directoryMatch),
-      };
-    });
-
-    const directoryRows = dashboardData.stationDirectory
-      .filter((station) => !matchedDirectoryIds.has(station.id))
-      .map((station) => {
-        const summary = stationUserSummaryByRowKey.get(`directory:${station.id}:${station.sourceId}`);
-        const status: AdminStationRow["status"] = (summary?.onlineCount ?? 0) > 0 ? "Online" : "Offline";
-
-        const dirFuels = station.fuels;
+        const dirFuels = directoryStation.fuels;
         const hasDirFuels = Array.isArray(dirFuels) && dirFuels.length > 0;
         const fuelCapacities = hasDirFuels
           ? Object.fromEntries(dirFuels.map((f) => [f.label, f.capacityLiters]))
           : {};
         const capacity = hasDirFuels
           ? dirFuels.reduce((sum, f) => sum + f.capacityLiters, 0)
-          : (station.capacity ?? 0);
-        const dispensed = Math.round((weeklyDispensedByStationLookup.get(station.id) ?? 0) * 10) / 10;
+          : (directoryStation.capacity ?? 0);
 
-        return ({
-        id: station.sourceId,
-        uid: `directory:${station.id}`,
-        name: station.name,
-        brand: normalizeBrand(station.brand),
-        barangay: station.barangay ?? "Unknown",
-        officer: station.officer ?? "—",
-        capacity,
-        dispensed,
-        lat: station.lat,
-        lng: station.lon,
-        status,
-        userCount: summary?.userCount ?? 0,
-        fuelCapacities,
-        priceEntries: getStationRowPriceEntries(null, station),
-      });
-      });
+        let dispensedWeek = linked.reduce(
+          (sum, a) => sum + (stationWeeklyDispensedByUid.get(a.uid) ?? 0),
+          0,
+        );
+        if (dispensedWeek === 0) {
+          dispensedWeek = weeklyDispensedByStationLookup.get(directoryStation.id) ?? 0;
+        }
+        const dispensed = Math.round(dispensedWeek * 10) / 10;
 
-    return [...mergedAccountRows, ...directoryRows]
-      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name))
-      .map((row) => {
-        const summary = stationUserSummaryByRowKey.get(getStationSummaryKey(row));
+        const primary =
+          linked.length > 0
+            ? [...linked].sort(
+                (a, b) =>
+                  (b.lastSeenAt ?? "").localeCompare(a.lastSeenAt ?? "") ||
+                  getAccountDisplayName(a).localeCompare(getAccountDisplayName(b)),
+              )[0]
+            : null;
+
+        const officer =
+          (directoryStation.officer && directoryStation.officer.trim() !== ""
+            ? directoryStation.officer
+            : null) ??
+          (primary
+            ? [primary.officerFirstName, primary.officerLastName].filter(Boolean).join(" ").trim() ||
+              [primary.firstName, primary.lastName].filter(Boolean).join(" ").trim() ||
+              "—"
+            : "—");
+
         return {
-          ...row,
-          // Keep the status already computed per-row (presenceStatus for account rows,
-          // stationDirectory.status for directory-only rows). Only refresh userCount.
-          userCount: summary?.userCount ?? row.userCount,
+          id: directoryRowStableNumericId(directoryStation.id, directoryStation.sourceId),
+          uid: `directory:${directoryStation.id}`,
+          name: directoryStation.name,
+          brand: normalizeBrand(directoryStation.brand),
+          barangay: directoryStation.barangay ?? "Unknown",
+          officer,
+          capacity,
+          dispensed,
+          lat: directoryStation.lat,
+          lng: directoryStation.lon,
+          status,
+          userCount,
+          fuelCapacities,
+          priceEntries: getStationRowPriceEntries(null, directoryStation),
         };
-      });
-  }, [ACCOUNT_STATIONS, dashboardData.stationDirectory, dashboardData.stations, stationWeeklyDispensedByUid, weeklyDispensedByStationLookup]);
+      })
+      .sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
+  }, [
+    dashboardData.stationDirectory,
+    dashboardData.stations,
+    stationWeeklyDispensedByUid,
+    weeklyDispensedByStationLookup,
+  ]);
 
-  const ALLOCATION_STATIONS = useMemo(
-    () => STATIONS.map((station) => ({
-      ...station,
-      dispensed: Math.round((stationWeeklyDispensedByUid.get(station.uid) ?? 0) * 10) / 10,
-    })),
-    [STATIONS, stationWeeklyDispensedByUid],
-  );
+  const ALLOCATION_STATIONS = STATIONS;
 
   const selectedUserDrawerStation = useMemo(
     () => STATIONS.find((station) => station.id === userDrawerStationId) ?? null,
@@ -835,6 +754,10 @@ export default function AdminDashboard({ onLogout }) {
 
   const selectedUserDrawerDirectory = useMemo(() => {
     if (!selectedUserDrawerStation) return null;
+    if (selectedUserDrawerStation.uid.startsWith("directory:")) {
+      const dirId = selectedUserDrawerStation.uid.slice("directory:".length);
+      return dashboardData.stationDirectory.find((d) => d.id === dirId) ?? null;
+    }
     return findDirectoryStation(
       dashboardData.stationDirectory,
       selectedUserDrawerStation.name,
@@ -852,6 +775,7 @@ export default function AdminDashboard({ onLogout }) {
           station,
           selectedUserDrawerStation,
           dashboardData.stationDirectory,
+          dashboardData.stations,
         )
       )
       .map((station) => ({
@@ -876,8 +800,9 @@ export default function AdminDashboard({ onLogout }) {
     return dashboardData.stations
       .map((station) => {
         const assignedStation =
-          STATIONS.find((row) => stationAccountMatchesStationRow(station, row, dashboardData.stationDirectory)) ??
-          null;
+          STATIONS.find((row) =>
+            stationAccountMatchesStationRow(station, row, dashboardData.stationDirectory, dashboardData.stations),
+          ) ?? null;
         const txns = dashboardData.transactions.filter((tx) => tx.stationUid === station.uid);
         const todayTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Today"));
         const weekTxns = txns.filter((tx) => matchesPeriod(tx.createdAt, "Week"));
@@ -1220,6 +1145,20 @@ export default function AdminDashboard({ onLogout }) {
         .reduce((sum, tx) => sum + tx.liters, 0) * 10,
     ) / 10;
   }, [currentWeekKey, dashboardData.transactions]);
+
+  const remainingStationSupplyLiters = useMemo(() => {
+    // Remaining inventory across all stations (stationDirectory.fuels[].currentCapacity).
+    let total = 0;
+    for (const station of dashboardData.stationDirectory) {
+      const fuels = station.fuels;
+      if (!Array.isArray(fuels)) continue;
+      for (const fuel of fuels) {
+        const v = Number(fuel.currentCapacity ?? 0);
+        if (Number.isFinite(v)) total += v;
+      }
+    }
+    return Math.round(total * 10) / 10;
+  }, [dashboardData.stationDirectory]);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
   const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
   const weeklyQuota     = RESIDENTS.length * WEEKLY_FUEL_LIMIT;
@@ -1436,7 +1375,7 @@ export default function AdminDashboard({ onLogout }) {
 
           {/* ══ OVERVIEW ══ */}
           {activePage === "overview" && (() => {
-            const remainingSupply = weeklyQuota - totalUsed;
+            const remainingSupply = remainingStationSupplyLiters;
             const trendMax = Math.max(...TREND_DATA.map(d => d.value));
             const W = 300, H = 100, pad = 10;
             const pts = TREND_DATA.map((d, i) => {
@@ -1455,7 +1394,7 @@ export default function AdminDashboard({ onLogout }) {
                 <StatCard icon="store"                 label="Active Stations"    value={`${onlineStations} / ${STATIONS.length}`} sub={`${STATIONS.length - onlineStations} offline`}  iconVariant="green"  />
                 <StatCard icon="local_fire_department" label="Total Dispensed"    value={`${totalDispensed.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}   sub={weekGrowthPct === null ? "New this week" : weekGrowthPct === 0 ? "Same as last week" : `${weekGrowthPct > 0 ? "+" : ""}${weekGrowthPct}% vs last week`} iconVariant="orange" />
                 <StatCard icon="bar_chart"             label="Quota Utilization"  value={`${utilizationPct}% Used`}                sub={`${(weeklyQuota - totalUsed).toLocaleString(undefined, { maximumFractionDigits: 4 })} L remaining`} iconVariant="purple" />
-                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}  sub="available this week"                            iconVariant="navy"   />
+                <StatCard icon="water_drop"            label="Remaining Supply"   value={`${remainingSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}  sub="station inventory remaining"                   iconVariant="navy"   />
               </div>
 
               {/* ── Main two-column layout ── */}
@@ -1577,7 +1516,13 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-sm font-black text-[#003366]">Consumption Trends</p>
                         <p className="text-xs text-slate-400">Daily fuel dispensed this week (L)</p>
                       </div>
-                      <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-100 px-2 py-1 rounded-full">+5% vs last week</span>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                        weekGrowthPct == null || weekGrowthPct >= 0
+                          ? "text-green-700 bg-green-50 border-green-100"
+                          : "text-red-700 bg-red-50 border-red-100"
+                      }`}>
+                        {weekGrowthPct === null ? "New vs last week" : `${weekGrowthPct > 0 ? "+" : ""}${weekGrowthPct}% vs last week`}
+                      </span>
                     </div>
                     {(() => {
                       const CW = 460, CH = 150, pL = 38, pR = 8, pT = 18, pB = 28;
@@ -1633,7 +1578,7 @@ export default function AdminDashboard({ onLogout }) {
                           {TREND_DATA.map((d,i) => (
                             <text key={i} x={tx(i)} y={ty(d.value) - 6} textAnchor="middle"
                               fontSize="7.5" fill="#003366" fontWeight="800">
-                              {(d.value/1000).toFixed(1)}k
+                              {d.value >= 1000 ? `${(d.value/1000).toFixed(1)}k` : `${Math.round(d.value)}L`}
                             </text>
                           ))}
                           {/* X-axis labels */}
