@@ -11,14 +11,12 @@ import html2canvas from "html2canvas";
 import type { ResidentAccount, ResidentAllocationSummary, StationDirectoryRecord } from "@/lib/data/agas";
 import { fetchStationDirectory, subscribeResidentAccount, subscribeResidentVehicleAllocationSummary } from "@/lib/data/agas";
 import { encodeQR } from "@/lib/qr/qrCodec";
+import {
+  QRIdentityCaptureCard,
+  QR_IDENTITY_EXPORT_QR_SIZE,
+  getQRIdentityPngFilename,
+} from "@/features/resident/pages/QRDisplay";
 import { formatLitersQuantity } from "@/utils/fuelVolume";
-
-function formatTimestamp(iso: string) {
-  return new Date(iso).toLocaleString("en-PH", {
-    month: "short", day: "numeric", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: true,
-  });
-}
 
 function formatTransactionDate(value: Date | null) {
   if (!value) return "Unknown date";
@@ -149,7 +147,7 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const stationListRef                  = useRef<HTMLDivElement>(null);
   const stationRowRefs                  = useRef<Record<number, HTMLElement | null>>({});
   const qrRef                           = useRef<HTMLDivElement>(null);
-  const webCaptureRef                   = useRef<HTMLDivElement>(null);
+  const qrIdentityDownloadRef           = useRef<HTMLDivElement>(null);
 
   const currentResident = liveResident ?? resident;
   const firstName    = currentResident?.firstName || "Resident";
@@ -311,59 +309,37 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
     });
   }, [brandFilter, liveStations]);
 
-  /* -- Download QR -- */
+  /* -- Download QR (same PNG as resident mobile QRDisplay — QRIdentityCaptureCard + html2canvas) -- */
   const handleDownloadQR = async () => {
-    if (!webCaptureRef.current) return;
-    const canvas = await html2canvas(webCaptureRef.current, {
+    if (!qrIdentityDownloadRef.current) return;
+    const canvas = await html2canvas(qrIdentityDownloadRef.current, {
       scale: 3,
       useCORS: true,
-      backgroundColor: "#ffffff",
+      backgroundColor: "#003366",
+      logging: false,
     });
     const url = canvas.toDataURL("image/png");
     const a   = document.createElement("a");
-    a.href = url; a.download = `AGAS_QR_${plate}.png`; a.click();
+    a.href = url;
+    a.download = getQRIdentityPngFilename(plate);
+    a.click();
   };
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden">
 
-      {/* -- Hidden branded capture card (used for Download QR) -- */}
-      <div
-        ref={webCaptureRef}
-        style={{ position: "fixed", top: "-9999px", left: 0, width: 420, background: "#ffffff", fontFamily: "sans-serif" }}
-      >
-        {/* Navy header */}
-        <div style={{ background: "#001e40", padding: "22px 28px", textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", margin: "0 0 6px" }}>A.G.A.S · Gas Allocation QR</p>
-          <p style={{ color: "#ffffff", fontWeight: 900, fontSize: 32, letterSpacing: 6, textTransform: "uppercase", margin: 0 }}>{plate}</p>
-          {gasType && (
-            <p style={{ color: "#fde047", fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 0 }}>{gasType}</p>
-          )}
-        </div>
-        {/* QR + info */}
-        <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-          <QRCodeSVG value={qrData} size={300} level="H" marginSize={2} fgColor="#001e40" bgColor="#ffffff" />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
-            {[
-              { label: "Full Name",  value: fullName },
-              { label: "Plate No.", value: plate },
-              { label: "Vehicle",   value: vehicleType },
-              { label: "Barangay",  value: barangay },
-              { label: "Fuel Type", value: gasType },
-              { label: "Registered", value: formatTimestamp(registeredAt) },
-            ].map((d) => (
-              <div key={d.label} style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px" }}>
-                <p style={{ fontSize: 8, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "0 0 2px" }}>{d.label}</p>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "#001e40", margin: 0 }}>{d.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Footer */}
-        <div style={{ background: "#f1f5f9", padding: "10px 28px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
-          <p style={{ fontSize: 9, color: "#94a3b8", margin: 0 }}>© 2026 Mata Technologies Inc. · A.G.A.S — Access to Goods and Assistance System</p>
-        </div>
-      </div>
+      {/* -- Off-screen clone for Download QR (identical export to mobile QRDisplay) -- */}
+      <QRIdentityCaptureCard
+        ref={qrIdentityDownloadRef}
+        exportLayout
+        plate={plate}
+        vehicleType={activeVehicle?.type ?? ""}
+        gasType={gasType}
+        registeredAt={registeredAt}
+        qrData={qrData}
+        qrSize={QR_IDENTITY_EXPORT_QR_SIZE}
+        className="fixed -left-[9999px] top-0 z-0 pointer-events-none"
+      />
 
       {/* -- Sidebar -- */}
       <aside

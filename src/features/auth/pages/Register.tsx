@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { formatPlateForStorage, isContainerType, isGeneratorType, plateError, sanitizePlate } from "@/lib/utils/vehicleValidation";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -237,6 +237,38 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const [registering, setRegistering] = useState(false);
+  const mobileScrollRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = mobileScrollRef.current;
+    if (!el) return;
+
+    const ua = navigator.userAgent;
+    const isIosDevice = /iPad|iPhone|iPod/.test(ua);
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+    if (!isIosDevice || !isSafari) return;
+
+    let startY = 0;
+
+    const onTouchStart = (event: TouchEvent) => {
+      startY = event.touches[0]?.clientY ?? 0;
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      const currentY = event.touches[0]?.clientY ?? startY;
+      const pullingDown = currentY > startY + 2;
+      if (pullingDown && el.scrollTop <= 0) {
+        event.preventDefault();
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -585,7 +617,7 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
       {ConfirmModal}
 
       {/* ── Mobile layout ──────────────────────────────────────────────────── */}
-      <div className="flex flex-col min-h-dvh bg-background lg:hidden">
+      <div className="flex flex-col h-dvh overflow-hidden overscroll-y-none bg-background lg:hidden">
         <div className="relative flex items-center justify-center px-6 py-4 bg-slate-100/80 backdrop-blur-md shadow-sm sticky top-0 z-40">
           <button type="button" onClick={handleBack} aria-label="Go back"
             className="absolute left-4 p-2 hover:bg-slate-200/50 rounded-full transition-all active:scale-95 text-[#003366]">
@@ -597,7 +629,10 @@ export default function Register({ onBack, onSuccess, onSignIn }: { onBack: () =
           </div>
         </div>
 
-        <main className="flex-1 px-6 pt-8 pb-12 max-w-md mx-auto w-full">
+        <main
+          ref={mobileScrollRef}
+          className="flex-1 px-6 pt-8 pb-12 max-w-md mx-auto w-full overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
+        >
           <div className="mb-6">
             <h2 className="font-headline font-extrabold text-primary text-2xl">Register Account</h2>
             <p className="text-on-surface-variant text-sm mt-1">Fill in your personal and vehicle details.</p>

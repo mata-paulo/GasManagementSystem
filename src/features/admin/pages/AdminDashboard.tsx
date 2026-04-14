@@ -5,10 +5,12 @@ import {
   WEEKLY_FUEL_LIMIT,
   assignStationUser,
   subscribeAdminDashboardData,
+  fetchWeeklyHeatmap,
   getAccountDisplayName,
   getWeekKey,
   isStationUserOnline,
   type AdminDashboardData,
+  type HeatmapStationEntry,
 } from "@/lib/data/agas";
 import { formatLitersQuantity } from "@/utils/fuelVolume";
 
@@ -558,6 +560,8 @@ export default function AdminDashboard({ onLogout }) {
   const mapRef        = useRef(null);
   const mapInst       = useRef<L.Map | null>(null);
   const mapMarkersRef = useRef<L.CircleMarker[]>([]);
+  const mapContainerRef = useRef<HTMLElement | null>(null);
+  const mapLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = normalizeAdminPage(page);
@@ -615,6 +619,28 @@ export default function AdminDashboard({ onLogout }) {
   }, []);
 
   const currentWeekKey = getWeekKey();
+
+  // Pre-aggregated heatmap data — polled hourly from weeklyHeatmap/{weekKey}
+  const [heatmapData, setHeatmapData] = useState<HeatmapStationEntry[]>([]);
+  const [heatmapLastFetched, setHeatmapLastFetched] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchHeatmap = async () => {
+      try {
+        const result = await fetchWeeklyHeatmap(currentWeekKey);
+        if (!cancelled) {
+          setHeatmapData(result?.stations ?? []);
+          setHeatmapLastFetched(new Date());
+        }
+      } catch {
+        // Non-fatal: heatmap falls back to live transaction data
+      }
+    };
+    fetchHeatmap();
+    const interval = setInterval(fetchHeatmap, 60 * 60 * 1000); // every 1 hour
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [currentWeekKey]);
 
   const BRAND_PRICES = useMemo(
     () => buildMergedBrandPrices(dashboardData.stations, dashboardData.stationDirectory),
@@ -1174,27 +1200,105 @@ export default function AdminDashboard({ onLogout }) {
   useEffect(() => {
     if (activePage !== "heatmap" && activePage !== "overview") return;
     const el = mapRef.current;
-    if (!el || mapInst.current) return;
+    if (!el) return;
 
-    const map = L.map(el, {
-      zoomControl: false,
-      preferCanvas: true,
-      fadeAnimation: true,
-      zoomAnimation: true,
-      markerZoomAnimation: false,
-    }).setView([10.3157, 123.9000], 11.5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-      updateWhenIdle: false,
-      updateWhenZooming: false,
-      keepBuffer: 4,
-    }).addTo(map);
-    mapInst.current = map;
+    // If the UI swapped the underlying container (overview → heatmap page),
+    // tear down the old map so we can bind to the new DOM node.
+    if (mapInst.current && mapContainerRef.current && mapContainerRef.current !== el) {
+      try { mapInst.current.remove(); } catch {}
+      mapInst.current = null;
+      mapMarkersRef.current = [];
+      mapLayerGroupRef.current = null;
+      mapContainerRef.current = null;
+    }
+
+    const map = mapInst.current ?? L.map(el, {
+        zoomControl: false,
+        preferCanvas: true,
+        fadeAnimation: true,
+        zoomAnimation: true,
+        markerZoomAnimation: false,
+      }).setView([10.3157, 123.9000], 11.5);
+
+    if (!mapInst.current) {
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+        updateWhenIdle: false,
+        updateWhenZooming: false,
+        keepBuffer: 4,
+      }).addTo(map);
+      mapInst.current = map;
+    }
+
+    mapContainerRef.current = el as unknown as HTMLElement;
     map.invalidateSize();
 
-    // Add circle markers for each station (simulating heatmap dots)
-    const layerGroup = L.layerGroup();
+    // Build heatmap lookup(s):
+    // - by uid/id (best when tx carries stationUid/stationDirectoryId)
+    // - by (brand + name) (fallback when directory linking is missing)
+    const heatmapByUid = new Map<string, { txCount: number; liters: number }>();
+    const heatmapByName = new Map<string, { txCount: number; liters: number }>();
+    const normalizeHeatName = (brand: string, name: string) => {
+      const b = String(brand ?? "").trim();
+      let n = String(name ?? "").trim();
+      if (!n) return "";
+      // Directory station names are sometimes rendered as "Brand – Name".
+      if (b) {
+        const escaped = b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`^\\s*${escaped}\\s*[–-]\\s*`, "i");
+        n = n.replace(re, "").trim();
+      }
+      return n.toLowerCase();
+    };
+    const heatKey = (brand: string, name: string) =>
+      `${String(brand ?? "").trim().toLowerCase()}::${normalizeHeatName(brand, name)}`;
+    for (const entry of heatmapData) {
+      heatmapByUid.set(entry.stationUid, { txCount: entry.txCount, liters: entry.liters });
+      if (entry.stationId && entry.stationId !== entry.stationUid) {
+        heatmapByUid.set(entry.stationId, { txCount: entry.txCount, liters: entry.liters });
+      }
+      if (entry.stationName) {
+        heatmapByName.set(
+          heatKey(entry.stationBrand, entry.stationName),
+          { txCount: entry.txCount, liters: entry.liters },
+        );
+      }
+    }
+
+    // Compute percentile thresholds for color gradient (33rd / 66th of current dataset)
+    // IMPORTANT: `STATIONS` rows are derived from `stationDirectory` docs.
+    // Their `id` is a stable numeric UI id, NOT the Firestore directory doc id.
+    // Use the directory doc id (embedded in `uid: "directory:<docId>"`) for lookups.
+    const dirId = (s: { uid?: string; id: number }) => {
+      const raw = typeof s.uid === "string" ? s.uid : "";
+      return raw.startsWith("directory:") ? raw.slice("directory:".length) : String(s.id);
+    };
+    const txCounts = STATIONS.map((s) => {
+      const dId = dirId(s);
+      const linked = dashboardData.stations.filter(
+        (a) => a.stationDirectoryId === dId || a.uid === dId,
+      );
+      const entry =
+        linked.map((a) => heatmapByUid.get(a.uid)).find(Boolean)
+        ?? heatmapByUid.get(dId)
+        ?? heatmapByName.get(heatKey(s.brand, s.name));
+      return entry?.txCount ?? 0;
+    });
+    const maxTx = Math.max(...txCounts, 1);
+    const lowThreshold = maxTx * 0.33;
+    const midThreshold = maxTx * 0.66;
+
+    const getHeatColor = (txCount: number): string => {
+      if (txCount >= midThreshold) return "#ef4444"; // red-500   → High
+      if (txCount >= lowThreshold) return "#facc15"; // yellow-400 → Mid
+      return "#2563eb";                              // blue-600  → Low
+    };
+
+    // Add/refresh circle markers for each station
+    const layerGroup = mapLayerGroupRef.current ?? L.layerGroup().addTo(map);
+    mapLayerGroupRef.current = layerGroup;
+    layerGroup.clearLayers();
     const markers: L.CircleMarker[] = STATIONS.map((s) => {
       const prices = s.priceEntries;
       const statusColor = s.status === "Online" ? "#2e7d32" : "#c62828";
@@ -1206,6 +1310,18 @@ export default function AdminDashboard({ onLogout }) {
         </div>`
       ).join("");
 
+      // Resolve heatmap entry for this station (try linked account UIDs first, then directory id)
+      const dId = dirId(s);
+      const linked = dashboardData.stations.filter(
+        (a) => a.stationDirectoryId === dId || a.uid === dId,
+      );
+      const heatEntry =
+        linked.map((a) => heatmapByUid.get(a.uid)).find(Boolean)
+        ?? heatmapByUid.get(dId)
+        ?? heatmapByName.get(heatKey(s.brand, s.name));
+      const txCount = heatEntry?.txCount ?? 0;
+      const heatLiters = heatEntry?.liters ?? s.dispensed;
+
       const popupHtml = `
         <div style="font:13px/1.5 system-ui,sans-serif;padding:2px 0;min-width:200px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
@@ -1213,8 +1329,11 @@ export default function AdminDashboard({ onLogout }) {
             <span style="font-size:10px;font-weight:700;color:${statusColor};background:${statusBg};padding:2px 7px;border-radius:99px">${s.status}</span>
           </div>
           <span style="color:#888;font-size:11px">${s.brand}</span>
-          <div style="margin:8px 0 6px;background:#fff3e0;border-radius:6px;padding:4px 8px;display:inline-block">
-            <span style="color:#e65100;font-weight:700;font-size:12px">⛽ ${s.dispensed.toLocaleString()} L dispensed</span>
+          <div style="margin:8px 0 4px;background:#fff3e0;border-radius:6px;padding:5px 10px;display:block">
+            <span style="color:#e65100;font-weight:700;font-size:12px">⛽ ${heatLiters.toLocaleString()} L dispensed this week</span>
+          </div>
+          <div style="margin:0 0 8px;background:#eff6ff;border-radius:6px;padding:5px 10px;display:block">
+            <span style="color:#1d4ed8;font-weight:700;font-size:12px">👥 ${txCount} transaction${txCount !== 1 ? "s" : ""} this week</span>
           </div>
           <div style="border-top:2px solid #003366;padding-top:6px;margin-top:2px">
             <div style="font-size:10px;font-weight:700;color:#003366;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fuel Prices</div>
@@ -1222,26 +1341,36 @@ export default function AdminDashboard({ onLogout }) {
           </div>
         </div>`;
 
-      // Scale radius by dispensed volume for a heatmap-like effect
-      const radius = Math.max(8, Math.min(22, (s.dispensed / 5000) * 8 + 8));
+      // Radius = liters dispensed this week (volume signal)
+      const radius = Math.max(8, Math.min(22, (heatLiters / 5000) * 8 + 8));
+      // Color = transaction count this week (demand signal)
+      const fillColor = getHeatColor(txCount);
       const circle = L.circleMarker([s.lat, s.lng], {
         radius,
         color: "#ffffff",
         weight: 2,
-        fillColor: "#003366",
+        fillColor,
         fillOpacity: 0.82,
-      }).bindPopup(popupHtml, { maxWidth: 260 });
+      }).bindPopup(popupHtml, { maxWidth: 300, minWidth: 220 });
 
       (circle as any)._stationBrand = s.brand;
       layerGroup.addLayer(circle);
       return circle;
     });
 
-    layerGroup.addTo(map);
     mapMarkersRef.current = markers;
+  }, [BRAND_PRICES, STATIONS, activePage, heatmapData, dashboardData.stations]);
 
-    return () => { map.remove(); mapInst.current = null; mapMarkersRef.current = []; };
-  }, [BRAND_PRICES, STATIONS, activePage]);
+  /* ── Tear down map when leaving map pages ── */
+  useEffect(() => {
+    if (activePage === "heatmap" || activePage === "overview") return;
+    if (!mapInst.current) return;
+    try { mapInst.current.remove(); } catch {}
+    mapInst.current = null;
+    mapMarkersRef.current = [];
+    mapLayerGroupRef.current = null;
+    mapContainerRef.current = null;
+  }, [activePage]);
 
   /* ── Sync heatmap brand filter → show/hide Leaflet circle markers ── */
   useEffect(() => {
@@ -1609,9 +1738,14 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
                   <div>
                     <p className="text-sm font-black text-[#003366]">Station Heatmap · Cebu City</p>
-                    <p className="text-xs text-slate-400">Click a station marker for dispensing details</p>
+                    <p className="text-xs text-slate-400">
+                      {heatmapLastFetched
+                        ? `Updated ${heatmapLastFetched.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })} · Color = transactions this week`
+                        : "Click a station marker for dispensing details"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Demand:</span>
                     <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Low</span>
                     <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Mid</span>
                     <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> High</span>
