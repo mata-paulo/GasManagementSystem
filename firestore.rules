@@ -91,6 +91,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Pre-aggregated heatmap docs written by Cloud Function (server-side Admin SDK).
+    // Admins can read; no client writes allowed.
+    match /weeklyHeatmap/{weekKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
