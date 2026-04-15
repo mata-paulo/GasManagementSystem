@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import {
   fetchStationTransactions,
+  getStationDirectoryIdDisplayPrefix,
   setStationPresenceStatus,
   type DispenseTransaction,
   type StationAccount,
@@ -163,7 +164,7 @@ export default function Dashboard({
     [transactions],
   );
 
-  const stationCode    = officer?.stationCode || "N/A";
+  const stationDirectoryShortId = getStationDirectoryIdDisplayPrefix(officer);
   const barangay       = officer?.barangay    || "Not set";
   const brand          = officer?.brand       || "Station Name";
   const officerName    = officer?.officerFirstName || officer?.firstName || "Officer";
@@ -286,7 +287,7 @@ export default function Dashboard({
             <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
               <div className="text-right">
                 <p className="text-sm font-bold text-[#003366]">{officerName}</p>
-                <p className="text-[10px] text-slate-400">ID: {stationCode}</p>
+                <p className="text-[10px] text-slate-400">ID: {stationDirectoryShortId}</p>
               </div>
               <div className="w-9 h-9 rounded-full bg-[#003366] flex items-center justify-center shrink-0">
                 <span className="text-white font-black text-sm">{officerName[0]?.toUpperCase() ?? "O"}</span>
@@ -423,7 +424,7 @@ export default function Dashboard({
                     <div className="min-w-0">
                       <p className="font-headline font-black text-white text-base leading-tight truncate">{brand}</p>
                       <p className="text-xs text-white/50">Barangay {barangay}</p>
-                      <p className="text-xs text-white/50">ID: {stationCode}</p>
+                      <p className="text-xs text-white/50">ID: {stationDirectoryShortId}</p>
                     </div>
                   </div>
                   <div className="relative shrink-0">

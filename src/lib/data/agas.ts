@@ -46,6 +46,7 @@ export interface StationAccount extends AuthUser {
   brand?: string;
   barangay?: string;
   capacity?: string | number;
+  /** Firestore `stationDirectory/{stationDirectoryId}` document id (often equals account uid). */
   stationDirectoryId?: string;
   stationSourceId?: number;
   stationCode?: string;
@@ -69,6 +70,25 @@ export interface StationAccount extends AuthUser {
   updatedAt?: string;
   lat?: number;
   lon?: number;
+}
+
+/** Document id for `stationDirectory/{id}` — prefers `stationDirectoryId`, else account `uid`. */
+export function getStationDirectoryDocId(
+  account: Pick<StationAccount, "uid" | "stationDirectoryId"> | null | undefined,
+): string {
+  const fromField = account?.stationDirectoryId?.trim();
+  if (fromField) return fromField;
+  return typeof account?.uid === "string" ? account.uid.trim() : "";
+}
+
+/** First `length` characters of the directory doc id for display (e.g. `231u`). */
+export function getStationDirectoryIdDisplayPrefix(
+  account: Pick<StationAccount, "uid" | "stationDirectoryId"> | null | undefined,
+  length = 4,
+): string {
+  const id = getStationDirectoryDocId(account);
+  if (!id) return "—";
+  return id.slice(0, Math.min(length, id.length));
 }
 
 export interface AdminAccount extends AuthUser {

@@ -1,5 +1,6 @@
 import BottomNav from "@/shared/components/navigation/BottomNav";
 import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
+import { getStationDirectoryDocId, getStationDirectoryIdDisplayPrefix } from "@/lib/data/agas";
 
 const APP_VERSION = "V 1.0.0";
 
@@ -35,7 +36,8 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
 
   const brand = officer?.brand as string | undefined;
   const logo = brand ? (BRAND_LOGO[brand] ?? BRAND_LOGO.Default) : null;
-  const stationCode = officer?.stationCode || "N/A";
+  const stationDirectoryShortId = getStationDirectoryIdDisplayPrefix(officer);
+  const hasStationDirectoryDoc = Boolean(getStationDirectoryDocId(officer));
   const officerName = officer?.officerFirstName || officer?.firstName || "Officer";
 
   const grouped = menuItems.reduce((acc, item) => {
@@ -61,7 +63,7 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
           <div className="flex items-center gap-2">
             <div className="text-right">
               <p className="text-sm font-bold text-[#003366]">{officerName}</p>
-              <p className="text-[10px] text-slate-400">ID: {stationCode}</p>
+              <p className="text-[10px] text-slate-400">ID: {stationDirectoryShortId}</p>
             </div>
             {logo ? (
               <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2"
@@ -94,8 +96,8 @@ export default function OfficerSettings({ officer, activeTab, onTabChange, onLog
               <div>
                 <p className="font-headline font-black text-[#003366] text-xl leading-tight">{name}</p>
                 <p className="text-sm text-slate-400 font-medium mt-0.5">{brand ?? "Station Officer"}</p>
-                {stationCode !== "N/A" && (
-                  <p className="text-xs text-slate-300 mt-1">Station ID: {stationCode}</p>
+                {hasStationDirectoryDoc && (
+                  <p className="text-xs text-slate-300 mt-1">Station ID: {stationDirectoryShortId}</p>
                 )}
               </div>
             </div>
