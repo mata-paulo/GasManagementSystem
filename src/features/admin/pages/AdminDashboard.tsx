@@ -206,18 +206,26 @@ type StationAssignmentForm = {
   email: string;
 };
 
-type AdminResidentRow = {
-  id: number;
-  uid: string;
-  name: string;
-  plateSummary: string;
-  vehicleCount: number;
-  barangay: string;
+type AdminResidentVehicleRow = {
+  id: string;
+  plate: string;
   vehicle: string;
   remaining: number;
   used: number;
   quota: number;
   status: "Active" | "Maxed" | "New";
+  totalSpent: number;
+  avgFill: number;
+};
+
+type AdminResidentRow = {
+  id: string;
+  uid: string;
+  name: string;
+  barangay: string;
+  vehicles: AdminResidentVehicleRow[];
+  vehicleCount: number;
+  searchIndex: string;
 };
 
 type AdminTransactionRow = {
@@ -264,11 +272,6 @@ function formatVehicleLabel(value: string | null | undefined): string {
 function normalizePlateDisplay(value: string | null | undefined): string {
   const normalized = (value ?? "").trim().toUpperCase();
   return normalized || "—";
-}
-
-function summarizePlateList(plates: string[]): string {
-  if (plates.length === 0) return "—";
-  return plates[0];
 }
 
 /** Buckets transaction `vehicleType` like resident analytics (2W / 4W / Other). */
@@ -568,6 +571,8 @@ export default function AdminDashboard({ onLogout }) {
   const [heatmapFilter, setHeatmapFilter] = useState("All");
   const [residentSearch, setResidentSearch] = useState("");
   const [residentPage, setResidentPage] = useState(1);
+  const [residentVehicleSelection, setResidentVehicleSelection] = useState<Record<string, string>>({});
+  const [expandedResidents, setExpandedResidents] = useState<Set<string>>(new Set());
   const RESIDENTS_PER_PAGE = 10;
 
   const [stationSearch, setStationSearch] = useState("");
@@ -740,6 +745,16 @@ export default function AdminDashboard({ onLogout }) {
     return m;
   }, [currentWeekKey, dashboardData.transactions]);
 
+  const heatmapBrandTxCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const tx of dashboardData.transactions) {
+      if (tx.weekKey !== currentWeekKey) continue;
+      const brand = normalizeBrand(tx.stationBrand);
+      m.set(brand, (m.get(brand) ?? 0) + 1);
+    }
+    return m;
+  }, [currentWeekKey, dashboardData.transactions]);
+
   /** This week’s dispensed liters by vehicle class (share of `totalDispensed` — not quota split). */
   const vehicleClassWeeklyLiters = useMemo(() => {
     const m = new Map<"2W" | "4W" | "Other", number>([
@@ -860,6 +875,76 @@ export default function AdminDashboard({ onLogout }) {
   ]);
 
   const ALLOCATION_STATIONS = STATIONS;
+
+  const heatmapIntensity = useMemo(() => {
+    const heatmapByUid = new Map<string, { txCount: number; liters: number }>();
+    const heatmapByName = new Map<string, { txCount: number; liters: number }>();
+    const normalizeHeatName = (brand: string, name: string) => {
+      const b = String(brand ?? "").trim();
+      let n = String(name ?? "").trim();
+      if (!n) return "";
+      if (b) {
+        const escaped = b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`^\\s*${escaped}\\s*[–-]\\s*`, "i");
+        n = n.replace(re, "").trim();
+      }
+      return n.toLowerCase();
+    };
+    const heatKey = (brand: string, name: string) =>
+      `${String(brand ?? "").trim().toLowerCase()}::${normalizeHeatName(brand, name)}`;
+
+    for (const entry of heatmapData) {
+      heatmapByUid.set(entry.stationUid, { txCount: entry.txCount, liters: entry.liters });
+      if (entry.stationId && entry.stationId !== entry.stationUid) {
+        heatmapByUid.set(entry.stationId, { txCount: entry.txCount, liters: entry.liters });
+      }
+      if (entry.stationName) {
+        heatmapByName.set(
+          heatKey(entry.stationBrand, entry.stationName),
+          { txCount: entry.txCount, liters: entry.liters },
+        );
+      }
+    }
+
+    const dirId = (station: { uid?: string; id: number }) => {
+      const raw = typeof station.uid === "string" ? station.uid : "";
+      return raw.startsWith("directory:") ? raw.slice("directory:".length) : String(station.id);
+    };
+
+    const stationMetrics = STATIONS.map((station) => {
+      const dId = dirId(station);
+      const linked = dashboardData.stations.filter(
+        (account) => account.stationDirectoryId === dId || account.uid === dId,
+      );
+      const entry =
+        linked.map((account) => heatmapByUid.get(account.uid)).find(Boolean)
+        ?? heatmapByUid.get(dId)
+        ?? heatmapByName.get(heatKey(station.brand, station.name));
+      return {
+        stationId: station.id,
+        liters: entry?.liters ?? station.dispensed,
+        txCount: entry?.txCount ?? 0,
+      };
+    });
+
+    const litersValues = stationMetrics.map((station) => station.liters);
+    const txCounts = stationMetrics.map((station) => station.txCount);
+    const maxLiters = Math.max(...litersValues, 1);
+    const maxTx = Math.max(...txCounts, 0);
+
+    const lowThreshold = maxLiters * 0.33;
+    const midThreshold = maxLiters * 0.66;
+
+    return {
+      maxLiters,
+      maxTx,
+      lowThreshold,
+      midThreshold,
+      lowLabel: `< ${formatLitersQuantity(lowThreshold)} L`,
+      midLabel: `${formatLitersQuantity(lowThreshold)} to < ${formatLitersQuantity(midThreshold)} L`,
+      highLabel: `≥ ${formatLitersQuantity(midThreshold)} L`,
+    };
+  }, [STATIONS, dashboardData.stations, heatmapData]);
 
   const selectedUserDrawerStation = useMemo(
     () => STATIONS.find((station) => station.id === userDrawerStationId) ?? null,
@@ -1088,38 +1173,26 @@ export default function AdminDashboard({ onLogout }) {
     };
   }, []);
 
-  const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
+  const RESIDENT_SUMMARY = useMemo(() => {
     const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     return dashboardData.residents
-      .map((resident, index) => {
+      .map((resident) => {
         const used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
         const vehicles = Array.isArray(resident.vehicles) ? resident.vehicles : [];
         const vehicleCount = vehicles.length;
-        const rawPlateNormalizedList = (resident as { plateNormalizedList?: unknown }).plateNormalizedList;
-        const plateList = Array.isArray(rawPlateNormalizedList)
-          ? rawPlateNormalizedList
-              .map((plate) => (typeof plate === "string" ? normalizePlateDisplay(plate) : ""))
-              .filter(Boolean)
-          : vehicles
-              .map((vehicle) => normalizePlateDisplay(vehicle?.plate))
-              .filter(Boolean);
         const quota = vehicleCount > 0
           ? vehicles.reduce((sum, v) => sum + (v.fuelAllocated ?? WEEKLY_FUEL_LIMIT), 0)
           : (resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
         const remaining = Math.max(quota - used, 0);
         const registeredAt = resident.registeredAt ? new Date(resident.registeredAt) : null;
         const isNew = used === 0 && registeredAt != null && !Number.isNaN(registeredAt.getTime()) && registeredAt.getTime() >= newCutoff;
-        const status: AdminResidentRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
+        const status: AdminResidentVehicleRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
 
         return {
-          id: index + 1,
           uid: resident.uid,
           name: getAccountDisplayName(resident),
-          plateSummary: summarizePlateList(plateList),
-          vehicleCount,
           barangay: resident.barangay ?? "—",
-          vehicle: formatVehicleLabel((vehicles[0]?.type as string | undefined) ?? ""),
           remaining,
           used,
           quota,
@@ -1128,6 +1201,81 @@ export default function AdminDashboard({ onLogout }) {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [dashboardData.residents, residentUsageByUid]);
+
+  const RESIDENTS = useMemo<AdminResidentRow[]>(() => {
+    const newCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    return dashboardData.residents
+      .map((resident, residentIndex) => {
+        const residentName = getAccountDisplayName(resident);
+        const residentTxns = dashboardData.transactions.filter((tx) => tx.residentUid === resident.uid);
+        const vehicles = Array.isArray(resident.vehicles) ? resident.vehicles : [];
+        const rawPlateNormalizedList = (resident as { plateNormalizedList?: unknown }).plateNormalizedList;
+        const fallbackPlates = Array.isArray(rawPlateNormalizedList)
+          ? rawPlateNormalizedList
+              .map((plate) => (typeof plate === "string" ? normalizePlateDisplay(plate) : ""))
+              .filter(Boolean)
+          : [];
+        const rows = vehicles.length > 0
+          ? vehicles.map((vehicle, vehicleIndex) => ({
+              id: `${resident.uid}-${vehicleIndex}-${normalizePlateDisplay(vehicle?.plate)}`,
+              plate: normalizePlateDisplay(vehicle?.plate),
+              vehicle: formatVehicleLabel((vehicle?.type as string | undefined) ?? ""),
+              quota: vehicle?.fuelAllocated ?? WEEKLY_FUEL_LIMIT,
+              registeredAt: resident.registeredAt,
+            }))
+          : [{
+              id: `${resident.uid}-fallback-${residentIndex}`,
+              plate: fallbackPlates[0] ?? "—",
+              vehicle: "Unknown",
+              quota: resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT,
+              registeredAt: resident.registeredAt,
+            }];
+
+        const vehicleRows = rows.map((row) => {
+          const plateKey = normalizeText(row.plate);
+          const matchingTxns = plateKey && plateKey !== normalizeText("—")
+            ? residentTxns.filter((tx) => normalizeText(tx.plate) === plateKey)
+            : residentTxns;
+          const used = Math.round(matchingTxns.reduce((sum, tx) => sum + tx.liters, 0) * 10) / 10;
+          const totalSpent = matchingTxns.reduce((sum, tx) => sum + tx.liters * tx.pricePerLiter, 0);
+          const avgFill = matchingTxns.length > 0
+            ? matchingTxns.reduce((sum, tx) => sum + tx.liters, 0) / matchingTxns.length
+            : 0;
+          const remaining = Math.max(row.quota - used, 0);
+          const registeredAt = row.registeredAt ? new Date(row.registeredAt) : null;
+          const isNew = used === 0 && registeredAt != null && !Number.isNaN(registeredAt.getTime()) && registeredAt.getTime() >= newCutoff;
+          const status: AdminResidentVehicleRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
+
+          return {
+            id: row.id,
+            plate: row.plate,
+            vehicle: row.vehicle,
+            remaining,
+            used,
+            quota: row.quota,
+            status,
+            totalSpent,
+            avgFill,
+          };
+        });
+
+        return {
+          id: resident.uid,
+          uid: resident.uid,
+          name: residentName,
+          barangay: resident.barangay ?? "—",
+          vehicles: vehicleRows,
+          vehicleCount: vehicleRows.length,
+          searchIndex: [
+            residentName,
+            resident.barangay ?? "",
+            ...vehicleRows.flatMap((vehicle) => [vehicle.plate, vehicle.vehicle]),
+          ].join(" ").toLowerCase(),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboardData.residents, dashboardData.transactions]);
 
   /** Count every registered vehicle (multi-vehicle residents contribute to multiple buckets). Matches Analytics “Vehicle Distribution”. */
   const vehicleCategoryInstanceCounts = useMemo(() => {
@@ -1289,9 +1437,9 @@ export default function AdminDashboard({ onLogout }) {
     return Math.round(total * 10) / 10;
   }, [dashboardData.stationDirectory]);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
-  const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
-  const weeklyQuota     = RESIDENTS.reduce((s, r) => s + r.quota, 0);
-  const totalUsed       = RESIDENTS.reduce((s, r) => s + r.used, 0);
+  const maxedResidents  = RESIDENT_SUMMARY.filter(r => r.status === "Maxed").length;
+  const weeklyQuota     = RESIDENT_SUMMARY.reduce((s, r) => s + r.quota, 0);
+  const totalUsed       = RESIDENT_SUMMARY.reduce((s, r) => s + r.used, 0);
   const totalStationCapacity = ALLOCATION_STATIONS.reduce((sum, station) => sum + station.capacity, 0);
   const stationFuelDispensedThisWeek = ALLOCATION_STATIONS.reduce((sum, station) => sum + station.dispensed, 0);
   const totalRemainingStationFuel = remainingStationSupplyLiters;
@@ -1374,7 +1522,7 @@ export default function AdminDashboard({ onLogout }) {
       }
     }
 
-    // Compute percentile thresholds for color gradient (33rd / 66th of current dataset)
+    // Compute relative thresholds for color gradient from the current week's max dispensed liters.
     // IMPORTANT: `STATIONS` rows are derived from `stationDirectory` docs.
     // Their `id` is a stable numeric UI id, NOT the Firestore directory doc id.
     // Use the directory doc id (embedded in `uid: "directory:<docId>"`) for lookups.
@@ -1382,24 +1530,10 @@ export default function AdminDashboard({ onLogout }) {
       const raw = typeof s.uid === "string" ? s.uid : "";
       return raw.startsWith("directory:") ? raw.slice("directory:".length) : String(s.id);
     };
-    const txCounts = STATIONS.map((s) => {
-      const dId = dirId(s);
-      const linked = dashboardData.stations.filter(
-        (a) => a.stationDirectoryId === dId || a.uid === dId,
-      );
-      const entry =
-        linked.map((a) => heatmapByUid.get(a.uid)).find(Boolean)
-        ?? heatmapByUid.get(dId)
-        ?? heatmapByName.get(heatKey(s.brand, s.name));
-      return entry?.txCount ?? 0;
-    });
-    const maxTx = Math.max(...txCounts, 1);
-    const lowThreshold = maxTx * 0.33;
-    const midThreshold = maxTx * 0.66;
 
-    const getHeatColor = (txCount: number): string => {
-      if (txCount >= midThreshold) return "#ef4444"; // red-500   → High
-      if (txCount >= lowThreshold) return "#facc15"; // yellow-400 → Mid
+    const getHeatColor = (liters: number): string => {
+      if (liters >= heatmapIntensity.midThreshold) return "#ef4444"; // red-500   → High
+      if (liters >= heatmapIntensity.lowThreshold) return "#facc15"; // yellow-400 → Mid
       return "#2563eb";                              // blue-600  → Low
     };
 
@@ -1449,10 +1583,9 @@ export default function AdminDashboard({ onLogout }) {
           </div>
         </div>`;
 
-      // Radius = liters dispensed this week (volume signal)
+      // Radius + color = liters dispensed this week (primary intensity signal)
       const radius = Math.max(8, Math.min(22, (heatLiters / 5000) * 8 + 8));
-      // Color = transaction count this week (demand signal)
-      const fillColor = getHeatColor(txCount);
+      const fillColor = getHeatColor(heatLiters);
       const circle = L.circleMarker([s.lat, s.lng], {
         radius,
         color: "#ffffff",
@@ -1467,7 +1600,7 @@ export default function AdminDashboard({ onLogout }) {
     });
 
     mapMarkersRef.current = markers;
-  }, [BRAND_PRICES, STATIONS, activePage, heatmapData, dashboardData.stations]);
+  }, [BRAND_PRICES, STATIONS, activePage, heatmapData, dashboardData.stations, heatmapIntensity.lowThreshold, heatmapIntensity.midThreshold]);
 
   /* ── Tear down map when leaving map pages ── */
   useEffect(() => {
@@ -1627,7 +1760,7 @@ export default function AdminDashboard({ onLogout }) {
 
               {/* ── 5 Stat cards ── */}
               <div className="grid grid-cols-5 gap-4">
-                <StatCard icon="groups"                label="Total Residents"    value={RESIDENTS.length}                         sub={`${maxedResidents} maxed quota`}                iconVariant="navy"   />
+                <StatCard icon="groups"                label="Total Residents"    value={RESIDENT_SUMMARY.length}                 sub={`${maxedResidents} maxed quota`}                iconVariant="navy"   />
                 <StatCard icon="store"                 label="Active Stations"    value={`${onlineStations} / ${STATIONS.length}`} sub={`${STATIONS.length - onlineStations} offline`}  iconVariant="green"  />
                 <StatCard icon="local_fire_department" label="Total Dispensed"    value={`${totalDispensed.toLocaleString(undefined, { maximumFractionDigits: 4 })} L`}   sub={weekGrowthPct === null ? "New this week" : weekGrowthPct === 0 ? "Same as last week" : `${weekGrowthPct > 0 ? "+" : ""}${weekGrowthPct}% vs last week`} iconVariant="orange" />
                 <StatCard icon="bar_chart"             label="Quota Utilization"  value={`${utilizationPct}% Used`}                sub={`${(weeklyQuota - totalUsed).toLocaleString(undefined, { maximumFractionDigits: 4 })} L remaining`} iconVariant="purple" />
@@ -1645,13 +1778,60 @@ export default function AdminDashboard({ onLogout }) {
                     <div className="px-5 pt-4 pb-2 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-black text-[#003366]">Station Heatmap</p>
-                        <p className="text-xs text-slate-400">Fuel dispensing intensity across Cebu City</p>
+                        <p className="text-xs text-slate-400">
+                          Fuel dispensing intensity across Cebu City · current weekly max {formatLitersQuantity(heatmapIntensity.maxLiters)} L dispensed
+                        </p>
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
-                        <span className="text-[10px] text-slate-400 font-bold mr-1">Fuel Dispensing Intensity Legend: </span>
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> <span>Low</span>
-                        <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block ml-1.5" /> <span>Mid</span>
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ml-1.5" /> <span>High</span>
+                        <span className="text-[10px] text-slate-400 font-bold mr-1">Relative weekly liters:</span>
+                        <div className="relative group/heat-low">
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 outline-none"
+                            aria-label={`Low activity range: ${heatmapIntensity.lowLabel}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                            <span>Low</span>
+                          </button>
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-low:opacity-100 group-focus-within/heat-low:opacity-100"
+                          >
+                            {heatmapIntensity.lowLabel}
+                          </div>
+                        </div>
+                        <div className="relative group/heat-mid ml-1.5">
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 outline-none"
+                            aria-label={`Mid activity range: ${heatmapIntensity.midLabel}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" />
+                            <span>Mid</span>
+                          </button>
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-mid:opacity-100 group-focus-within/heat-mid:opacity-100"
+                          >
+                            {heatmapIntensity.midLabel}
+                          </div>
+                        </div>
+                        <div className="relative group/heat-high ml-1.5">
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 outline-none"
+                            aria-label={`High activity range: ${heatmapIntensity.highLabel}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+                            <span>High</span>
+                          </button>
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-high:opacity-100 group-focus-within/heat-high:opacity-100"
+                          >
+                            {heatmapIntensity.highLabel}
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div ref={mapRef} className="h-[280px]" />
@@ -1930,15 +2110,15 @@ export default function AdminDashboard({ onLogout }) {
                     <p className="text-sm font-black text-[#003366]">Station Heatmap · Cebu City</p>
                     <p className="text-xs text-slate-400">
                       {heatmapLastFetched
-                        ? `Updated ${heatmapLastFetched.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })} · Color = transactions this week`
-                        : "Click a station marker for dispensing details"}
+                        ? `Update as of ${heatmapLastFetched.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })} · peak this week ${formatLitersQuantity(heatmapIntensity.maxLiters)} L`
+                        : `Click a station marker for weekly liters and transaction details · peak this week ${formatLitersQuantity(heatmapIntensity.maxLiters)} L`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500">
-                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Demand:</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Low</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Mid</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> High</span>
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Weekly liters:</span>
+                    <span className="flex items-center gap-1" title={heatmapIntensity.lowLabel}><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Low</span>
+                    <span className="flex items-center gap-1" title={heatmapIntensity.midLabel}><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Mid</span>
+                    <span className="flex items-center gap-1" title={heatmapIntensity.highLabel}><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> High</span>
                   </div>
                 </div>
 
@@ -1982,8 +2162,8 @@ export default function AdminDashboard({ onLogout }) {
                   </p>
                   <p className="text-white/50 text-xs mt-1">
                     {heatmapFilter === "All"
-                      ? `${STATIONS.length} stations total`
-                      : `${STATIONS.filter(s => s.brand === heatmapFilter).length} stations`}
+                      ? `${STATIONS.length} stations · ${heatmapIntensity.maxTx.toLocaleString()} transaction${heatmapIntensity.maxTx !== 1 ? "s" : ""} supporting this week`
+                      : `${STATIONS.filter(s => s.brand === heatmapFilter).length} stations · ${(heatmapBrandTxCounts.get(heatmapFilter) ?? 0).toLocaleString()} transaction${(heatmapBrandTxCounts.get(heatmapFilter) ?? 0) !== 1 ? "s" : ""}`}
                   </p>
                 </div>
 
@@ -2010,11 +2190,11 @@ export default function AdminDashboard({ onLogout }) {
                       <p className={`text-xl font-black leading-none brand-text-${bk}`}>
                         {(brandTotal / 1000).toFixed(1)}k L
                       </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5 mb-2">{brandTotal.toLocaleString()} liters dispensed</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 mb-2">{brandTotal.toLocaleString()} liters dispensed this week</p>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-1">{pct}% of total dispensed</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{pct}% of total dispensed · {heatmapIntensity.maxLiters > 0 ? Math.round((brandTotal / heatmapIntensity.maxLiters) * 100) : 0}% of current peak station</p>
 
                       {/* Individual stations */}
                       <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-2">
@@ -2153,8 +2333,8 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
                             <td className="px-5 py-3">
                               <div>
-                                <p className="font-mono text-xs text-slate-600">{r.plateSummary}</p>
-                                <p className="text-[10px] text-slate-400">{r.vehicleCount} vehicle{r.vehicleCount === 1 ? "" : "s"} · {formatLitersQuantity(r.quota)} L total quota</p>
+                                <p className="font-mono text-xs text-slate-600">{r.plate}</p>
+                                <p className="text-[10px] text-slate-400">{r.vehicle} · {formatLitersQuantity(r.quota)} L quota</p>
                               </div>
                             </td>
                             <td className="px-5 py-3 text-xs text-slate-500">{r.barangay}</td>
@@ -2179,7 +2359,7 @@ export default function AdminDashboard({ onLogout }) {
                       })}
                     </tbody>
                   </table>
-                  <PaginationBar page={allocResidentPage} totalPages={Math.ceil(RESIDENTS.length / ALLOC_PER_PAGE)} onPage={setAllocResidentPage} />
+                  <PaginationBar page={allocResidentPage} totalPages={Math.ceil(RESIDENT_SUMMARY.length / ALLOC_PER_PAGE)} onPage={setAllocResidentPage} />
                 </div>
 
             </div>
@@ -2190,12 +2370,7 @@ export default function AdminDashboard({ onLogout }) {
           {activePage === "residents" && (() => {
             const q = residentSearch.trim().toLowerCase();
             const filtered = q
-              ? RESIDENTS.filter(r =>
-                  r.name.toLowerCase().includes(q) ||
-                  r.plateSummary.toLowerCase().includes(q) ||
-                  r.barangay.toLowerCase().includes(q) ||
-                  r.vehicle.toLowerCase().includes(q)
-                )
+              ? RESIDENTS.filter(r => r.searchIndex.includes(q))
               : RESIDENTS;
             const totalPages = Math.ceil(filtered.length / RESIDENTS_PER_PAGE);
             const safePage   = Math.min(residentPage, totalPages || 1);
@@ -2206,10 +2381,10 @@ export default function AdminDashboard({ onLogout }) {
               {/* Status cards */}
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: "Total",  value: RESIDENTS.length,                                    colorClass: "text-[#003366]" },
-                  { label: "Active", value: RESIDENTS.filter(r => r.status === "Active").length, colorClass: "text-[#1565c0]" },
+                  { label: "Total",  value: RESIDENT_SUMMARY.length,                              colorClass: "text-[#003366]" },
+                  { label: "Active", value: RESIDENT_SUMMARY.filter(r => r.status === "Active").length, colorClass: "text-[#1565c0]" },
                   { label: "Maxed",  value: maxedResidents,                                       colorClass: "text-[#c62828]" },
-                  { label: "New",    value: RESIDENTS.filter(r => r.status === "New").length,    colorClass: "text-[#2e7d32]" },
+                  { label: "New",    value: RESIDENT_SUMMARY.filter(r => r.status === "New").length, colorClass: "text-[#2e7d32]" },
                 ].map(c => (
                   <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center">
                     <p className={`text-3xl font-black font-headline ${c.colorClass}`}>{c.value}</p>
@@ -2240,7 +2415,7 @@ export default function AdminDashboard({ onLogout }) {
                   <div>
                     <p className="text-sm font-black text-[#003366]">Resident Accounts</p>
                     <p className="text-xs text-slate-400">
-                      {q ? `${filtered.length} result${filtered.length !== 1 ? "s" : ""} for "${residentSearch}"` : `${RESIDENTS.length} registered residents`}
+                      {q ? `${filtered.length} resident account${filtered.length !== 1 ? "s" : ""} for "${residentSearch}"` : `${RESIDENT_SUMMARY.length} registered residents`}
                     </p>
                   </div>
                   <div className="relative">
@@ -2279,35 +2454,61 @@ export default function AdminDashboard({ onLogout }) {
                   <tbody>
                     {pageSlice.length === 0 ? (
                       <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No residents found.</td></tr>
-                    ) : pageSlice.map((r, i) => {
-                      const pct        = Math.round((r.used / r.quota) * 100);
+                    ) : pageSlice.flatMap((r, i) => {
+                      const selectedVehicle = r.vehicles.find((vehicle) => vehicle.id === residentVehicleSelection[r.id]) ?? r.vehicles[0];
+                      const pct        = selectedVehicle.quota > 0 ? Math.round((selectedVehicle.used / selectedVehicle.quota) * 100) : 0;
                       const barFill    = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
-                      const rTxns      = RECENT_TXN.filter(t => t.resident === r.name);
-                      const totalSpent = rTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                      const avgFill    = rTxns.length ? rTxns.reduce((a, t) => a + t.liters, 0) / rTxns.length : 0;
-                      return (
-                        <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
-                          <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
-                          <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{r.plateSummary}</td>
+                      const isExpanded = expandedResidents.has(r.id);
+
+                      return [
+                        // Main row — clickable to expand (only if multiple vehicles)
+                        <tr
+                          key={`main-${r.id}`}
+                          onClick={() => {
+                            if (r.vehicleCount > 1) {
+                              setExpandedResidents(prev => {
+                                const next = new Set(prev);
+                                if (next.has(r.id)) {
+                                  next.delete(r.id);
+                                } else {
+                                  next.add(r.id);
+                                }
+                                return next;
+                              });
+                            }
+                          }}
+                          className={`${r.vehicleCount > 1 ? "cursor-pointer transition-colors hover:bg-slate-100" : ""} ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                        >
+                          <td className="px-5 py-3 font-bold text-slate-800">
+                            <div className="flex items-center gap-2 h-6">
+                              <span className="w-6 flex items-center justify-center">
+                                {r.vehicleCount > 1 && (
+                                  <span className={`material-symbols-outlined text-[18px] text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}>chevron_right</span>
+                                )}
+                              </span>
+                              <span>{r.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{selectedVehicle.plate}</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-1.5">
-                              <span className={`material-symbols-outlined text-[14px] ${r.vehicle === "Car" ? "text-blue-500" : r.vehicle === "Motorcycle" ? "text-purple-500" : "text-orange-500"}`}>
-                                {r.vehicle === "Car" ? "directions_car" : r.vehicle === "Motorcycle" ? "two_wheeler" : "local_shipping"}
+                              <span className={`material-symbols-outlined text-[14px] ${selectedVehicle.vehicle === "4 Wheelers" ? "text-blue-500" : selectedVehicle.vehicle === "2 Wheelers" ? "text-purple-500" : "text-orange-500"}`}>
+                                {selectedVehicle.vehicle === "4 Wheelers" ? "directions_car" : selectedVehicle.vehicle === "2 Wheelers" ? "two_wheeler" : "local_shipping"}
                               </span>
-                              <span className="text-xs text-slate-500">{r.vehicle}</span>
+                              <span className="text-xs text-slate-500">{selectedVehicle.vehicle}</span>
                             </div>
                           </td>
                           <td className="px-5 py-3 text-xs text-slate-500">{r.barangay}</td>
                           <td className="px-5 py-3">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(selectedVehicle.status)}`}>{selectedVehicle.status}</span>
                           </td>
-                          <td className="px-5 py-3 text-right font-bold text-[#003366]">{formatLitersQuantity(r.used)} L</td>
-                          <td className="px-5 py-3 text-right font-bold text-green-700">{formatLitersQuantity(r.remaining)} L</td>
+                          <td className="px-5 py-3 text-right font-bold text-[#003366]">{formatLitersQuantity(selectedVehicle.used)} L</td>
+                          <td className="px-5 py-3 text-right font-bold text-green-700">{formatLitersQuantity(selectedVehicle.remaining)} L</td>
                           <td className="px-5 py-3 text-right font-black text-green-700">
-                            {totalSpent > 0 ? `₱${totalSpent.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}` : <span className="text-slate-300">—</span>}
+                            {selectedVehicle.totalSpent > 0 ? `₱${selectedVehicle.totalSpent.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}` : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-500">
-                            {avgFill > 0 ? `${formatLitersQuantity(avgFill)} L` : <span className="text-slate-300">—</span>}
+                            {selectedVehicle.avgFill > 0 ? `${formatLitersQuantity(selectedVehicle.avgFill)} L` : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
@@ -2317,8 +2518,58 @@ export default function AdminDashboard({ onLogout }) {
                               <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
                             </div>
                           </td>
-                        </tr>
-                      );
+                        </tr>,
+                        // Expanded vehicle detail rows
+                        ...(isExpanded && r.vehicleCount > 1
+                          ? r.vehicles.map((v, vIdx) => {
+                              const vPct = v.quota > 0 ? Math.round((v.used / v.quota) * 100) : 0;
+                              const vBarFill = vPct >= 100 ? "bar-fill-danger" : vPct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
+                              const isSelected = v.id === selectedVehicle.id;
+                              const expandRowBg = i % 2 === 0 ? "bg-blue-50" : "bg-blue-50/60";
+                              return (
+                                <tr
+                                  key={`expand-${r.id}-${v.id}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setResidentVehicleSelection(prev => ({ ...prev, [r.id]: v.id }));
+                                  }}
+                                  className={`cursor-pointer transition-colors hover:bg-blue-100 border-l-4 ${isSelected ? "border-l-blue-500 " : "border-l-transparent "} ${expandRowBg}`}
+                                >
+                                  <td className="px-5 py-2.5 font-mono text-xs text-slate-600 tracking-wider"><div className="w-6" /></td>
+                                  <td className="px-5 py-2.5 font-mono text-xs text-slate-600 tracking-wider">{v.plate}</td>
+                                  <td className="px-5 py-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`material-symbols-outlined text-[14px] ${v.vehicle === "4 Wheelers" ? "text-blue-500" : v.vehicle === "2 Wheelers" ? "text-purple-500" : "text-orange-500"}`}>
+                                        {v.vehicle === "4 Wheelers" ? "directions_car" : v.vehicle === "2 Wheelers" ? "two_wheeler" : "local_shipping"}
+                                      </span>
+                                      <span className="text-xs text-slate-500">{v.vehicle}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-2.5 text-xs text-slate-500" />
+                                  <td className="px-5 py-2.5">
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(v.status)}`}>{v.status}</span>
+                                  </td>
+                                  <td className="px-5 py-2.5 text-right font-bold text-[#003366] text-xs">{formatLitersQuantity(v.used)} L</td>
+                                  <td className="px-5 py-2.5 text-right font-bold text-green-700 text-xs">{formatLitersQuantity(v.remaining)} L</td>
+                                  <td className="px-5 py-2.5 text-right font-black text-green-700 text-xs">
+                                    {v.totalSpent > 0 ? `₱${v.totalSpent.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2})}` : <span className="text-slate-300">—</span>}
+                                  </td>
+                                  <td className="px-5 py-2.5 text-right text-xs text-slate-500">
+                                    {v.avgFill > 0 ? `${formatLitersQuantity(v.avgFill)} L` : <span className="text-slate-300">—</span>}
+                                  </td>
+                                  <td className="px-5 py-2.5">
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${vBarFill}`} ref={(el) => { if (el) el.style.width = `${vPct}%`; }} />
+                                      </div>
+                                      <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{vPct}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          : [])
+                      ];
                     })}
                   </tbody>
                 </table>

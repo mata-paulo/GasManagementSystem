@@ -832,15 +832,32 @@ function stationFuelPricesToBrandPrices(
 const STATION_ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
 const QR_EXCEL_EPOCH = new Date(1899, 11, 30).getTime();
 
+export function resolveStationPresenceStatus(
+  account: Pick<Partial<StationAccount>, "presenceStatus" | "status" | "lastSeenAt">,
+): "online" | "offline" {
+  const primaryStatus = account.presenceStatus?.trim().toLowerCase();
+  if (primaryStatus === "online" || primaryStatus === "offline") {
+    return primaryStatus;
+  }
+
+  const fallbackStatus = account.status?.trim().toLowerCase();
+  if (fallbackStatus === "online" || fallbackStatus === "offline") {
+    return fallbackStatus;
+  }
+
+  const lastSeenAt = toDate(account.lastSeenAt);
+  if (lastSeenAt && Date.now() - lastSeenAt.getTime() > STATION_ONLINE_THRESHOLD_MS) {
+    return "offline";
+  }
+
+  return "online";
+}
+
 export function isStationUserOnline(account: Partial<StationAccount>): boolean {
   if (account.role !== "station") return false;
   if ((account.assignmentStatus ?? "active") !== "active") return false;
 
-  // presenceStatus is the single source of truth (set manually by the officer).
-  // Treat undefined (not yet set) as online — station is online until explicitly offline.
-  const ps = account.presenceStatus?.toLowerCase();
-  if (ps === "offline") return false;
-  return true;
+  return resolveStationPresenceStatus(account) === "online";
 }
 
 function sortTransactions(items: DispenseTransaction[]): DispenseTransaction[] {
@@ -1289,7 +1306,11 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
       lon: asNumber(account.lon) ?? record.lon,
       barangay: account.barangay ?? record.barangay,
       officer: officerName,
-      status: account.presenceStatus ?? record.status,
+      status: resolveStationPresenceStatus({
+        presenceStatus: account.presenceStatus,
+        status: account.status ?? record.status,
+        lastSeenAt: account.lastSeenAt,
+      }),
       capacity:
         Object.values(account.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0) || record.capacity,
       brandPrices: liveBrandPrices.length > 0 ? liveBrandPrices : record.brandPrices,
@@ -1312,7 +1333,7 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
         brand: account.brand,
         stationCode: account.stationCode,
         barangay: account.barangay,
-        status: account.presenceStatus,
+        status: resolveStationPresenceStatus(account),
       };
       return {
         id: item.id,
@@ -1328,7 +1349,7 @@ export async function fetchStationDirectory(): Promise<StationDirectoryRecord[]>
         barangay: data.barangay as string | undefined,
         officer: officerName,
         capacity: Object.values(account.fuelCapacities ?? {}).reduce((sum, value) => sum + value, 0) || undefined,
-        status: account.presenceStatus ?? "online",
+        status: data.status,
       } satisfies StationDirectoryRecord;
     })
     .filter((r) => r !== null) as StationDirectoryRecord[];
@@ -1645,6 +1666,7 @@ export async function setStationPresenceStatus(
     doc(db, "accounts", uid),
     {
       presenceStatus: status,
+      status,
       lastSeenAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },

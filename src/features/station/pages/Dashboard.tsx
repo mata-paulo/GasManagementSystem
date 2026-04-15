@@ -3,6 +3,7 @@ import BottomNav from "@/shared/components/navigation/BottomNav";
 import {
   fetchStationTransactions,
   getStationDirectoryIdDisplayPrefix,
+  resolveStationPresenceStatus,
   setStationPresenceStatus,
   type DispenseTransaction,
   type StationAccount,
@@ -127,7 +128,7 @@ export default function Dashboard({
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [stationStatus, setStationStatus] = useState<"online" | "offline">(
-    (officer?.presenceStatus?.toLowerCase() === "online" || officer?.presenceStatus == null) ? "online" : "offline",
+    resolveStationPresenceStatus(officer ?? {}),
   );
 
   useEffect(() => {
@@ -143,9 +144,9 @@ export default function Dashboard({
 
   useEffect(() => {
     setStationStatus(
-      (officer?.presenceStatus?.toLowerCase() === "online" || officer?.presenceStatus == null) ? "online" : "offline",
+      resolveStationPresenceStatus(officer ?? {}),
     );
-  }, [officer?.presenceStatus]);
+  }, [officer]);
 
   useEffect(() => {
     const stationUid = officer?.uid;
