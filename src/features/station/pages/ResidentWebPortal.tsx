@@ -98,7 +98,7 @@ function toPortalTransaction(transaction) {
 
 function mapDirectoryStation(station: StationDirectoryRecord) {
   return {
-    id: Number.parseInt(station.id, 10) || station.sourceId,
+    id: station.id,
     name: station.name,
     brand: normalizeBrand(station.brand),
     barangay: station.barangay || station.address || "Not set",
@@ -143,9 +143,9 @@ export default function ResidentWebPortal({ resident, onLogout, onChangePassword
   const [portalMessage, setPortalMessage]       = useState("");
   const mapRef                          = useRef<HTMLDivElement>(null);
   const mapInst                         = useRef<L.Map | null>(null);
-  const markerEls                       = useRef<Record<number, HTMLElement>>({});
+  const markerEls                       = useRef<Record<string, HTMLElement>>({});
   const stationListRef                  = useRef<HTMLDivElement>(null);
-  const stationRowRefs                  = useRef<Record<number, HTMLElement | null>>({});
+  const stationRowRefs                  = useRef<Record<string, HTMLElement | null>>({});
   const qrRef                           = useRef<HTMLDivElement>(null);
   const qrIdentityDownloadRef           = useRef<HTMLDivElement>(null);
 

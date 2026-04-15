@@ -41,6 +41,13 @@ function stationTabToScreen(tab: StationNavId): "dashboard" | "history" | "setti
   return "dashboard";
 }
 
+function residentTabToScreen(tab: string): "user-dashboard" | "user-history" | "map" | "user-settings" {
+  if (tab === "user-history") return "user-history";
+  if (tab === "map") return "map";
+  if (tab === "settings") return "user-settings";
+  return "user-dashboard";
+}
+
 // ─── Splash shown while restoring session from localStorage ──────────────────
 function SplashScreen() {
   return (
@@ -131,13 +138,16 @@ export default function App() {
     const handleResize = () => {
       setScreen((prev) => {
         if (!RESIDENT_SCREENS.has(prev)) return prev;
-        return isDesktop() ? "resident-web" : "user-dashboard";
+        if (prev === "qr-display") return prev;
+        if (isDesktop()) return "resident-web";
+        if (prev === "resident-web") return residentTabToScreen(activeTab);
+        return prev;
       });
     };
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [auth.role, auth.isAuthenticated]);
+  }, [activeTab, auth.role, auth.isAuthenticated]);
 
   // Once auth state is restored, route to the correct portal
   useEffect(() => {
@@ -290,8 +300,9 @@ export default function App() {
       }
     } else if (role === "resident") {
       setResident(user);
-      setScreen(isDesktop() ? "resident-web" : "user-dashboard");
-      setActiveTab("dashboard");
+      const nextTab = "dashboard";
+      setActiveTab(nextTab);
+      setScreen(isDesktop() ? "resident-web" : residentTabToScreen(nextTab));
     } else if (role === "admin") {
       setScreen("admin");
     }
@@ -301,8 +312,9 @@ export default function App() {
   const handleResidentRegisterSuccess = (residentData) => {
     setResident(residentData);
     login(residentData, "resident");
-    setScreen(window.innerWidth >= 1024 ? "resident-web" : "user-dashboard");
-    setActiveTab("dashboard");
+    const nextTab = "dashboard";
+    setActiveTab(nextTab);
+    setScreen(window.innerWidth >= 1024 ? "resident-web" : residentTabToScreen(nextTab));
   };
 
   const handleStationRegisterSuccess = async (stationData) => {
