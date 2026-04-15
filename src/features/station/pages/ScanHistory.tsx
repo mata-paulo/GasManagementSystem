@@ -3,6 +3,7 @@ import BottomNav from "@/shared/components/navigation/BottomNav";
 import StationDesktopSidebar from "@/shared/components/navigation/StationDesktopSidebar";
 import {
   fetchStationTransactions,
+  getStationDirectoryIdDisplayPrefix,
   type DispenseTransaction,
   type StationAccount,
 } from "@/lib/data/agas";
@@ -145,7 +146,7 @@ export default function ScanHistory({
 
   const officerName = officer?.officerFirstName || officer?.firstName || "Officer";
   const brand = officer?.brand || "Station";
-  const stationCode = officer?.stationCode || "N/A";
+  const stationDirectoryShortId = getStationDirectoryIdDisplayPrefix(officer);
 
   useEffect(() => {
     if (!officer?.uid) {
@@ -250,7 +251,7 @@ export default function ScanHistory({
             <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
               <div className="text-right">
                 <p className="text-sm font-bold text-[#003366]">{officerName}</p>
-                <p className="text-[10px] text-slate-400">ID: {stationCode}</p>
+                <p className="text-[10px] text-slate-400">ID: {stationDirectoryShortId}</p>
               </div>
               <div className="w-9 h-9 rounded-full bg-[#003366] flex items-center justify-center shrink-0">
                 <span className="text-white font-black text-sm">{officerName[0]?.toUpperCase() ?? "O"}</span>

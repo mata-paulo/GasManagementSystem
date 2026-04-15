@@ -128,20 +128,59 @@ const brandKey = (brand: string) => brand.toLowerCase().replace(/\s/g, "");
 
 type AdminStationRow = {
   id: number;
+  stationId: string;
   uid: string;
   name: string;
   brand: string;
   barangay: string;
   officer: string;
   capacity: number;
+  currentCapacity: number;
   dispensed: number;
   lat: number;
   lng: number;
   status: "Online" | "Offline";
   userCount: number;
   fuelCapacities: Record<string, number>;
+  fuelInventory: Record<string, number>;
+  fuelDispensed: Record<string, number>;
   priceEntries: Array<{ label: string; price: number }>;
 };
+
+function getRemainingFuelPercent(remaining: number, capacity: number): number {
+  if (capacity <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((remaining / capacity) * 100)));
+}
+
+function getRemainingFuelTone(remainingPct: number): {
+  fill: string;
+  track: string;
+  text: string;
+  badge: string;
+} {
+  if (remainingPct <= 20) {
+    return {
+      fill: "bg-red-500",
+      track: "bg-red-100",
+      text: "text-red-700",
+      badge: "bg-red-100 text-red-700",
+    };
+  }
+  if (remainingPct <= 40) {
+    return {
+      fill: "bg-amber-400",
+      track: "bg-amber-100",
+      text: "text-amber-700",
+      badge: "bg-amber-100 text-amber-700",
+    };
+  }
+  return {
+    fill: "bg-emerald-500",
+    track: "bg-emerald-100",
+    text: "text-emerald-700",
+    badge: "bg-emerald-100 text-emerald-700",
+  };
+}
 
 type StationUserRow = {
   uid: string;
@@ -171,11 +210,13 @@ type AdminResidentRow = {
   id: number;
   uid: string;
   name: string;
-  plate: string;
+  plateSummary: string;
+  vehicleCount: number;
   barangay: string;
   vehicle: string;
   remaining: number;
   used: number;
+  quota: number;
   status: "Active" | "Maxed" | "New";
 };
 
@@ -218,6 +259,24 @@ function formatVehicleLabel(value: string | null | undefined): string {
   if (normalized === "4w" || normalized === "car") return "4 Wheelers";
   if (normalized === "others" || normalized === "truck") return "Others";
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown";
+}
+
+function normalizePlateDisplay(value: string | null | undefined): string {
+  const normalized = (value ?? "").trim().toUpperCase();
+  return normalized || "—";
+}
+
+function summarizePlateList(plates: string[]): string {
+  if (plates.length === 0) return "—";
+  return plates[0];
+}
+
+/** Buckets transaction `vehicleType` like resident analytics (2W / 4W / Other). */
+function vehicleClassDispensedKey(vehicleType: string | undefined): "2W" | "4W" | "Other" {
+  const lab = formatVehicleLabel(vehicleType);
+  if (lab === "2 Wheelers") return "2W";
+  if (lab === "4 Wheelers") return "4W";
+  return "Other";
 }
 
 function formatTransactionType(value: string | null | undefined): string {
@@ -504,6 +563,7 @@ function directoryRowStableNumericId(directoryId: string, sourceId?: number): nu
 
 export default function AdminDashboard({ onLogout }) {
   const [activePage, setActivePage] = useState(() => getAdminPageFromPath(window.location.pathname));
+  const [activeTrendPointIndex, setActiveTrendPointIndex] = useState<number | null>(null);
   const [stationFilter, setStationFilter] = useState("All");
   const [heatmapFilter, setHeatmapFilter] = useState("All");
   const [residentSearch, setResidentSearch] = useState("");
@@ -680,6 +740,21 @@ export default function AdminDashboard({ onLogout }) {
     return m;
   }, [currentWeekKey, dashboardData.transactions]);
 
+  /** This week’s dispensed liters by vehicle class (share of `totalDispensed` — not quota split). */
+  const vehicleClassWeeklyLiters = useMemo(() => {
+    const m = new Map<"2W" | "4W" | "Other", number>([
+      ["2W", 0],
+      ["4W", 0],
+      ["Other", 0],
+    ]);
+    for (const tx of dashboardData.transactions) {
+      if (tx.weekKey !== currentWeekKey) continue;
+      const k = vehicleClassDispensedKey(tx.vehicleType);
+      m.set(k, (m.get(k) ?? 0) + tx.liters);
+    }
+    return m;
+  }, [currentWeekKey, dashboardData.transactions]);
+
   const stationTransactionsByUid = useMemo(() => {
     return dashboardData.transactions.reduce<Map<string, AdminDashboardData["transactions"]>>((acc, tx) => {
       const current = acc.get(tx.stationUid) ?? [];
@@ -714,9 +789,18 @@ export default function AdminDashboard({ onLogout }) {
         const fuelCapacities = hasDirFuels
           ? Object.fromEntries(dirFuels.map((f) => [f.label, f.capacityLiters]))
           : {};
+        const fuelInventory = hasDirFuels
+          ? Object.fromEntries(dirFuels.map((f) => [f.label, Number(f.currentCapacity ?? 0)]))
+          : {};
+        const fuelDispensed = hasDirFuels
+          ? Object.fromEntries(dirFuels.map((f) => [f.label, Number(f.dispensed ?? 0)]))
+          : {};
         const capacity = hasDirFuels
           ? dirFuels.reduce((sum, f) => sum + f.capacityLiters, 0)
           : (directoryStation.capacity ?? 0);
+        const currentCapacity = hasDirFuels
+          ? dirFuels.reduce((sum, f) => sum + (Number(f.currentCapacity ?? 0) || 0), 0)
+          : capacity;
 
         let dispensedWeek = linked.reduce(
           (sum, a) => sum + (stationWeeklyDispensedByUid.get(a.uid) ?? 0),
@@ -748,18 +832,22 @@ export default function AdminDashboard({ onLogout }) {
 
         return {
           id: directoryRowStableNumericId(directoryStation.id, directoryStation.sourceId),
+          stationId: directoryStation.id,
           uid: `directory:${directoryStation.id}`,
           name: directoryStation.name,
           brand: normalizeBrand(directoryStation.brand),
           barangay: directoryStation.barangay ?? "Unknown",
           officer,
           capacity,
+          currentCapacity: Math.round(currentCapacity * 10) / 10,
           dispensed,
           lat: directoryStation.lat,
           lng: directoryStation.lon,
           status,
           userCount,
           fuelCapacities,
+          fuelInventory,
+          fuelDispensed,
           priceEntries: getStationRowPriceEntries(null, directoryStation),
         };
       })
@@ -1006,7 +1094,20 @@ export default function AdminDashboard({ onLogout }) {
     return dashboardData.residents
       .map((resident, index) => {
         const used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
-        const remaining = Math.max(WEEKLY_FUEL_LIMIT - used, 0);
+        const vehicles = Array.isArray(resident.vehicles) ? resident.vehicles : [];
+        const vehicleCount = vehicles.length;
+        const rawPlateNormalizedList = (resident as { plateNormalizedList?: unknown }).plateNormalizedList;
+        const plateList = Array.isArray(rawPlateNormalizedList)
+          ? rawPlateNormalizedList
+              .map((plate) => (typeof plate === "string" ? normalizePlateDisplay(plate) : ""))
+              .filter(Boolean)
+          : vehicles
+              .map((vehicle) => normalizePlateDisplay(vehicle?.plate))
+              .filter(Boolean);
+        const quota = vehicleCount > 0
+          ? vehicles.reduce((sum, v) => sum + (v.fuelAllocated ?? WEEKLY_FUEL_LIMIT), 0)
+          : (resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
+        const remaining = Math.max(quota - used, 0);
         const registeredAt = resident.registeredAt ? new Date(resident.registeredAt) : null;
         const isNew = used === 0 && registeredAt != null && !Number.isNaN(registeredAt.getTime()) && registeredAt.getTime() >= newCutoff;
         const status: AdminResidentRow["status"] = remaining <= 0 ? "Maxed" : isNew ? "New" : "Active";
@@ -1015,11 +1116,13 @@ export default function AdminDashboard({ onLogout }) {
           id: index + 1,
           uid: resident.uid,
           name: getAccountDisplayName(resident),
-          plate: resident.vehicles?.[0]?.plate ?? "—",
+          plateSummary: summarizePlateList(plateList),
+          vehicleCount,
           barangay: resident.barangay ?? "—",
-          vehicle: formatVehicleLabel((resident.vehicles?.[0]?.type as string | undefined) ?? ""),
+          vehicle: formatVehicleLabel((vehicles[0]?.type as string | undefined) ?? ""),
           remaining,
           used,
+          quota,
           status,
         };
       })
@@ -1187,8 +1290,13 @@ export default function AdminDashboard({ onLogout }) {
   }, [dashboardData.stationDirectory]);
   const onlineStations  = STATIONS.filter(s => s.status === "Online").length;
   const maxedResidents  = RESIDENTS.filter(r => r.status === "Maxed").length;
-  const weeklyQuota     = RESIDENTS.length * WEEKLY_FUEL_LIMIT;
+  const weeklyQuota     = RESIDENTS.reduce((s, r) => s + r.quota, 0);
   const totalUsed       = RESIDENTS.reduce((s, r) => s + r.used, 0);
+  const totalStationCapacity = ALLOCATION_STATIONS.reduce((sum, station) => sum + station.capacity, 0);
+  const stationFuelDispensedThisWeek = ALLOCATION_STATIONS.reduce((sum, station) => sum + station.dispensed, 0);
+  const totalRemainingStationFuel = remainingStationSupplyLiters;
+  const stationFuelRemainingPct = getRemainingFuelPercent(totalRemainingStationFuel, totalStationCapacity);
+  const totalVehicles   = vehicleCategoryInstanceCounts.wheel2 + vehicleCategoryInstanceCounts.wheel4 + vehicleCategoryInstanceCounts.other;
   const utilizationPct  = weeklyQuota > 0 ? Math.min(100, Math.round((totalUsed / weeklyQuota) * 100)) : 0;
   const headerDate = new Date().toLocaleDateString("en-PH", {
     month: "long",
@@ -1540,7 +1648,7 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-xs text-slate-400">Fuel dispensing intensity across Cebu City</p>
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
-                        <span className="text-[10px] text-slate-400 font-bold mr-1">Fuel Consumption Intensity</span>
+                        <span className="text-[10px] text-slate-400 font-bold mr-1">Fuel Dispensing Intensity Legend: </span>
                         <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> <span>Low</span>
                         <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block ml-1.5" /> <span>Mid</span>
                         <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ml-1.5" /> <span>High</span>
@@ -1596,44 +1704,84 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4">
                     <div>
                       <p className="text-sm font-black text-[#003366]">Weekly Allocation</p>
-                      <p className="text-xs text-slate-400">Quota consumed vs. remaining</p>
                     </div>
                     <div className="flex items-center gap-5">
-                      <div className="relative w-24 h-24 shrink-0">
-                        <svg viewBox="0 0 36 36" className="w-24 h-24 -rotate-90">
-                          <circle cx="18" cy="18" r="14" fill="none" stroke="#f1f5f9" strokeWidth="4" />
-                          <circle cx="18" cy="18" r="14" fill="none" stroke="#003366" strokeWidth="4"
-                            strokeDasharray={`${utilizationPct * 0.879} 87.9`} strokeLinecap="round" />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-lg font-black text-[#003366] leading-none">{utilizationPct}%</span>
-                          <span className="text-[9px] text-slate-400 font-bold">Used</span>
-                          <span className="text-[8px] text-slate-400">{weeklyQuota.toLocaleString(undefined, { maximumFractionDigits: 4 })} L</span>
-                          <span className="text-[8px] text-slate-400">Total Quota</span>
+                      <div className="relative shrink-0 group/donut flex flex-col items-center">
+                        <button
+                          type="button"
+                          className="relative w-24 h-24 rounded-full cursor-help outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-[#003366]/35 focus-visible:ring-offset-2"
+                          aria-label="Weekly quota usage — hover or focus for details"
+                          aria-describedby="weekly-allocation-donut-desc"
+                        >
+                          <span id="weekly-allocation-donut-desc" className="sr-only">
+                            {utilizationPct}% of resident weekly allocation used ({formatLitersQuantity(totalUsed)} L of {formatLitersQuantity(weeklyQuota)} L total quota).
+                          </span>
+                          <svg viewBox="0 0 36 36" className="w-24 h-24 -rotate-90" aria-hidden>
+                            <circle cx="18" cy="18" r="14" fill="none" stroke="#f1f5f9" strokeWidth="4" />
+                            <circle cx="18" cy="18" r="14" fill="none" stroke="#003366" strokeWidth="4"
+                              strokeDasharray={`${utilizationPct * 0.879} 87.9`} strokeLinecap="round" />
+                          </svg>
+                          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-lg font-black text-[#003366] leading-none">{utilizationPct}%</span>
+                            <span className="text-[9px] text-slate-400 font-bold">Used</span>
+                            <span className="text-[8px] text-slate-400">{weeklyQuota.toLocaleString(undefined, { maximumFractionDigits: 4 })} L</span>
+                            <span className="text-[8px] text-slate-400">Total Quota</span>
+                          </div>
+                        </button>
+                        <div
+                          role="tooltip"
+                          className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-left text-[11px] text-slate-600 shadow-lg opacity-0 transition-opacity duration-150 group-hover/donut:opacity-100 group-focus-within/donut:opacity-100"
+                        >
+                          <p className="font-headline font-bold text-[#003366] text-xs mb-1">Weekly quota usage</p>
+                          <p className="leading-snug text-slate-600">
+                            <span className="font-semibold text-slate-700">{formatLitersQuantity(totalUsed)} L</span>
+                            {" "}used of{" "}
+                            <span className="font-semibold text-slate-700">{formatLitersQuantity(weeklyQuota)} L</span>
+                            {" "}total weekly allocation across{" "}
+                            <span className="font-semibold text-slate-700">{totalVehicles}</span>
+                            {" "}vehicle{totalVehicles === 1 ? "" : "s"} ({RESIDENTS.length} resident{RESIDENTS.length === 1 ? "" : "s"})
+                            {" "}({utilizationPct}%).
+                          </p>
+                          <p className="mt-2 border-t border-slate-100 pt-2 text-[10px] leading-snug text-slate-500">
+                            This is resident allocation (default {WEEKLY_FUEL_LIMIT} L per vehicle per week). The colored bars show vehicle-class mix of fuel dispensed this week.
+                          </p>
                         </div>
                       </div>
-                      <div className="flex-1 space-y-2">
-                        {Object.entries(BRAND_COLORS).filter(([brand]) => {
-                          const tot = brandWeeklyLiters.get(brand) ?? 0;
-                          return tot > 0;
-                        }).map(([brand]) => {
-                          const tot = brandWeeklyLiters.get(brand) ?? 0;
-                          const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
-                          const bk  = brandKey(brand);
-                          return (
-                            <div key={brand}>
-                              <div className="flex justify-between text-[10px] font-bold mb-0.5">
-                                <span className={`brand-text-${bk} flex items-center gap-1`}>
-                                  <span className={`w-2 h-2 rounded-full inline-block brand-dot-${bk}`} />{brand}
-                                </span>
-                                <span className="text-slate-400">{(tot/1000).toFixed(1)}k L · {pct}%</span>
+                      <div className="flex-1 space-y-2 min-w-0">
+                        {(["2W", "4W", "Other"] as const)
+                          .filter((vc) => (vehicleClassWeeklyLiters.get(vc) ?? 0) > 0)
+                          .map((vc) => {
+                            const tot = vehicleClassWeeklyLiters.get(vc) ?? 0;
+                            const pct = totalDispensed > 0 ? Math.round((tot / totalDispensed) * 100) : 0;
+                            const row =
+                              vc === "2W"
+                                ? { short: "2W", sub: "Two wheelers", icon: "two_wheeler" as const, bar: "bg-purple-500", text: "text-purple-800" }
+                                : vc === "4W"
+                                  ? { short: "4W", sub: "Four wheelers", icon: "directions_car" as const, bar: "bg-blue-500", text: "text-blue-800" }
+                                  : { short: "Other", sub: "Other vehicles (Tricycle, P.U.V.)", icon: "local_shipping" as const, bar: "bg-orange-500", text: "text-orange-800" };
+                            return (
+                              <div key={vc}>
+                                <div className="flex justify-between text-[10px] font-bold mb-0.5 gap-2">
+                                  <span className={`flex items-center gap-1 min-w-0 ${row.text}`}>
+                                    <span className="material-symbols-outlined text-[14px] shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>{row.icon}</span>
+                                    <span className="truncate"><span className="font-black">{row.short}</span> · {row.sub}</span>
+                                  </span>
+                                  <span className="text-slate-400 shrink-0 tabular-nums">
+                                    {formatLitersQuantity(tot)} L · {pct}%
+                                  </span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${row.bar}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        {totalDispensed <= 0 && (
+                          <p className="text-[10px] text-slate-400 italic">No fuel dispensed this week yet — bars appear when transactions exist.</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1656,70 +1804,112 @@ export default function AdminDashboard({ onLogout }) {
                     {(() => {
                       const CW = 460, CH = 150, pL = 38, pR = 8, pT = 18, pB = 28;
                       const cW = CW - pL - pR, cH = CH - pT - pB;
-                      const mn  = Math.min(...TREND_DATA.map(d => d.value)) * 0.93;
-                      const mx  = trendMax * 1.06;
+                      const rawMin = Math.min(...TREND_DATA.map((d) => d.value));
+                      const rawMax = Math.max(...TREND_DATA.map((d) => d.value));
+                      const mn  = rawMin === rawMax ? Math.max(0, rawMin - 1) : Math.max(0, rawMin * 0.93);
+                      const mxBase = Math.max(trendMax, rawMax);
+                      const mx  = rawMin === rawMax ? mxBase + 1 : Math.max(mxBase * 1.06, mn + 1);
                       const tx  = (i: number) => pL + (i / (TREND_DATA.length - 1)) * cW;
                       const ty  = (v: number) => pT + cH - ((v - mn) / (mx - mn)) * cH;
                       const bw  = Math.floor(cW / TREND_DATA.length * 0.45);
                       const baseline = pT + cH;
                       const grids = [mn, mn + (mx-mn)*0.33, mn + (mx-mn)*0.66, mx].map(Math.round);
-                      const lp  = `M ${TREND_DATA.map((d,i) => `${tx(i)},${ty(d.value)}`).join(" L ")}`;
-                      const ap  = `M ${tx(0)},${baseline} L ${TREND_DATA.map((d,i) => `${tx(i)},${ty(d.value)}`).join(" L ")} L ${tx(TREND_DATA.length-1)},${baseline} Z`;
-                      const pk  = TREND_DATA.reduce((a,b) => b.value > a.value ? b : a);
+                      const trendPoints = TREND_DATA.map((d, i) => ({
+                        ...d,
+                        index: i,
+                        x: tx(i),
+                        y: ty(d.value),
+                      }));
+                      const lp  = `M ${trendPoints.map((point) => `${point.x},${point.y}`).join(" L ")}`;
+                      const ap  = `M ${trendPoints[0].x},${baseline} L ${trendPoints.map((point) => `${point.x},${point.y}`).join(" L ")} L ${trendPoints[trendPoints.length - 1].x},${baseline} Z`;
+                      const pk  = trendPoints.reduce((a, b) => b.value > a.value ? b : a);
+                      const activeTrendPoint = activeTrendPointIndex == null ? null : trendPoints[activeTrendPointIndex] ?? null;
                       return (
-                        <svg viewBox={`0 0 ${CW} ${CH}`} className="w-full" style={{ height: 160 }}>
-                          <defs>
-                            <linearGradient id="ovTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#003366" stopOpacity="0.25" />
-                              <stop offset="100%" stopColor="#003366" stopOpacity="0.03" />
-                            </linearGradient>
-                          </defs>
-                          {/* Gridlines */}
-                          {grids.map((v, gi) => (
-                            <g key={gi}>
-                              <line x1={pL} y1={ty(v)} x2={CW - pR} y2={ty(v)}
-                                stroke={gi === 0 ? "#94a3b8" : "#e2e8f0"}
-                                strokeWidth={gi === 0 ? 1 : 0.8}
-                                strokeDasharray={gi === 0 ? "none" : "3 3"} />
-                              <text x={pL - 4} y={ty(v) + 3.5} textAnchor="end"
-                                fontSize="8" fill="#94a3b8" fontWeight="600">
-                                {v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}
+                        <div className="relative group/trend">
+                          <svg viewBox={`0 0 ${CW} ${CH}`} className="w-full" style={{ height: 160 }}>
+                            <defs>
+                              <linearGradient id="ovTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#003366" stopOpacity="0.25" />
+                                <stop offset="100%" stopColor="#003366" stopOpacity="0.03" />
+                              </linearGradient>
+                            </defs>
+                            {/* Gridlines */}
+                            {grids.map((v, gi) => (
+                              <g key={gi}>
+                                <line x1={pL} y1={ty(v)} x2={CW - pR} y2={ty(v)}
+                                  stroke={gi === 0 ? "#94a3b8" : "#e2e8f0"}
+                                  strokeWidth={gi === 0 ? 1 : 0.8}
+                                  strokeDasharray={gi === 0 ? "none" : "3 3"} />
+                                {v > 0 && (
+                                  <text x={pL - 4} y={ty(v) + 3.5} textAnchor="end"
+                                    fontSize="8" fill="#94a3b8" fontWeight="600">
+                                    {v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}
+                                  </text>
+                                )}
+                              </g>
+                            ))}
+                            {/* Bars from baseline */}
+                            {trendPoints.map((point) => (
+                              <rect key={point.key} x={point.x - bw / 2} y={point.y}
+                                width={bw} height={baseline - point.y} rx="2"
+                                fill={point.index === pk.index ? "#003366" : "#dde6f0"} />
+                            ))}
+                            {/* Area fill */}
+                            <path d={ap} fill="url(#ovTrendGrad)" />
+                            {/* Line */}
+                            <path d={lp} fill="none" stroke="#003366" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            {/* Dots + hover targets */}
+                            {trendPoints.map((point) => {
+                              const isActive = point.index === activeTrendPointIndex;
+                              return (
+                                <g key={point.key}>
+                                  <circle cx={point.x} cy={point.y} r={isActive ? "5.5" : "4.5"}
+                                    fill={point.index === pk.index ? "#f59e0b" : "#003366"}
+                                    stroke="#fff" strokeWidth="2" />
+                                  <circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r="12"
+                                    fill="transparent"
+                                    tabIndex={0}
+                                    role="button"
+                                    aria-label={`${point.label}: ${formatLitersQuantity(point.value)} liters dispensed`}
+                                    onMouseEnter={() => setActiveTrendPointIndex(point.index)}
+                                    onMouseLeave={() => setActiveTrendPointIndex((current) => current === point.index ? null : current)}
+                                    onFocus={() => setActiveTrendPointIndex(point.index)}
+                                    onBlur={() => setActiveTrendPointIndex((current) => current === point.index ? null : current)}
+                                  />
+                                </g>
+                              );
+                            })}
+                            {/* X-axis labels */}
+                            {trendPoints.map((point) => (
+                              <text key={point.key} x={point.x} y={CH - 4} textAnchor="middle"
+                                fontSize="9" fill="#64748b" fontWeight="700">
+                                {point.label}
                               </text>
-                            </g>
-                          ))}
-                          {/* Bars from baseline */}
-                          {TREND_DATA.map((d,i) => (
-                            <rect key={i} x={tx(i) - bw/2} y={ty(d.value)}
-                              width={bw} height={baseline - ty(d.value)} rx="2"
-                              fill={d.label === pk.label ? "#003366" : "#dde6f0"} />
-                          ))}
-                          {/* Area fill */}
-                          <path d={ap} fill="url(#ovTrendGrad)" />
-                          {/* Line */}
-                          <path d={lp} fill="none" stroke="#003366" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                          {/* Dots */}
-                          {TREND_DATA.map((d,i) => (
-                            <circle key={i} cx={tx(i)} cy={ty(d.value)} r="3"
-                              fill={d.label === pk.label ? "#f59e0b" : "#003366"}
-                              stroke="#fff" strokeWidth="1.5" />
-                          ))}
-                          {/* Value labels */}
-                          {TREND_DATA.map((d,i) => (
-                            <text key={i} x={tx(i)} y={ty(d.value) - 6} textAnchor="middle"
-                              fontSize="7.5" fill="#003366" fontWeight="800">
-                              {d.value >= 1000 ? `${(d.value/1000).toFixed(1)}k` : `${Math.round(d.value)}L`}
-                            </text>
-                          ))}
-                          {/* X-axis labels */}
-                          {TREND_DATA.map((d,i) => (
-                            <text key={i} x={tx(i)} y={CH - 4} textAnchor="middle"
-                              fontSize="9" fill="#64748b" fontWeight="700">
-                              {d.label}
-                            </text>
-                          ))}
-                        </svg>
+                            ))}
+                          </svg>
+                          {activeTrendPoint && (
+                            <div
+                              role="tooltip"
+                              className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] text-slate-600 shadow-lg"
+                              style={{
+                                left: `${(activeTrendPoint.x / CW) * 100}%`,
+                                top: `${Math.max(10, (activeTrendPoint.y / CH) * 100 - 6)}%`,
+                              }}
+                            >
+                              <p className="font-headline text-xs font-bold text-[#003366]">{activeTrendPoint.label}</p>
+                              <p className="mt-0.5 whitespace-nowrap">
+                                <span className="font-semibold text-slate-700">{formatLitersQuantity(activeTrendPoint.value)} L</span>
+                                {" "}dispensed
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       );
                     })()}
+                    <p className="text-[10px] text-slate-400">Hover or focus chart points to view exact daily liters.</p>
                   </div>
 
                 </div>
@@ -1848,19 +2038,20 @@ export default function AdminDashboard({ onLogout }) {
           {/* ══ ALLOCATION ══ */}
           {activePage === "allocation" && (() => {
             const drawerStation = ALLOCATION_STATIONS.find(s => s.id === allocDrawerStationId) ?? null;
+            const bannerTone = getRemainingFuelTone(stationFuelRemainingPct);
             return (
             <div className="space-y-6">
 
                 {/* Summary banner */}
                 <div className="bg-[#003366] rounded-2xl p-6 flex items-center justify-between shadow-lg">
                   <div>
-                    <p className="text-white/60 text-xs font-bold uppercase tracking-wider mb-1">Total Fuel Dispensed This Week</p>
-                    <p className="text-5xl font-black text-white font-headline leading-none">{totalUsed.toLocaleString()} <span className="text-3xl text-yellow-400">L</span></p>
-                    <p className="text-white/50 text-sm mt-2">of {weeklyQuota.toLocaleString()} L total weekly quota · {utilizationPct}% utilized</p>
+                    <p className="text-white/60 text-xs font-bold uppercase tracking-wider mb-1">Station Fuel Dispensed This Week</p>
+                    <p className="text-5xl font-black text-white font-headline leading-none">{stationFuelDispensedThisWeek.toLocaleString()} <span className="text-3xl text-yellow-400">L</span></p>
+                    <p className="text-white/50 text-sm mt-2">of {totalStationCapacity.toLocaleString()} L station capacity · {stationFuelRemainingPct}% supply remaining</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-white/60 text-xs font-bold uppercase tracking-wider mb-1">Remaining</p>
-                    <p className="text-4xl font-black text-green-300 font-headline">{(weeklyQuota - totalUsed).toLocaleString()} L</p>
+                    <p className="text-white/60 text-xs font-bold uppercase tracking-wider mb-1">Total Remaining Fuel</p>
+                    <p className={`text-4xl font-black font-headline ${bannerTone.text === "text-red-700" ? "text-red-300" : bannerTone.text === "text-amber-700" ? "text-amber-300" : "text-emerald-300"}`}>{totalRemainingStationFuel.toLocaleString()} L</p>
                   </div>
                 </div>
 
@@ -1869,7 +2060,7 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-black text-[#003366]">Dispensing by Station</p>
-                      <p className="text-xs text-slate-400">Weekly fuel consumption per gas station · click a row to view fuel breakdown</p>
+                      <p className="text-xs text-slate-400">Weekly station fuel risk view · click a row to inspect station ID and per-fuel remaining</p>
                     </div>
                     {drawerStation && (
                       <span className="text-[10px] text-[#003366] font-bold bg-blue-50 px-2 py-1 rounded-full">Drawer open →</span>
@@ -1884,21 +2075,28 @@ export default function AdminDashboard({ onLogout }) {
                         <th className="text-left px-5 py-3">Status</th>
                         <th className="text-right px-5 py-3">Capacity</th>
                         <th className="text-right px-5 py-3">Dispensed</th>
-                        <th className="text-left px-5 py-3 w-40">Progress</th>
+                        <th className="text-left px-5 py-3 w-48">Remaining Fuel</th>
                       </tr>
                     </thead>
                     <tbody>
                       {ALLOCATION_STATIONS.slice((allocStationPage - 1) * ALLOC_PER_PAGE, allocStationPage * ALLOC_PER_PAGE).map((s, i) => {
-                        const pct        = s.capacity > 0 ? Math.min(Math.round((s.dispensed / s.capacity) * 100), 100) : 0;
-                        const bk         = brandKey(s.brand);
+                        const remaining  = Math.max(0, Math.round(s.currentCapacity * 10) / 10);
+                        const pct        = getRemainingFuelPercent(remaining, s.capacity);
+                        const tone       = getRemainingFuelTone(pct);
                         const isSelected = allocDrawerStationId === s.id;
+                        const stationShortId = s.stationId.slice(0, 4);
                         return (
                           <tr key={s.id}
                             onClick={() => setAllocDrawerStationId(isSelected ? null : s.id)}
                             className={`cursor-pointer transition-colors ${isSelected ? "bg-blue-50 border-l-4 border-[#003366]" : i % 2 === 0 ? "bg-white hover:bg-blue-50/20" : "bg-slate-50/50 hover:bg-blue-50/20"}`}>
-                            <td className="px-5 py-3 font-bold text-slate-800 flex items-center gap-2">
-                              <span className={`material-symbols-outlined text-[15px] transition-transform ${isSelected ? "text-[#003366] rotate-90" : "text-slate-300"}`}>chevron_right</span>
-                              {s.name}
+                            <td className="px-5 py-3 text-slate-800">
+                              <div className="flex items-center gap-2">
+                                <span className={`material-symbols-outlined text-[15px] transition-transform ${isSelected ? "text-[#003366] rotate-90" : "text-slate-300"}`}>chevron_right</span>
+                                <div className="min-w-0">
+                                  <p className="font-bold truncate">{s.name}</p>
+                                  <p className="text-[10px] font-semibold text-slate-400">ID: {stationShortId}</p>
+                                </div>
+                              </div>
                             </td>
                             <td className="px-5 py-3">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brandBadgeClass(s.brand)}`}>{s.brand}</span>
@@ -1911,10 +2109,13 @@ export default function AdminDashboard({ onLogout }) {
                             <td className="px-5 py-3 text-right font-black text-[#003366]">{s.dispensed.toLocaleString()} L</td>
                             <td className="px-5 py-3">
                               <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full brand-fill-${bk}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
+                                <div className={`flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
+                                  <div className={`h-full rounded-full ${tone.fill}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
+                                <div className="w-24 shrink-0 text-right leading-tight">
+                                  <span className={`block text-[10px] font-black ${tone.text}`}>{remaining.toLocaleString()} L</span>
+                                  <span className="text-[9px] font-bold text-slate-400">{pct}% left</span>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -1929,28 +2130,33 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                   <div className="px-5 py-4 border-b border-slate-100">
                     <p className="text-sm font-black text-[#003366]">Resident Quota Usage</p>
-                    <p className="text-xs text-slate-400">Individual weekly allocation status</p>
+                    <p className="text-xs text-slate-400">Combined weekly usage across each resident's registered vehicles</p>
                   </div>
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
                         <th className="text-left px-5 py-3">Resident</th>
-                        <th className="text-left px-5 py-3">Plate</th>
+                        <th className="text-left px-5 py-3">Vehicles</th>
                         <th className="text-left px-5 py-3">Barangay</th>
                         <th className="text-left px-5 py-3">Status</th>
                         <th className="text-right px-5 py-3">Used</th>
                         <th className="text-right px-5 py-3">Remaining</th>
-                        <th className="text-left px-5 py-3 w-36">Progress</th>
+                        <th className="text-left px-5 py-3 w-40">Quota Used</th>
                       </tr>
                     </thead>
                     <tbody>
                       {RESIDENTS.slice((allocResidentPage - 1) * ALLOC_PER_PAGE, allocResidentPage * ALLOC_PER_PAGE).map((r, i) => {
-                        const pct     = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
+                        const pct     = r.quota > 0 ? Math.round((r.used / r.quota) * 100) : 0;
                         const barFill = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                         return (
                           <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                             <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
-                            <td className="px-5 py-3 font-mono text-xs text-slate-600">{r.plate}</td>
+                            <td className="px-5 py-3">
+                              <div>
+                                <p className="font-mono text-xs text-slate-600">{r.plateSummary}</p>
+                                <p className="text-[10px] text-slate-400">{r.vehicleCount} vehicle{r.vehicleCount === 1 ? "" : "s"} · {formatLitersQuantity(r.quota)} L total quota</p>
+                              </div>
+                            </td>
                             <td className="px-5 py-3 text-xs text-slate-500">{r.barangay}</td>
                             <td className="px-5 py-3">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusBadgeClass(r.status)}`}>{r.status}</span>
@@ -1962,7 +2168,10 @@ export default function AdminDashboard({ onLogout }) {
                                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
                                   <div className={`h-full rounded-full ${barFill}`} ref={(el) => { if (el) el.style.width = `${pct}%`; }} />
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400 w-8 shrink-0">{pct}%</span>
+                                <div className="w-16 shrink-0 text-right leading-tight">
+                                  <span className="block text-[10px] font-bold text-slate-500">{pct}%</span>
+                                  <span className="text-[9px] text-slate-400">of quota</span>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -1983,7 +2192,7 @@ export default function AdminDashboard({ onLogout }) {
             const filtered = q
               ? RESIDENTS.filter(r =>
                   r.name.toLowerCase().includes(q) ||
-                  r.plate.toLowerCase().includes(q) ||
+                  r.plateSummary.toLowerCase().includes(q) ||
                   r.barangay.toLowerCase().includes(q) ||
                   r.vehicle.toLowerCase().includes(q)
                 )
@@ -2071,7 +2280,7 @@ export default function AdminDashboard({ onLogout }) {
                     {pageSlice.length === 0 ? (
                       <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-400 text-sm">No residents found.</td></tr>
                     ) : pageSlice.map((r, i) => {
-                      const pct        = Math.round((r.used / WEEKLY_FUEL_LIMIT) * 100);
+                      const pct        = Math.round((r.used / r.quota) * 100);
                       const barFill    = pct >= 100 ? "bar-fill-danger" : pct >= 75 ? "bar-fill-warning" : "bar-fill-normal";
                       const rTxns      = RECENT_TXN.filter(t => t.resident === r.name);
                       const totalSpent = rTxns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
@@ -2079,7 +2288,7 @@ export default function AdminDashboard({ onLogout }) {
                       return (
                         <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
                           <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
-                          <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{r.plate}</td>
+                          <td className="px-5 py-3 font-mono text-xs text-slate-600 tracking-wider">{r.plateSummary}</td>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-1.5">
                               <span className={`material-symbols-outlined text-[14px] ${r.vehicle === "Car" ? "text-blue-500" : r.vehicle === "Motorcycle" ? "text-purple-500" : "text-orange-500"}`}>
@@ -2378,7 +2587,7 @@ export default function AdminDashboard({ onLogout }) {
                   ...byResident.map(r => {
                     const liters = r.txns.reduce((a, t) => a + t.liters, 0);
                     const spent  = r.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                    return [r.name, r.plate, String(r.txns.length), formatLitersQuantity(liters), formatLitersQuantity(liters / r.txns.length), spent.toFixed(2)];
+                    return [r.name, r.plateSummary, String(r.txns.length), formatLitersQuantity(liters), formatLitersQuantity(liters / r.txns.length), spent.toFixed(2)];
                   }),
                 ];
               } else {
@@ -2420,7 +2629,7 @@ export default function AdminDashboard({ onLogout }) {
                 const dataRows  = byResident.map(r => {
                   const liters = r.txns.reduce((a, t) => a + t.liters, 0);
                   const spent  = r.txns.reduce((a, t) => a + t.liters * t.pricePerLiter, 0);
-                  return [r.name, r.plate, r.txns.length, `${formatLitersQuantity(liters)} L`, `${formatLitersQuantity(liters/r.txns.length)} L`, `₱${spent.toFixed(2)}`];
+                  return [r.name, r.plateSummary, r.txns.length, `${formatLitersQuantity(liters)} L`, `${formatLitersQuantity(liters/r.txns.length)} L`, `₱${spent.toFixed(2)}`];
                 });
                 tableHTML = `<tr>${headerRow.map(h => `<th>${h}</th>`).join("")}</tr>${dataRows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}`;
               } else {
@@ -2623,7 +2832,7 @@ export default function AdminDashboard({ onLogout }) {
                         return (
                           <tr key={r.name} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-blue-50/30 transition-colors`}>
                             <td className="px-5 py-3 font-bold text-slate-800">{r.name}</td>
-                            <td className="px-5 py-3 font-mono text-xs text-slate-500 tracking-wider">{r.plate}</td>
+                            <td className="px-5 py-3 font-mono text-xs text-slate-500 tracking-wider">{r.plateSummary}</td>
                             <td className="px-5 py-3 text-center">
                               <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{r.txns.length}</span>
                             </td>
@@ -3512,16 +3721,21 @@ export default function AdminDashboard({ onLogout }) {
             const priceEntry = drawerStation.priceEntries.find((entry) => entry.label === label);
             const capacity = Math.round(Number(drawerStation.fuelCapacities[label] ?? 0));
             const dispensed = Math.round((txStats?.dispensed ?? 0) * 10) / 10;
+            const lifetimeDispensed = Math.round((Number(drawerStation.fuelDispensed[label] ?? 0) || 0) * 10) / 10;
+            const remaining = Math.max(0, Math.round((Number(drawerStation.fuelInventory[label] ?? 0) || 0) * 10) / 10);
             const price =
               txStats && txStats.priceCount > 0
                 ? txStats.priceTotal / txStats.priceCount
                 : Number(priceEntry?.price ?? 0);
-            const pct = capacity > 0 ? Math.min(Math.round((dispensed / capacity) * 100), 100) : 0;
+            const pct = getRemainingFuelPercent(remaining, capacity);
+            const tone = getRemainingFuelTone(pct);
 
-            return { label, price, capacity, dispensed, pct };
+            return { label, price, capacity, dispensed, lifetimeDispensed, remaining, pct, tone };
           })
           .filter((fuel) => fuel.capacity > 0 || fuel.dispensed > 0 || fuel.price > 0)
-          .sort((a, b) => b.dispensed - a.dispensed || a.label.localeCompare(b.label));
+          .sort((a, b) => a.remaining - b.remaining || a.label.localeCompare(b.label));
+        const drawerRemaining = Math.max(0, Math.round(drawerStation.currentCapacity * 10) / 10);
+        const drawerStationShortId = drawerStation.stationId.slice(0, 4);
         return (
           <>
             <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setAllocDrawerStationId(null)} />
@@ -3536,7 +3750,12 @@ export default function AdminDashboard({ onLogout }) {
                     <span className="material-symbols-outlined text-[20px]">close</span>
                   </button>
                 </div>
-                <p className="text-white font-black text-sm leading-tight mb-1">{drawerStation.name}</p>
+                <div className="flex items-center gap-2 mb-1 min-w-0">
+                  <p className="text-white font-black text-sm leading-tight truncate">{drawerStation.name}</p>
+                  <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black tracking-wider text-white/75">
+                    ID: {drawerStationShortId}
+                  </span>
+                </div>
                 <p className="text-white/50 text-[11px] mb-4">{drawerStation.brand} · {drawerStation.barangay}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-white/10 rounded-xl p-3">
@@ -3544,8 +3763,17 @@ export default function AdminDashboard({ onLogout }) {
                     <p className="text-white font-black text-lg">{(drawerStation.capacity / 1000).toFixed(0)}k L</p>
                   </div>
                   <div className="bg-white/10 rounded-xl p-3">
-                    <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Dispensed</p>
+                    <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Dispensed This Week</p>
                     <p className="text-yellow-400 font-black text-lg">{drawerStation.dispensed.toLocaleString()} L</p>
+                  </div>
+                  <div className="bg-white/10 rounded-xl p-3 col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white/50 text-[9px] font-bold uppercase tracking-wider">Remaining Fuel</p>
+                        <p className="text-emerald-300 font-black text-lg">{drawerRemaining.toLocaleString()} L</p>
+                      </div>
+                      <span className="text-[10px] font-black px-2 py-1 rounded-full bg-white/10 text-white">{getRemainingFuelPercent(drawerRemaining, drawerStation.capacity)}% left</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3553,6 +3781,7 @@ export default function AdminDashboard({ onLogout }) {
               <div className="flex-1 overflow-y-auto">
                 <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
                   <p className="text-[10px] font-black text-[#003366] uppercase tracking-wider">Fuel Type Breakdown</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Remaining fuel shown first to surface low-supply fuel types.</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {drawerFuels.length === 0 && (
@@ -3569,28 +3798,30 @@ export default function AdminDashboard({ onLogout }) {
                             {f.price > 0 ? `₱${f.price.toFixed(2)}/L` : "No live price set"}
                           </p>
                         </div>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                          f.pct >= 80 ? "bg-red-100 text-red-700" : f.pct >= 50 ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
-                        }`}>{f.pct}%</span>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${f.tone.badge}`}>{f.pct}% left</span>
                       </div>
-                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-1.5">
-                        <div className={`h-full rounded-full transition-all ${f.pct >= 80 ? "bg-red-500" : f.pct >= 50 ? "bg-yellow-400" : "bg-[#003366]"}`}
+                      <div className={`h-2 rounded-full overflow-hidden mb-1.5 ${f.tone.track}`}>
+                        <div className={`h-full rounded-full transition-all ${f.tone.fill}`}
                           ref={(el) => { if (el) el.style.width = `${f.pct}%`; }} />
                       </div>
-                      <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-                        <span>{f.dispensed.toLocaleString()} L dispensed</span>
-                        <span>{f.capacity > 0 ? `${f.capacity.toLocaleString()} L cap` : "No cap set"}</span>
+                      <div className="grid grid-cols-3 gap-2 text-[10px] font-bold">
+                        <span className="text-slate-400">{f.capacity > 0 ? `${f.capacity.toLocaleString()} L cap` : "No cap set"}</span>
+                        <span className="text-slate-400 text-center">{f.dispensed.toLocaleString()} L this week</span>
+                        <span className={`text-right ${f.tone.text}`}>{f.remaining.toLocaleString()} L left</span>
                       </div>
+                      {f.lifetimeDispensed > 0 && (
+                        <p className="mt-1 text-[10px] text-slate-400 text-right">{f.lifetimeDispensed.toLocaleString()} L lifetime dispensed</p>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
               {/* Footer */}
               <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 shrink-0 flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Remaining</span>
                 <div className="text-right">
-                  <span className="text-sm font-black text-[#003366]">{drawerStation.dispensed.toLocaleString()} L</span>
-                  <span className="text-[10px] text-slate-400 ml-1">/ {(drawerStation.capacity / 1000).toFixed(0)}k L</span>
+                  <span className="text-sm font-black text-[#003366]">{drawerRemaining.toLocaleString()} L</span>
+                  <span className="text-[10px] text-slate-400 ml-1">of {drawerStation.capacity.toLocaleString()} L cap</span>
                 </div>
               </div>
             </div>
