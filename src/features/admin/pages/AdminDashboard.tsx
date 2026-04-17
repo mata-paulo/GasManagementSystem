@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { httpsCallable, getFunctions } from "firebase/functions";
+import { getAuth } from "firebase/auth";
 import {
   WEEKLY_FUEL_LIMIT,
   assignStationUser,
@@ -688,6 +690,8 @@ export default function AdminDashboard({ onLogout }) {
   // Pre-aggregated heatmap data — polled hourly from weeklyHeatmap/{weekKey}
   const [heatmapData, setHeatmapData] = useState<HeatmapStationEntry[]>([]);
   const [heatmapLastFetched, setHeatmapLastFetched] = useState<Date | null>(null);
+  const [triggeringHeatmap, setTriggeringHeatmap] = useState(false);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -706,6 +710,32 @@ export default function AdminDashboard({ onLogout }) {
     const interval = setInterval(fetchHeatmap, 60 * 60 * 1000); // every 1 hour
     return () => { cancelled = true; clearInterval(interval); };
   }, [currentWeekKey]);
+
+  const handleManualTrigger = async () => {
+    setTriggeringHeatmap(true);
+    setTriggerError(null);
+    try {
+      const auth = getAuth();
+      if (!auth.currentUser) {
+        throw new Error("Not authenticated");
+      }
+
+      const functions = getFunctions();
+      const trigger = httpsCallable(functions, "triggerHeatmapAggregation");
+      await trigger({});
+
+      // Re-fetch heatmap data immediately after trigger
+      const result = await fetchWeeklyHeatmap(currentWeekKey);
+      setHeatmapData(result?.stations ?? []);
+      setHeatmapLastFetched(new Date());
+    } catch (err: any) {
+      const errorMsg = err?.message || "Failed to update heatmap";
+      setTriggerError(errorMsg);
+      console.error("Manual heatmap trigger failed:", err);
+    } finally {
+      setTriggeringHeatmap(false);
+    }
+  };
 
   const BRAND_PRICES = useMemo(
     () => buildMergedBrandPrices(dashboardData.stations, dashboardData.stationDirectory),
@@ -940,9 +970,9 @@ export default function AdminDashboard({ onLogout }) {
       maxTx,
       lowThreshold,
       midThreshold,
-      lowLabel: `< ${formatLitersQuantity(lowThreshold)} L`,
-      midLabel: `${formatLitersQuantity(lowThreshold)} to < ${formatLitersQuantity(midThreshold)} L`,
-      highLabel: `≥ ${formatLitersQuantity(midThreshold)} L`,
+      lowLabel: `Low activity: < ${formatLitersQuantity(lowThreshold)} L/week`,
+      midLabel: `Medium activity: ${formatLitersQuantity(lowThreshold)}–${formatLitersQuantity(midThreshold)} L/week`,
+      highLabel: `High activity: > ${formatLitersQuantity(midThreshold)} L/week`,
     };
   }, [STATIONS, dashboardData.stations, heatmapData]);
 
@@ -1178,9 +1208,18 @@ export default function AdminDashboard({ onLogout }) {
 
     return dashboardData.residents
       .map((resident) => {
-        const used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
         const vehicles = Array.isArray(resident.vehicles) ? resident.vehicles : [];
         const vehicleCount = vehicles.length;
+
+        // Calculate used from vehicle.fuelUsed (account-level) + transaction sum (fallback)
+        let used = 0;
+        if (vehicleCount > 0) {
+          used = vehicles.reduce((sum, v) => sum + (v.fuelUsed ?? 0), 0);
+        } else {
+          used = Math.round((residentUsageByUid.get(resident.uid) ?? 0) * 10) / 10;
+        }
+        used = Math.round(used * 10) / 10;
+
         const quota = vehicleCount > 0
           ? vehicles.reduce((sum, v) => sum + (v.fuelAllocated ?? WEEKLY_FUEL_LIMIT), 0)
           : (resident.fuelAllocation ?? WEEKLY_FUEL_LIMIT);
@@ -1774,8 +1813,8 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="col-span-3 flex flex-col gap-5">
 
                   {/* Heatmap */}
-                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
-                    <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 flex flex-col flex-1">
+                    <div className="px-5 pt-4 pb-2 flex items-center justify-between shrink-0">
                       <div>
                         <p className="text-sm font-black text-[#003366]">Station Heatmap</p>
                         <p className="text-xs text-slate-400">
@@ -1783,97 +1822,46 @@ export default function AdminDashboard({ onLogout }) {
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
-                        <span className="text-[10px] text-slate-400 font-bold mr-1">Relative weekly liters:</span>
+                        <span className="text-[10px] text-slate-400 font-bold mr-1">Weekly liters:</span>
                         <div className="relative group/heat-low">
                           <button
                             type="button"
-                            className="flex items-center gap-1 outline-none"
-                            aria-label={`Low activity range: ${heatmapIntensity.lowLabel}`}
+                            className="flex items-center gap-1 outline-none cursor-help"
                           >
                             <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
                             <span>Low</span>
                           </button>
-                          <div
-                            role="tooltip"
-                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-low:opacity-100 group-focus-within/heat-low:opacity-100"
-                          >
+                          <div className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 z-50 mr-3 rounded-lg border border-slate-200 bg-slate-900 px-3 py-2 text-[10px] font-semibold text-white shadow-xl opacity-0 transition-opacity duration-150 group-hover/heat-low:opacity-100 whitespace-nowrap">
                             {heatmapIntensity.lowLabel}
                           </div>
                         </div>
                         <div className="relative group/heat-mid ml-1.5">
                           <button
                             type="button"
-                            className="flex items-center gap-1 outline-none"
-                            aria-label={`Mid activity range: ${heatmapIntensity.midLabel}`}
+                            className="flex items-center gap-1 outline-none cursor-help"
                           >
                             <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" />
-                            <span>Mid</span>
+                            <span>Medium</span>
                           </button>
-                          <div
-                            role="tooltip"
-                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-mid:opacity-100 group-focus-within/heat-mid:opacity-100"
-                          >
+                          <div className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 z-50 mr-3 rounded-lg border border-slate-200 bg-slate-900 px-3 py-2 text-[10px] font-semibold text-white shadow-xl opacity-0 transition-opacity duration-150 group-hover/heat-mid:opacity-100 whitespace-nowrap">
                             {heatmapIntensity.midLabel}
                           </div>
                         </div>
                         <div className="relative group/heat-high ml-1.5">
                           <button
                             type="button"
-                            className="flex items-center gap-1 outline-none"
-                            aria-label={`High activity range: ${heatmapIntensity.highLabel}`}
+                            className="flex items-center gap-1 outline-none cursor-help"
                           >
                             <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
                             <span>High</span>
                           </button>
-                          <div
-                            role="tooltip"
-                            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#003366] shadow-lg opacity-0 transition-opacity duration-150 group-hover/heat-high:opacity-100 group-focus-within/heat-high:opacity-100"
-                          >
+                          <div className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 z-50 mr-3 rounded-lg border border-slate-200 bg-slate-900 px-3 py-2 text-[10px] font-semibold text-white shadow-xl opacity-0 transition-opacity duration-150 group-hover/heat-high:opacity-100 whitespace-nowrap">
                             {heatmapIntensity.highLabel}
                           </div>
                         </div>
                       </div>
                     </div>
-                    <div ref={mapRef} className="h-[280px]" />
-                  </div>
-
-                  {/* Real-time Transactions */}
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                    <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-black text-[#003366]">Real-time Transactions</p>
-                        <p className="text-xs text-slate-400">Latest fuel dispensing activity</p>
-                      </div>
-                      <button onClick={() => navigateToPage("transactions")} className="text-xs font-bold text-[#003366] hover:underline flex items-center gap-1">
-                        View All <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </button>
-                    </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          <th className="text-left px-5 py-2.5">Resident</th>
-                          <th className="text-left px-5 py-2.5">Station</th>
-                          <th className="text-left px-5 py-2.5">Fuel Type</th>
-                          <th className="text-right px-5 py-2.5">Liters</th>
-                          <th className="text-right px-5 py-2.5">Total Paid</th>
-                          <th className="text-right px-5 py-2.5">Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {RECENT_TXN.slice(0, 6).map((tx, i) => (
-                          <tr key={tx.id} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/30 transition-colors`}>
-                            <td className="px-5 py-2.5 font-bold text-slate-800 text-xs">{tx.resident}</td>
-                            <td className="px-5 py-2.5 text-slate-500 text-xs truncate max-w-[140px]">{tx.station}</td>
-                            <td className="px-5 py-2.5">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${fuelBadgeClass(tx.type)}`}>{tx.type}</span>
-                            </td>
-                            <td className="px-5 py-2.5 text-right font-black text-[#003366] text-xs">{formatLitersQuantity(tx.liters)} L</td>
-                            <td className="px-5 py-2.5 text-right font-black text-green-700 text-xs">₱{(tx.liters * tx.pricePerLiter).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="px-5 py-2.5 text-right text-xs text-slate-400">{tx.date} · {tx.time}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div ref={mapRef} className="flex-1 min-h-0" />
                   </div>
                 </div>
 
@@ -2114,11 +2102,30 @@ export default function AdminDashboard({ onLogout }) {
                         : `Click a station marker for weekly liters and transaction details · peak this week ${formatLitersQuantity(heatmapIntensity.maxLiters)} L`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
-                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Weekly liters:</span>
-                    <span className="flex items-center gap-1" title={heatmapIntensity.lowLabel}><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Low</span>
-                    <span className="flex items-center gap-1" title={heatmapIntensity.midLabel}><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Mid</span>
-                    <span className="flex items-center gap-1" title={heatmapIntensity.highLabel}><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> High</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleManualTrigger}
+                        disabled={triggeringHeatmap}
+                        className="p-2 text-slate-600 hover:text-blue-600 disabled:text-slate-300 transition-colors"
+                        title="Update the heatmap - limit to once per 5 minutes"
+                      >
+                        <span className={`inline-block text-lg ${triggeringHeatmap ? "animate-spin" : ""}`}>
+                          ⟳
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5">
+                        <span className="text-[10px] text-slate-400 font-semibold mr-1">Weekly liters:</span>
+                        <span className="flex items-center gap-1" title={heatmapIntensity.lowLabel}><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Low</span>
+                        <span className="flex items-center gap-1" title={heatmapIntensity.midLabel}><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Mid</span>
+                        <span className="flex items-center gap-1" title={heatmapIntensity.highLabel}><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> High</span>
+                      </div>
+                    </div>
+                    {triggerError && (
+                      <p className="text-xs font-semibold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
+                        {triggerError}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -3439,9 +3446,9 @@ export default function AdminDashboard({ onLogout }) {
                     {[
                       { label: "Online Stations",     value: onlineStations,                                     icon: "cell_tower",      bg: "bg-green-50",  border: "border-green-100", text: "text-green-700",  dot: "bg-green-500 animate-pulse" },
                       { label: "Offline Stations",    value: STATIONS.length - onlineStations,                   icon: "wifi_off",        bg: "bg-red-50",    border: "border-red-100",   text: "text-red-600",    dot: "bg-red-400" },
-                      { label: "Active Residents",    value: RESIDENTS.filter(r => r.status === "Active").length, icon: "person_check",   bg: "bg-blue-50",   border: "border-blue-100",  text: "text-blue-700",   dot: "bg-blue-500" },
+                      { label: "Active Residents",    value: RESIDENT_SUMMARY.filter(r => r.status === "Active").length, icon: "person_check",   bg: "bg-blue-50",   border: "border-blue-100",  text: "text-blue-700",   dot: "bg-blue-500" },
                       { label: "Maxed Quota",         value: maxedResidents,                                      icon: "block",          bg: "bg-orange-50", border: "border-orange-100",text: "text-orange-700", dot: "bg-orange-500" },
-                      { label: "New Registrations",   value: RESIDENTS.filter(r => r.status === "New").length,   icon: "person_add",     bg: "bg-purple-50", border: "border-purple-100",text: "text-purple-700", dot: "bg-purple-500" },
+                      { label: "New Registrations",   value: RESIDENT_SUMMARY.filter(r => r.status === "New").length,   icon: "person_add",     bg: "bg-purple-50", border: "border-purple-100",text: "text-purple-700", dot: "bg-purple-500" },
                     ].map(s => (
                       <div key={s.label} className={`flex items-center justify-between px-3 py-2 rounded-xl ${s.bg} border ${s.border}`}>
                         <div className="flex items-center gap-2">

@@ -24,3 +24,4 @@ export {syncResidentFuelCycle} from "./auth/syncResidentFuelCycle";
 export {validateStationRegistrationToken} from "./auth/validateStationRegistrationToken";
 export {finalizeStationRegistration} from "./auth/finalizeStationRegistration";
 export {aggregateWeeklyHeatmap} from "./scheduled/aggregateHeatmap";
+export {triggerHeatmapAggregation} from "./scheduled/triggerHeatmapAggregation";
